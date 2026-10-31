@@ -36,7 +36,7 @@ jobs:
       series: ${{ steps.setup.outputs.series }}
     steps:
       - run: apt-get update -qq && apt-get install -y -qq --no-install-recommends git ca-certificates >/dev/null
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - id: setup
         uses: ./.github/actions/setup
       - id: plan
@@ -63,13 +63,13 @@ jobs:
       BUILD: build/${{ needs.plan.outputs.series }}/${{ matrix.package }}
     steps:
       - run: apt-get update -qq && apt-get install -y -qq --no-install-recommends git ca-certificates >/dev/null
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
       - run: scripts/build-source.sh ${{ inputs.force && '--force' || '' }} ${{ matrix.package }}
       - if: always()
         run: |
           [ -f "$BUILD"/review/summary.md ] && cat "$BUILD"/review/summary.md >> "$GITHUB_STEP_SUMMARY" || true
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: source-${{ matrix.package }}
           retention-days: 30
@@ -96,9 +96,9 @@ jobs:
       SERIES: ${{ needs.plan.outputs.series }}
     steps:
       - run: apt-get update -qq && apt-get install -y -qq --no-install-recommends git ca-certificates >/dev/null
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: source-*
           path: artifacts

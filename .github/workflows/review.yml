@@ -41,7 +41,7 @@ jobs:
       GPG_KEY_ID: ${{ vars.GPG_KEY_ID }}
     steps:
       - run: apt-get update -qq && apt-get install -y -qq --no-install-recommends git ca-certificates >/dev/null
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
       - env:
           GITHUB_TOKEN: ${{ github.token }}

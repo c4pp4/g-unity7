@@ -31,7 +31,7 @@ G_UNITY7_URL="https://github.com/c4pp4/g-unity7"
 
 ## Changelog and patch author, the e-mail must belong to the Launchpad account.
 DEBFULLNAME="${DEBFULLNAME:-c4pp4}"
-DEBEMAIL="${DEBEMAIL:-$(git config user.email 2>/dev/null)}"
+DEBEMAIL="${DEBEMAIL:-$(git config user.email 2>/dev/null || true)}"
 
 ## OpenPGP key the uploads are signed with (fingerprint), registered on Launchpad.
 GPG_KEY_ID="${GPG_KEY_ID:-6D44971D1E0C2A5CEB43FF9FFDB90412F9ABE974}"

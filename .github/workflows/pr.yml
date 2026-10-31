@@ -15,7 +15,7 @@ jobs:
     outputs:
       packages: ${{ steps.list.outputs.packages }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - id: list
         run: |
           source scripts/lib.sh
@@ -34,7 +34,7 @@ jobs:
       DEBFULLNAME: ${{ vars.DEBFULLNAME || 'c4pp4' }}
     steps:
       - run: apt-get update -qq && apt-get install -y -qq --no-install-recommends git ca-certificates >/dev/null
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
       - run: scripts/build-source.sh --force ${{ matrix.package }}
       - if: always()

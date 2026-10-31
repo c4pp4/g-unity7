@@ -15,7 +15,7 @@ runs:
         source config.sh
         echo "series=${SERIES[0]}" >> "$GITHUB_OUTPUT"
         echo "overlay_ref=${OVERLAY_REF[${SERIES[0]}]}" >> "$GITHUB_OUTPUT"
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
       with:
         repository: c4pp4/gentoo-unity7
         ref: ${{ steps.config.outputs.overlay_ref }}
