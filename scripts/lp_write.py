@@ -14,8 +14,10 @@ from launchpadlib import uris
 from launchpadlib.credentials import Credentials
 from launchpadlib.launchpad import Launchpad
 
-## How long to wait for a copied version to be published in the main PPA.
-PUBLISH_TIMEOUT = 45 * 60
+## How long to wait for a copied version to appear in the main PPA (Pending or
+##  Published). Its publication is up to Launchpad, the first one of a new PPA
+##  takes hours.
+COPY_TIMEOUT = 20 * 60
 
 
 def login(args):
@@ -48,14 +50,14 @@ def cmd_copy(args):
     main.copyPackage(source_name=args.source, version=args.version, from_archive=staging,
                      to_series=args.series, to_pocket="Release", include_binaries=True)
     print(f"Copying {args.source} {args.version} to {args.to_ppa}", file=sys.stderr)
-    deadline = time.time() + PUBLISH_TIMEOUT
+    deadline = time.time() + COPY_TIMEOUT
     while time.time() < deadline:
-        published = source_of(main, lp, args.source, args.version, args.series)
-        if published and published.status == "Published":
-            print(f"Published {args.source} {args.version} in {args.to_ppa}", file=sys.stderr)
+        copied = source_of(main, lp, args.source, args.version, args.series)
+        if copied:
+            print(copied.status)
             return
-        time.sleep(60)
-    sys.exit(f"lp_write.py: {args.source} {args.version} not published in {args.to_ppa} in time")
+        time.sleep(30)
+    sys.exit(f"lp_write.py: {args.source} {args.version} did not appear in {args.to_ppa} in time")
 
 
 def cmd_retry(args):

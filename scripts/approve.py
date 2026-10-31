@@ -33,7 +33,7 @@ import lp  # noqa: E402
 SCRIPTS = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(SCRIPTS)
 LABEL = "approve"
-TITLE = "G Unity⁷: čeká na tebe"
+TITLE = "G Unity⁷ approvals"
 STATE_RE = re.compile(r"<!-- g-unity7-state\n(.*?)\n-->", re.S)
 STATE_ICONS = {"ok": "✅", "building": "⏳", "failed": "❌", "missing": "❔"}
 
@@ -71,11 +71,10 @@ def repo():
 
 
 def find_issue():
-    for state in ("open", "closed"):
-        for issue in github("GET", f"/repos/{repo()}/issues?labels={LABEL}&state={state}&per_page=100"):
-            if issue["title"] == TITLE and "pull_request" not in issue:
-                return issue
-    return None
+    """The approval issue is the oldest issue with the label."""
+    issues = [i for i in github("GET", f"/repos/{repo()}/issues?labels={LABEL}&state=all&per_page=100")
+              if "pull_request" not in i]
+    return min(issues, key=lambda i: i["number"]) if issues else None
 
 
 def load_state(issue):
@@ -112,7 +111,7 @@ def base_of(version):
 def describe_changes(new, old):
     """Describe the patch changes from the patches of new and old ({name: hash})."""
     if not old:
-        return "nový balíček"
+        return "new package"
     changes = []
     for verb, names in (("added", [n for n in new if n not in old]),
                         ("updated", [n for n in new if n in old and old[n] != new[n]]),
@@ -134,7 +133,7 @@ def promote_rows(pkgs):
         if not newer(staging["version"], main.get("version")):
             continue
         state = lp.build_state(pkg["source"], staging["version"], CONFIG["staging"], series)
-        changes = describe_changes(staging.get("patches", {}), main.get("patches")) if main else "nový balíček"
+        changes = describe_changes(staging.get("patches", {}), main.get("patches")) if main else "new package"
         if main and not changes:
             changes = "rebased on " + base_of(staging["version"])
         security = False
@@ -159,47 +158,47 @@ def promote_rows(pkgs):
 
 def render(state):
     out = [f"<!-- g-unity7-state\n{json.dumps(state, indent=1, ensure_ascii=False)}\n-->", ""]
-    out += ["Stav balíčků G Unity⁷, které čekají na tvé rozhodnutí. Tabulky aktualizuje "
-            "workflow `review.yml` každou hodinu, příkazy se píší do komentářů.", ""]
+    out += ["G Unity⁷ packages waiting for the owner's decision. The `review.yml` workflow "
+            "updates the tables every hour, commands are given in comments.", ""]
 
-    out += ["## Ke kontrole před nahráním", ""]
+    out += ["## Review before upload", ""]
     if state["review"]:
-        out += ["| Balíček | Verze | Důvod | Review |", "|---|---|---|---|"]
+        out += ["| Package | Version | Reason | Review |", "|---|---|---|---|"]
         for name, r in sorted(state["review"].items()):
             run = f"https://github.com/{repo()}/actions/runs/{r['run_id']}"
             out.append(f"| `{name}` | `{r['version']}` | {r['reason']} | "
-                       f"[souhrn běhu]({run}) · artefakt `{r['artifact']}` |")
-        out += ["", "`/upload` nahraje vše, `/upload <balíček>…` jen vybrané, "
-                "`/reject <balíček>…` verzi zahodí.", ""]
+                       f"[run summary]({run}) · artifact `{r['artifact']}` |")
+        out += ["", "`/upload` uploads all of them to staging, `/upload <package>…` only the given "
+                "ones, `/reject <package>…` drops the version.", ""]
     else:
-        out += ["Nic nečeká.", ""]
+        out += ["Nothing is waiting.", ""]
 
-    out += ["## Čeká na povýšení", ""]
+    out += ["## Waiting for promotion", ""]
     if state["promote"]:
-        out += ["| Skupina | Balíček | Staging | Hlavní PPA | Build | Změny |",
+        out += ["| Group | Package | Staging | Main PPA | Build | Changes |",
                 "|---|---|---|---|---|---|"]
         for name, r in sorted(state["promote"].items(), key=lambda i: (i[1]["group"] or "~", i[0])):
             lock = " 🔒" if r["security"] else ""
             out.append(f"| {r['group'] or '–'} | `{name}`{lock} | `{r['staging']}` | "
                        f"`{r['main'] or '–'}` | {STATE_ICONS[r['state']]} | {r['changes']} |")
-        out += ["", "✅ sestaveno a publikováno, ⏳ build běží, ❌ selhal, 🔒 bezpečnostní "
-                "oprava z Ubuntu. `/promote` zkopíruje vše ✅ s kompletní skupinou, "
-                "`/promote <balíček>…` jen vybrané, `--force` i s neúplnou skupinou.", ""]
+        out += ["", "✅ built and published, ⏳ building, ❌ failed, 🔒 Ubuntu security update. "
+                "`/promote` copies all ✅ versions of complete groups to the main PPA, "
+                "`/promote <package>…` only the given ones, `--force` also with an incomplete group.", ""]
         failed = [(n, r) for n, r in sorted(state["promote"].items()) if r["state"] == "failed"]
         if failed:
-            out += ["### Selhané buildy", ""]
+            out += ["### Failed builds", ""]
             for name, r in failed:
                 logs = ", ".join(f"[{b['arch_tag']}: {b['buildstate']}]({b['web_link']})"
                                  for b in r["builds"])
                 out.append(f"- `{name}` `{r['staging']}`: {logs}. "
-                           f"Opakování: `/retry {r['source']} {r['staging']}`")
+                           f"Retry: `/retry {r['source']} {r['staging']}`")
             out.append("")
-        out += ["<details><summary>Test ve VM před povýšením</summary>", "",
+        out += ["<details><summary>Testing in a VM before promotion</summary>", "",
                 "```sh", f"sudo add-apt-repository ppa:{CONFIG['staging']}",
                 "sudo apt full-upgrade", "# test", "sudo apt install ppa-purge",
                 f"sudo ppa-purge ppa:{CONFIG['staging']}", "```", "</details>", ""]
     else:
-        out += ["Nic nečeká.", ""]
+        out += ["Nothing is waiting.", ""]
     return "\n".join(out)
 
 
@@ -213,7 +212,7 @@ def save(issue, state):
         issue = github("POST", f"/repos/{repo()}/issues",
                        {"title": TITLE, "body": body, "labels": [LABEL]})
         return issue
-    update = {"body": body, "state": "open" if waiting else "closed"}
+    update = {"title": TITLE, "body": body, "state": "open" if waiting else "closed"}
     return github("PATCH", f"/repos/{repo()}/issues/{issue['number']}", update)
 
 
@@ -225,7 +224,7 @@ def notify_new(issue, state):
             version = r.get("version") or r.get("staging")
             key = f"{section}:{name}"
             if state["seen"].get(key) != version:
-                where = "ke kontrole" if section == "review" else "k povýšení"
+                where = "for review" if section == "review" else "for promotion"
                 new.append(f"- `{name}` `{version}` {where}"
                            + (" 🔒" if r.get("security") else ""))
                 state["seen"][key] = version
@@ -234,7 +233,7 @@ def notify_new(issue, state):
         if name not in state[section]:
             del state["seen"][key]
     if new and issue:
-        comment(issue, "Nové verze:\n" + "\n".join(new))
+        comment(issue, "New versions:\n" + "\n".join(new))
 
 
 def refresh(issue, state, pkgs=None):
@@ -266,7 +265,7 @@ def cmd_add_review(args):
         with open(os.path.join(directory, "patches.txt")) as f:
             new = dict(line.split(" ", 1) for line in f.read().split("\n") if line)
         staging = lp.ppa_latest(result["SOURCE"], CONFIG["staging"], CONFIG["series"])
-        reason = describe_changes(new, staging.get("patches")) if staging else "nový balíček"
+        reason = describe_changes(new, staging.get("patches")) if staging else "new package"
         state["review"][name] = {
             "source": result["SOURCE"],
             "version": result["VERSION"],
@@ -275,7 +274,7 @@ def cmd_add_review(args):
             "input": result["INPUT"],
             "run_id": args.run_id,
             "artifact": args.artifact_prefix + name,
-            "reason": reason or "změna mimo patche",
+            "reason": reason or "change outside the patches",
         }
         state["rejected"].pop(name, None)
     refresh(issue, state)
@@ -297,29 +296,29 @@ def do_upload(issue, state, names, pkgs):
     for name in names:
         r = state["review"].get(name)
         if not r:
-            messages.append(f"- `{name}`: nečeká na kontrolu.")
+            messages.append(f"- `{name}`: not waiting for review.")
             continue
         if name not in pkgs or pkgs[name]["input"] != r["input"]:
-            messages.append(f"- `{name}`: port nebo overlay se od review změnil, "
-                            f"spusť nové sestavení (`gh workflow run ppa.yml -f packages={name}`).")
+            messages.append(f"- `{name}`: the port or the overlay changed since the review, "
+                            f"build it again (`gh workflow run ppa.yml -f packages={name}`).")
             continue
         staging = lp.ppa_latest(r["source"], CONFIG["staging"], CONFIG["series"])
         if staging and not newer(r["version"], staging["version"]):
-            messages.append(f"- `{name}`: staging už má `{staging['version']}`.")
+            messages.append(f"- `{name}`: staging already has `{staging['version']}`.")
             del state["review"][name]
             continue
         with tempfile.TemporaryDirectory() as build_dir:
             target = os.path.join(build_dir, CONFIG["series"], name)
             if not download_artifact(r["run_id"], r["artifact"], target):
-                messages.append(f"- `{name}`: artefakt vypršel, spusť nové sestavení "
+                messages.append(f"- `{name}`: the artifact expired, build it again "
                                 f"(`gh workflow run ppa.yml -f packages={name}`).")
                 continue
             proc = subprocess.run([f"{SCRIPTS}/upload.sh", name], env=dict(os.environ, BUILD_DIR=build_dir),
                                   capture_output=True, text=True)
         if proc.returncode:
-            messages.append(f"- `{name}`: nahrání selhalo:\n```\n{proc.stderr[-1500:]}\n```")
+            messages.append(f"- `{name}`: the upload failed:\n```\n{proc.stderr[-1500:]}\n```")
             continue
-        messages.append(f"- `{name}` `{r['version']}` nahrán do `ppa:{CONFIG['staging']}`.")
+        messages.append(f"- `{name}` `{r['version']}` uploaded to `ppa:{CONFIG['staging']}`.")
         del state["review"][name]
     return messages
 
@@ -329,10 +328,10 @@ def do_reject(state, names):
     for name in names:
         r = state["review"].pop(name, None)
         if not r:
-            messages.append(f"- `{name}`: nečeká na kontrolu.")
+            messages.append(f"- `{name}`: not waiting for review.")
             continue
         state["rejected"][name] = {"base": r["base"], "input": r["input"]}
-        messages.append(f"- `{name}` `{r['version']}` zahozen, znovu se nabídne po změně portu nebo overlaye.")
+        messages.append(f"- `{name}` `{r['version']}` dropped, it is offered again after a change of the port or the overlay.")
     return messages
 
 
@@ -349,29 +348,31 @@ def do_promote(state, names, force, pkgs):
     for name in candidates:
         r = current.get(name)
         if not r:
-            messages.append(f"- `{name}`: nečeká na povýšení.")
+            messages.append(f"- `{name}`: not waiting for promotion.")
             continue
         if name in table and table[name]["staging"] != r["staging"]:
-            messages.append(f"- `{name}`: ve stagingu je mezitím `{r['staging']}` místo "
-                            f"`{table[name]['staging']}`, zkontroluj ho a zadej příkaz znovu.")
+            messages.append(f"- `{name}`: staging has `{r['staging']}` now instead of "
+                            f"`{table[name]['staging']}`, check it and give the command again.")
             continue
         if r["state"] != "ok":
-            messages.append(f"- `{name}`: build není hotový ({STATE_ICONS[r['state']]}).")
+            messages.append(f"- `{name}`: the build is not finished ({STATE_ICONS[r['state']]}).")
             continue
         incomplete = [n for n in groups.get(r["group"], []) if current[n]["state"] != "ok"
                       or (names and n not in names)]
         if incomplete and not force:
-            messages.append(f"- `{name}`: skupina `{r['group']}` není kompletní "
-                            f"({', '.join(incomplete)}), použij `--force`.")
+            messages.append(f"- `{name}`: group `{r['group']}` is incomplete "
+                            f"({', '.join(incomplete)}), use `--force`.")
             continue
         proc = subprocess.run([f"{SCRIPTS}/lp_write.py", "--credentials", credentials, "copy",
                                r["source"], r["staging"], "--from", CONFIG["staging"],
                                "--to", CONFIG["main"], "--series", CONFIG["series"]],
                               capture_output=True, text=True)
         if proc.returncode:
-            messages.append(f"- `{name}`: kopírování selhalo:\n```\n{proc.stderr[-1500:]}\n```")
+            messages.append(f"- `{name}`: the copy failed:\n```\n{proc.stderr[-1500:]}\n```")
             continue
-        messages.append(f"- `{name}` `{r['staging']}` zkopírován do `ppa:{CONFIG['main']}`.")
+        status = proc.stdout.strip()
+        messages.append(f"- `{name}` `{r['staging']}` copied to `ppa:{CONFIG['main']}`"
+                        + (" (Launchpad is publishing it)." if status == "Pending" else "."))
     return messages
 
 
@@ -381,7 +382,7 @@ def do_retry(source, version):
                            "--series", CONFIG["series"]], capture_output=True, text=True)
     if proc.returncode:
         return [f"- `{source}` `{version}`: {proc.stderr.strip()[-500:]}"]
-    return [f"- `{source}` `{version}`: build spuštěn znovu."]
+    return [f"- `{source}` `{version}`: the build is retried."]
 
 
 def run_command(issue, state, text):
@@ -402,7 +403,7 @@ def run_command(issue, state, text):
     elif command == "/retry" and len(args) == 2:
         messages = do_retry(*args)
     else:
-        messages = [f"Neznámý příkaz `{line}`, viz popis issue."]
+        messages = [f"Unknown command `{line}`, see the issue description."]
     refresh(issue, state, pkgs)
     return f"`{line}`\n\n" + "\n".join(messages)
 
