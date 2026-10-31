@@ -1,0 +1,43 @@
+## Check that the patches of all packages still apply and the source packages
+##  can be built, without uploading anything.
+name: Check
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  list:
+    runs-on: ubuntu-latest
+    outputs:
+      packages: ${{ steps.list.outputs.packages }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: list
+        run: |
+          source scripts/lib.sh
+          echo "packages=$(list_packages | python3 -c 'import json, sys; print(json.dumps(sys.stdin.read().split()))')" >> "$GITHUB_OUTPUT"
+
+  check:
+    needs: list
+    runs-on: ubuntu-latest
+    container: ubuntu:26.10
+    strategy:
+      fail-fast: false
+      matrix:
+        package: ${{ fromJSON(needs.list.outputs.packages) }}
+    env:
+      DEBEMAIL: ${{ vars.DEBEMAIL || 'noreply@example.invalid' }}
+      DEBFULLNAME: ${{ vars.DEBFULLNAME || 'c4pp4' }}
+    steps:
+      - run: apt-get update -qq && apt-get install -y -qq --no-install-recommends git ca-certificates >/dev/null
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - run: scripts/build-source.sh --force ${{ matrix.package }}
+      - if: always()
+        run: |
+          summary=$(ls build/*/${{ matrix.package }}/review/summary.md 2>/dev/null | head -1)
+          [ -n "$summary" ] && cat "$summary" >> "$GITHUB_STEP_SUMMARY" || true

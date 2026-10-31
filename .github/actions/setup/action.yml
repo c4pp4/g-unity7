@@ -1,0 +1,28 @@
+name: Setup
+description: >-
+  Check out the overlay at the commit of the series and install the build
+  dependencies in the Ubuntu container (the repository is checked out already).
+outputs:
+  series:
+    description: The series to build
+    value: ${{ steps.config.outputs.series }}
+runs:
+  using: composite
+  steps:
+    - id: config
+      shell: bash
+      run: |
+        source config.sh
+        echo "series=${SERIES[0]}" >> "$GITHUB_OUTPUT"
+        echo "overlay_ref=${OVERLAY_REF[${SERIES[0]}]}" >> "$GITHUB_OUTPUT"
+    - uses: actions/checkout@v4
+      with:
+        repository: c4pp4/gentoo-unity7
+        ref: ${{ steps.config.outputs.overlay_ref }}
+        path: overlay
+    - shell: bash
+      run: |
+        export DEBIAN_FRONTEND=noninteractive
+        apt-get update -qq
+        apt-get install -y -qq --no-install-recommends $(cat scripts/deps.txt) >/dev/null
+        echo "OVERLAY_DIR=$PWD/overlay" >> "$GITHUB_ENV"

@@ -1,0 +1,18 @@
+Source: g-unity7-apt-pin
+Section: admin
+Priority: optional
+Maintainer: @MAINTAINER@
+Build-Depends: debhelper-compat (= 13)
+Standards-Version: 4.7.2
+Rules-Requires-Root: no
+Homepage: https://github.com/c4pp4/g-unity7
+
+Package: g-unity7-apt-pin
+Architecture: all
+Depends: ${misc:Depends}
+Description: apt pin of the G Unity⁷ PPA
+ Makes apt keep the packages of ppa:c4pp4/g-unity7 even if Ubuntu has a newer
+ version of them, until their G Unity⁷ version is released in the PPA. Without
+ it, a newer Ubuntu version would replace a G Unity⁷ package and its changes.
+ .
+ Packages that are not in the PPA are not affected.

@@ -1,0 +1,13 @@
+ca-certificates
+devscripts
+diffstat
+dpkg-dev
+dput-ng
+git
+gnupg
+lintian
+patch
+python3
+python3-launchpadlib
+quilt
+ubuntu-dev-tools

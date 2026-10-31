@@ -1,0 +1,127 @@
+## Build the source packages whose Ubuntu version or input changed, upload
+##  those with unchanged patches to the staging PPA and put the others in the
+##  approval issue for review (/upload).
+name: PPA
+
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+    inputs:
+      packages:
+        description: Packages separated by spaces (empty means all changed ones)
+        required: false
+        default: ''
+      force:
+        description: Build even if unchanged
+        type: boolean
+        default: false
+
+concurrency:
+  group: ppa
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    container: ubuntu:26.10
+    permissions:
+      contents: read
+      issues: read
+    outputs:
+      packages: ${{ steps.plan.outputs.packages }}
+      series: ${{ steps.setup.outputs.series }}
+    steps:
+      - run: apt-get update -qq && apt-get install -y -qq --no-install-recommends git ca-certificates >/dev/null
+      - uses: actions/checkout@v4
+      - id: setup
+        uses: ./.github/actions/setup
+      - id: plan
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PACKAGES: ${{ inputs.packages }}
+          FORCE: ${{ inputs.force && '--force' || '' }}
+        run: |
+          scripts/approve.py state > state.json
+          echo "packages=$(scripts/plan.sh $FORCE --state state.json $PACKAGES)" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: plan
+    if: needs.plan.outputs.packages != '[]'
+    runs-on: ubuntu-latest
+    container: ubuntu:26.10
+    strategy:
+      fail-fast: false
+      matrix:
+        package: ${{ fromJSON(needs.plan.outputs.packages) }}
+    env:
+      DEBEMAIL: ${{ vars.DEBEMAIL }}
+      DEBFULLNAME: ${{ vars.DEBFULLNAME }}
+      BUILD: build/${{ needs.plan.outputs.series }}/${{ matrix.package }}
+    steps:
+      - run: apt-get update -qq && apt-get install -y -qq --no-install-recommends git ca-certificates >/dev/null
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - run: scripts/build-source.sh ${{ inputs.force && '--force' || '' }} ${{ matrix.package }}
+      - if: always()
+        run: |
+          [ -f "$BUILD"/review/summary.md ] && cat "$BUILD"/review/summary.md >> "$GITHUB_STEP_SUMMARY" || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: source-${{ matrix.package }}
+          retention-days: 30
+          path: |
+            ${{ env.BUILD }}/out
+            ${{ env.BUILD }}/review
+            ${{ env.BUILD }}/result.env
+            ${{ env.BUILD }}/patches.txt
+
+  upload:
+    needs: [plan, build]
+    if: always() && needs.build.result != 'skipped'
+    runs-on: ubuntu-latest
+    container: ubuntu:26.10
+    environment: launchpad
+    permissions:
+      contents: read
+      issues: write
+      actions: read
+    env:
+      DEBEMAIL: ${{ vars.DEBEMAIL }}
+      DEBFULLNAME: ${{ vars.DEBFULLNAME }}
+      GPG_KEY_ID: ${{ vars.GPG_KEY_ID }}
+      SERIES: ${{ needs.plan.outputs.series }}
+    steps:
+      - run: apt-get update -qq && apt-get install -y -qq --no-install-recommends git ca-certificates >/dev/null
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: source-*
+          path: artifacts
+      - env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          review=()
+          failed=
+          for dir in artifacts/source-*; do
+            pkg=${dir#artifacts/source-}
+            mkdir -p build/"$SERIES"
+            mv "$dir" build/"$SERIES"/"$pkg"
+            source build/"$SERIES"/"$pkg"/result.env
+            [ "$STATUS" = built ] || continue
+            if [ -n "$NEEDS_REVIEW" ]; then
+              review+=( build/"$SERIES"/"$pkg" )
+            else
+              scripts/upload.sh "$pkg" || failed=1
+            fi
+          done
+          if [ ${#review[@]} -gt 0 ]; then
+            scripts/approve.py add-review --run-id "$GITHUB_RUN_ID" "${review[@]}"
+          fi
+          [ -z "$failed" ]

@@ -1,0 +1,6 @@
+# G Unity⁷: keep the packages of ppa:c4pp4/g-unity7 even if Ubuntu has a newer
+# version of them. The newer Ubuntu version is installed once its G Unity⁷
+# version is released in the PPA.
+Package: *
+Pin: release o=LP-PPA-c4pp4-g-unity7
+Pin-Priority: 1001

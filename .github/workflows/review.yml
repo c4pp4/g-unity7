@@ -1,0 +1,60 @@
+## The approval issue: update it every hour, run the commands of its comments
+##  (/upload, /reject, /promote, /retry) given by the repository owner.
+name: Review
+
+on:
+  schedule:
+    - cron: '41 * * * *'
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      command:
+        description: Command as in a comment of the issue (empty only updates it)
+        required: false
+        default: ''
+
+concurrency:
+  group: review
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  review:
+    if: >-
+      github.event_name != 'issue_comment' ||
+      (contains(github.event.issue.labels.*.name, 'approve') &&
+       github.event.comment.author_association == 'OWNER' &&
+       startsWith(github.event.comment.body, '/'))
+    runs-on: ubuntu-latest
+    container: ubuntu:26.10
+    environment: launchpad
+    permissions:
+      contents: read
+      issues: write
+      actions: read
+    env:
+      DEBEMAIL: ${{ vars.DEBEMAIL }}
+      DEBFULLNAME: ${{ vars.DEBFULLNAME }}
+      GPG_KEY_ID: ${{ vars.GPG_KEY_ID }}
+    steps:
+      - run: apt-get update -qq && apt-get install -y -qq --no-install-recommends git ca-certificates >/dev/null
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          LP_CREDENTIALS: ${{ secrets.LP_CREDENTIALS }}
+          COMMAND: ${{ github.event.comment.body || inputs.command }}
+        run: |
+          export LP_CREDENTIALS_FILE=$(mktemp)
+          trap 'rm -f "$LP_CREDENTIALS_FILE"' EXIT
+          printf '%s\n' "$LP_CREDENTIALS" > "$LP_CREDENTIALS_FILE"
+          if [ -n "$COMMAND" ]; then
+            scripts/approve.py comment "$COMMAND"
+          else
+            scripts/approve.py refresh
+          fi

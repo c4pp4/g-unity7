@@ -1,0 +1,2 @@
+# Pinning the packages of the G Unity⁷ PPA is the purpose of this package
+g-unity7-apt-pin: package-installs-apt-preferences [etc/apt/preferences.d/g-unity7.pref]
