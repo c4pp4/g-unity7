@@ -9,6 +9,11 @@ on:
 permissions:
   contents: read
 
+## The default shell of container jobs is sh.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   list:
     runs-on: ubuntu-latest
@@ -39,5 +44,7 @@ jobs:
       - run: scripts/build-source.sh --force ${{ matrix.package }}
       - if: always()
         run: |
-          summary=$(ls build/*/${{ matrix.package }}/review/summary.md 2>/dev/null | head -1)
-          [ -n "$summary" ] && cat "$summary" >> "$GITHUB_STEP_SUMMARY" || true
+          for summary in build/*/${{ matrix.package }}/review/summary.md; do
+            [ -f "$summary" ] && cat "$summary" >> "$GITHUB_STEP_SUMMARY"
+          done
+          true

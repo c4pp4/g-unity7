@@ -24,6 +24,11 @@ concurrency:
 permissions:
   contents: read
 
+## The default shell of container jobs is sh.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   plan:
     runs-on: ubuntu-latest
