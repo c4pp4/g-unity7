@@ -9,6 +9,10 @@ PATCHES=(
 debian_edit() {
 	local f
 
+	# HiddenUnderSystemd and the session fixes of the G Unity⁷ cinnamon-session #
+	sed -i -e "s/^\( *\)cinnamon-session,$/\1cinnamon-session (>= 6.6.4-1+gu7),/" debian/control || return 1
+	grep -q "^ *cinnamon-session (>= 6.6.4-1+gu7),$" debian/control || return 1
+
 	# Files of the ebuild, installed from debian/g-unity7 #
 	install -d debian/g-unity7 || return 1
 	install -m 755 "${FILESDIR}"/unity-session-quit debian/g-unity7/ || return 1

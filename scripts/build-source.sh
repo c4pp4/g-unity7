@@ -85,6 +85,19 @@ else
 	dpkg-source --no-check -x --skip-patches "${orig_dsc}" "${tree}" >/dev/null \
 		|| die "Unpacking ${orig_dsc##*/} failed."
 	cp -a "${tree}"/debian "${work}"/debian.orig
+
+	## Derived source package (SOURCE_NAME): the Ubuntu source under another
+	##  name, its orig tarball copied under that name.
+	if [[ ${SOURCE_NAME} != "${UBUNTU_SRC}" ]]; then
+		upstream=${ubuntu_version#*:}
+		upstream=${upstream%-*}
+		sed -i "s/^Source: .*/Source: ${SOURCE_NAME}/" "${tree}"/debian/control
+		grep -qx "Source: ${SOURCE_NAME}" "${tree}"/debian/control || die "Renaming the source failed."
+		for f in "${work}/${UBUNTU_SRC}_${upstream}".orig*.tar.*; do
+			[[ -f ${f} ]] && cp "${f}" "${work}/${SOURCE_NAME}_${f#"${work}/${UBUNTU_SRC}_"}"
+		done
+		einfo "Derived source ${SOURCE_NAME} from ${UBUNTU_SRC}."
+	fi
 fi
 
 format=$(cat "${tree}"/debian/source/format 2>/dev/null || echo "1.0")

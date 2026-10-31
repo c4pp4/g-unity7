@@ -64,7 +64,11 @@ src_edit() {
 
 `FILESDIR` (the overlay `files/` directory) and `BRANDING_DIR` can be used in
 the functions. Optional: `PATCH_MODE=quilt|direct` overrides the mode chosen from
-`debian/source/format`, `GROUP` names packages promoted together.
+`debian/source/format`, `GROUP` names packages promoted together,
+`OVERLAY_FILES` lists further overlay files the package is made from (they are
+part of its input hash), `SOURCE_NAME` makes a derived source package of
+`UBUNTU_SRC` under another name (e.g. nemo-engrampa from nemo-fileroller). Own packages may set `local_prepare()` to make their
+source from overlay files.
 
 ## Building locally
 

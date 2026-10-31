@@ -55,6 +55,9 @@ input_hash() {
 		if [[ -n ${OVERLAY_PKG:-} && -d ${overlay}/${OVERLAY_PKG}/files ]]; then
 			(cd "${overlay}/${OVERLAY_PKG}"/files && find . -type f -print0 | sort -z | xargs -0 sha256sum)
 		fi
+		if [[ ${#OVERLAY_FILES[@]} -gt 0 ]]; then
+			(cd "${overlay}" && sha256sum "${OVERLAY_FILES[@]}")
+		fi
 		if [[ -d ${REPO_ROOT}/branding ]]; then
 			(cd "${REPO_ROOT}"/branding && find . -type f -print0 | sort -z | xargs -0 -r sha256sum)
 		fi
@@ -78,6 +81,7 @@ load_package() {
 
 	unset OVERLAY_PKG UBUNTU_SRC SOURCE_NAME GROUP PATCH_MODE LOCAL
 	PATCHES=()
+	OVERLAY_FILES=()
 	unset -f debian_edit src_edit local_prepare
 
 	if [[ -f ${REPO_ROOT}/local/${pkg}/package.sh ]]; then

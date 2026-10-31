@@ -1,0 +1,110 @@
+Source: g-unity7-meta
+Section: metapackages
+Priority: optional
+Maintainer: @MAINTAINER@
+Build-Depends: debhelper-compat (= 13)
+Standards-Version: 4.7.2
+Rules-Requires-Root: no
+Homepage: https://github.com/c4pp4/g-unity7
+
+Package: g-unity7-desktop
+Architecture: all
+Depends: ${misc:Depends},
+         cinnamon-session (>= 6.6.4-1+gu7),
+         fonts-dejavu-core,
+         g-unity7-apt-pin,
+         g-unity7-settings,
+         indicator-appmenu,
+         indicator-datetime,
+         libgtk-nocsd0,
+         lightdm,
+         nemo (>= 6.6.4-1+gu7),
+         network-manager-applet (>= 1.36.0-4ubuntu1+gu7),
+         overlay-scrollbar,
+         unity,
+         unity-control-center,
+         unity-greeter,
+         unity-lens-applications,
+         unity-scope-home,
+         unity-session (>= 49.4+gu7),
+         unity-settings-daemon
+Recommends: at-spi2-core,
+            atril | evince | papers,
+            dconf-editor,
+            nemo-engrampa | nemo-fileroller,
+            eom | eog | loupe,
+            ffmpegthumbnailer,
+            firefox,
+            five-or-more,
+            fonts-freefont-ttf,
+            fonts-liberation,
+            fonts-noto,
+            fonts-noto-cjk,
+            fonts-noto-color-emoji,
+            fonts-urw-base35,
+            four-in-a-row,
+            gnome-chess,
+            gnome-disk-utility,
+            gnome-klotski,
+            gnome-mahjongg,
+            gnome-mines,
+            gnome-nibbles,
+            gnome-robots,
+            gnome-sudoku,
+            gnome-system-monitor,
+            gnome-taquin,
+            gnome-tetravex,
+            gnuchess,
+            hitori,
+            iagno,
+            indicator-keyboard,
+            indicator-notifications,
+            indicator-power,
+            indicator-printers,
+            indicator-session,
+            indicator-sound,
+            libreoffice,
+            lightsoff,
+            mate-calc | gnome-calculator,
+            mate-terminal,
+            mate-utils,
+            onboard,
+            orca,
+            pluma | gedit | gnome-text-editor,
+            quadrapassel,
+            rhythmbox | audacious,
+            seahorse,
+            swell-foop,
+            tali,
+            thunderbird | evolution,
+            transmission-gtk,
+            unity-indicator-appearance,
+            unity-lens-files,
+            unity-lens-music (>= 6.9.1+16.04-0ubuntu7+gu7),
+            unity-lens-photos,
+            unity-lens-video,
+            unity-scope-calculator,
+            unity-tweak-tool,
+            vlc
+Suggests: deja-dup,
+          diodon,
+          gnome-calendar,
+          gnome-characters,
+          gnome-connections,
+          gnome-contacts,
+          gnome-font-viewer,
+          gnome-maps,
+          gnome-weather,
+          indicator-bluetooth,
+          mailnag,
+          meteo-qt,
+          pidgin,
+          psensor,
+          simple-scan
+Description: G Unity⁷ desktop
+ The Unity7 desktop with the changes of the gentoo-unity7 overlay: the Unity
+ shell on cinnamon-session with Nemo, the indicators, lenses and scopes, Unity
+ Control Center and Unity Greeter.
+ .
+ This metapackage depends on the components of the desktop and recommends the
+ applications installed by the overlay by default.
