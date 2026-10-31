@@ -1,0 +1,3 @@
+usr/include/libdee-qt6/*.h
+usr/lib/*/libdee-qt6.so
+usr/lib/*/pkgconfig/libdee-qt6.pc

@@ -1,6 +1,6 @@
 OVERLAY_PKG="ehooks/gnome-extra/nemo"
 UBUNTU_SRC="nemo"
-GROUP="session"
+GROUP="desktop"
 
 PATCHES=(
 	add-unity7-support.patch

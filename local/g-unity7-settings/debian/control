@@ -13,8 +13,8 @@ Depends: ${misc:Depends},
          fonts-ubuntu,
          ubuntu-sounds,
          ubuntu-wallpapers,
-         yaru-theme-gtk,
-         yaru-theme-icon
+         yaru-theme-gtk (>= 26.10.3ubuntu+gu7),
+         yaru-theme-icon (>= 26.10.3ubuntu+gu7)
 Description: default settings of the G Unity⁷ desktop
  GSettings overrides of the Unity session and Unity Greeter from the
  gentoo-unity7 overlay: the Yaru-dark theme, Ubuntu fonts, Nemo desktop icons,

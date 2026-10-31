@@ -1,6 +1,6 @@
 OVERLAY_PKG="ehooks/gnome-extra/cinnamon-session"
 UBUNTU_SRC="cinnamon-session"
-GROUP="session"
+GROUP="desktop"
 
 PATCHES=(
 	Add-SessionIsActive-property-and-fix-session-handling.patch

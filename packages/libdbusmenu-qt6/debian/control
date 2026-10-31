@@ -1,0 +1,38 @@
+Source: libdbusmenu-qt6
+Section: libs
+Priority: optional
+Maintainer: @MAINTAINER@
+Build-Depends: debhelper-compat (= 13),
+ cmake (>= 3.16),
+ pkgconf,
+ qt6-base-dev,
+Standards-Version: 4.7.3
+Rules-Requires-Root: no
+Homepage: https://launchpad.net/libdbusmenu-qt
+Description: Qt 6 implementation of the DBusMenu protocol
+ This library provides a Qt 6 implementation of the DBusMenu protocol.
+ .
+ The DBusMenu protocol makes it possible for applications to export
+ and import their menus over D-Bus.
+
+Package: libdbusmenu-qt6-2
+Architecture: any
+Pre-Depends: ${misc:Pre-Depends}
+Depends: ${misc:Depends},
+ ${shlibs:Depends}
+Multi-Arch: same
+Description: ${source:Synopsis}
+ ${source:Extended-Description}
+
+Package: libdbusmenu-qt6-dev
+Section: libdevel
+Architecture: any
+Depends: libdbusmenu-qt6-2 (= ${binary:Version}),
+ qt6-base-dev,
+ ${misc:Depends}
+Multi-Arch: same
+Description: ${source:Synopsis} (development)
+ ${source:Extended-Description}
+ .
+ This package provides header files and CMake configuration files for
+ development.

@@ -1,0 +1,7 @@
+        'application://firefox_firefox.desktop',
+        'application://chromium_chromium.desktop',
+        'application://google-chrome.desktop',
+        'application://microsoft-edge.desktop',
+        'application://opera.desktop',
+        'application://vivaldi-stable.desktop',
+        'application://org.gnome.Epiphany.desktop',

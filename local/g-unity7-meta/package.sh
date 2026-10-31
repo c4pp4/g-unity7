@@ -3,4 +3,4 @@
 ##  the default USE flags of the overlay (Recommends) and the rest (Suggests).
 ##  The ported packages are required in their G Unity⁷ version (>= ...+gu7).
 OVERLAY_PKG="unity-base/unity-meta"
-GROUP="session"
+GROUP="desktop"

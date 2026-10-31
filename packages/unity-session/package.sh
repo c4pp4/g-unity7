@@ -1,6 +1,6 @@
 OVERLAY_PKG="unity-base/unity-session"
 UBUNTU_SRC="unity-session"
-GROUP="session"
+GROUP="desktop"
 
 PATCHES=(
 	release-sound-card-at-session-end.patch

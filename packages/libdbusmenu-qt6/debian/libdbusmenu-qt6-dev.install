@@ -1,0 +1,4 @@
+usr/include/dbusmenu-qt6/
+usr/lib/*/libdbusmenu-qt6.so
+usr/lib/*/pkgconfig/dbusmenu-qt6.pc
+usr/lib/*/cmake/dbusmenu-qt6/

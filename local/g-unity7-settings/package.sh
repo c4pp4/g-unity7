@@ -3,6 +3,7 @@
 ##  (+accessibility +ubuntu-sounds, -lowgfx, all scopes, +ready-sound), the
 ##  default wallpaper of Ubuntu and the Yaru icons with the default accent.
 OVERLAY_PKG="unity-base/unity-settings"
+GROUP="desktop"
 OVERLAY_FILES=(
 	unity-base/unity-greeter/files/ubuntu-unity-greeter.gsettings-override
 )

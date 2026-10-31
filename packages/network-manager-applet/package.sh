@@ -1,6 +1,6 @@
 OVERLAY_PKG="ehooks/gnome-extra/nm-applet"
 UBUNTU_SRC="network-manager-applet"
-GROUP="session"
+GROUP="desktop"
 
 PATCHES=(
 	do-not-autostart-in-cinnamon.patch
