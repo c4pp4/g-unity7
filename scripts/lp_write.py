@@ -2,15 +2,16 @@
 """Launchpad changes of the G Unity⁷ scripts (authenticated, launchpadlib):
 copy a version from the staging PPA to the main PPA, retry failed builds.
 
-The credentials file is made once with:
-  python3 -c 'from launchpadlib.launchpad import Launchpad;
-    Launchpad.login_with("g-unity7", "production", credentials_file="lp-credentials")'
+The credentials file is made once with scripts/lp_login.py.
 """
 
 import argparse
+import os
 import sys
 import time
 
+from launchpadlib import uris
+from launchpadlib.credentials import Credentials
 from launchpadlib.launchpad import Launchpad
 
 ## How long to wait for a copied version to be published in the main PPA.
@@ -18,8 +19,12 @@ PUBLISH_TIMEOUT = 45 * 60
 
 
 def login(args):
-    return Launchpad.login_with("g-unity7", "production", version="devel",
-                                credentials_file=args.credentials)
+    """Log in with the credentials file only, never ask for an authorization."""
+    if not os.path.isfile(args.credentials or ""):
+        sys.exit(f"lp_write.py: credentials file {args.credentials} not found")
+    credentials = Credentials.load_from_path(args.credentials)
+    return Launchpad(credentials, None, None, service_root=uris.lookup_service_root("production"),
+                     version="devel")
 
 
 def archive(lp, ppa):

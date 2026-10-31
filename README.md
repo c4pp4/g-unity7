@@ -32,6 +32,7 @@ scripts/
   approve.py              the approval issue and its commands
   lp.py                   Launchpad queries (versions, build states)
   lp_write.py             Launchpad changes (copy to the main PPA, retry)
+  lp_login.py             Launchpad credentials of lp_write.py (public write only)
   dep3.py                 overlay patch header → DEP-3 header
 local/<package>/          own packages (package.sh and the whole source)
 Containerfile             the build container (Ubuntu of the series)
@@ -115,6 +116,6 @@ scripts/run-local.sh --gpg scripts/upload.sh libunity
 - Environment `launchpad`, deployment branches limited to `master`:
   - secrets `GPG_PRIVATE_KEY` (only the signing subkey:
     `gpg --armor --export-secret-subkeys <subkey>!`), `GPG_PASSPHRASE`,
-    `LP_CREDENTIALS` (launchpadlib credentials file, see `scripts/lp_write.py`)
+    `LP_CREDENTIALS` (launchpadlib credentials file made by `scripts/lp_login.py`)
   - variables `DEBEMAIL`, `DEBFULLNAME`, `GPG_KEY_ID`
 - Repository variables `DEBEMAIL` and `DEBFULLNAME` for the build jobs.
