@@ -124,6 +124,17 @@ def describe_changes(new, old):
     return "; ".join(changes)
 
 
+def waiting_groups(state, pkgs):
+    """Members of each group still waiting for review before the upload: the
+    group is not complete in staging until they are uploaded or rejected."""
+    groups = {}
+    for name in state["review"]:
+        group = pkgs.get(name, {}).get("group")
+        if group:
+            groups.setdefault(group, []).append(name)
+    return groups
+
+
 def promote_rows(pkgs):
     """Versions of the staging PPA newer than in the main PPA."""
     rows = {}
@@ -138,7 +149,10 @@ def promote_rows(pkgs):
         state = lp.build_state(pkg["source"], staging["version"], CONFIG["staging"], series)
         changes = describe_changes(staging.get("patches", {}), main.get("patches")) if main else "new package"
         if main and not changes:
-            changes = "rebased on " + base_of(staging["version"])
+            if base_of(staging["version"]) != base_of(main["version"]):
+                changes = "rebased on " + base_of(staging["version"])
+            else:
+                changes = "rebuild"
         security = False
         if not pkg["local"]:
             version, pocket = lp.ubuntu_version(pkg["source"], series)
@@ -159,7 +173,7 @@ def promote_rows(pkgs):
 
 ## The issue body.
 
-def render(state):
+def render(state, pkgs=None):
     out = [f"<!-- g-unity7-state\n{json.dumps(state, indent=1, ensure_ascii=False)}\n-->", ""]
     out += ["G Unity⁷ packages waiting for the owner's decision. The `review.yml` workflow "
             "updates the tables every hour, commands are given in comments.", ""]
@@ -177,13 +191,17 @@ def render(state):
         out += ["Nothing is waiting.", ""]
 
     out += ["## Waiting for promotion", ""]
+    waiting = waiting_groups(state, pkgs or {})
     if state["promote"]:
         out += ["| Group | Package | Staging | Main PPA | Build | Changes |",
                 "|---|---|---|---|---|---|"]
         for name, r in sorted(state["promote"].items(), key=lambda i: (i[1]["group"] or "~", i[0])):
             lock = " 🔒" if r["security"] else ""
+            note = ""
+            if r["group"] and r["group"] in waiting:
+                note = f"; group waits for review: {', '.join(waiting[r['group']])}"
             out.append(f"| {r['group'] or '–'} | `{name}`{lock} | `{r['staging']}` | "
-                       f"`{r['main'] or '–'}` | {STATE_ICONS[r['state']]} | {r['changes']} |")
+                       f"`{r['main'] or '–'}` | {STATE_ICONS[r['state']]} | {r['changes']}{note} |")
         out += ["", "✅ built and published, ⏳ building, ❌ failed, 🔒 Ubuntu security update. "
                 "`/promote` copies all ✅ versions of complete groups to the main PPA, "
                 "`/promote <package>…` only the given ones, `--force` also with an incomplete group.", ""]
@@ -205,9 +223,9 @@ def render(state):
     return "\n".join(out)
 
 
-def save(issue, state):
+def save(issue, state, pkgs=None):
     """Write the state to the issue, create, close or reopen it."""
-    body = render(state)
+    body = render(state, pkgs)
     waiting = bool(state["review"] or state["promote"])
     if not issue:
         if not waiting:
@@ -242,9 +260,9 @@ def notify_new(issue, state):
 def refresh(issue, state, pkgs=None):
     pkgs = pkgs or packages()
     state["promote"] = promote_rows(pkgs)
-    issue = save(issue, state)
+    issue = save(issue, state, pkgs)
     notify_new(issue, state)
-    return save(issue, state)
+    return save(issue, state, pkgs)
 
 
 ## Commands.
@@ -349,6 +367,7 @@ def do_promote(state, names, force, pkgs):
     for name, r in current.items():
         if r["group"]:
             groups.setdefault(r["group"], []).append(name)
+    waiting = waiting_groups(state, pkgs)
     credentials = os.environ.get("LP_CREDENTIALS_FILE")
     for name in candidates:
         r = current.get(name)
@@ -364,6 +383,7 @@ def do_promote(state, names, force, pkgs):
             continue
         incomplete = [n for n in groups.get(r["group"], []) if current[n]["state"] != "ok"
                       or (names and n not in names)]
+        incomplete += [f"{n} (waits for review)" for n in waiting.get(r["group"], [])]
         if incomplete and not force:
             messages.append(f"- `{name}`: group `{r['group']}` is incomplete "
                             f"({', '.join(incomplete)}), use `--force`.")
