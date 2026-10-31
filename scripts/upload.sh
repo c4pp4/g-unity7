@@ -73,7 +73,21 @@ debsign "${debsign_args[@]}" --re-sign -k"${GPG_KEY_ID}" "${changes}" >&2 || die
 dput_args=()
 [[ -n ${simulate} ]] && dput_args+=( --simulate )
 einfo "Uploading ${SOURCE} ${VERSION} to ppa:${PPA_STAGING}$([[ -n ${simulate} ]] && echo " (simulated)")"
-dput "${dput_args[@]}" "ppa:${PPA_STAGING}" "${changes}" || die "Upload failed."
+
+## The FTP server of Launchpad refuses the files of uploads following each
+##  other closely ("Upload permissions error"), try again after a while.
+##  dput itself reports success, so its output is checked too.
+for attempt in 1 2 3 4; do
+	if dput --force "${dput_args[@]}" "ppa:${PPA_STAGING}" "${changes}" > "${base_dir}"/dput.log 2>&1 \
+		&& ! grep -q "Upload permissions error\|Could not upload file" "${base_dir}"/dput.log; then
+		cat "${base_dir}"/dput.log >&2
+		break
+	fi
+	cat "${base_dir}"/dput.log >&2
+	[[ ${attempt} -eq 4 ]] && die "Upload failed."
+	ewarn "Upload refused, trying again in $(( attempt * 90 )) s."
+	sleep $(( attempt * 90 ))
+done
 
 [[ -z ${simulate} ]] && echo "UPLOADED=$(date -u +%FT%TZ)" >> "${base_dir}"/result.env
 einfo "Done, Launchpad sends the result to ${DEBEMAIL}."

@@ -124,6 +124,8 @@ jobs:
               review+=( build/"$SERIES"/"$pkg" )
             else
               scripts/upload.sh "$pkg" || failed=1
+              # Launchpad refuses uploads following each other closely
+              sleep 60
             fi
           done
           if [ ${#review[@]} -gt 0 ]; then

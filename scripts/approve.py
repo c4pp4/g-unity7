@@ -23,6 +23,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.request
 import zipfile
@@ -35,6 +36,8 @@ REPO_ROOT = os.path.dirname(SCRIPTS)
 LABEL = "approve"
 TITLE = "G Unity⁷ approvals"
 STATE_RE = re.compile(r"<!-- g-unity7-state\n(.*?)\n-->", re.S)
+## Pause after an upload before the next one (seconds).
+UPLOAD_PAUSE = 60
 STATE_ICONS = {"ok": "✅", "building": "⏳", "failed": "❌", "missing": "❔"}
 
 
@@ -320,6 +323,8 @@ def do_upload(issue, state, names, pkgs):
             continue
         messages.append(f"- `{name}` `{r['version']}` uploaded to `ppa:{CONFIG['staging']}`.")
         del state["review"][name]
+        ## Launchpad refuses uploads following each other closely.
+        time.sleep(UPLOAD_PAUSE)
     return messages
 
 
