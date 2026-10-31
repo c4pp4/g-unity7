@@ -25,6 +25,17 @@ src_edit() {
 		gnome-settings-daemon/gsd-rr-config.c || return 1
 	grep -Fq "execve (canary_argv[0], canary_argv, canary_env); _exit (1);" gnome-settings-daemon/gsd-rr-config.c || return 1
 
+	# debian/unity-settings-daemon.install moves usr/libexec to usr/lib/unity-settings-daemon, #
+	#  the paths of the script and the XDG autostart file must point there #
+	sed -i -e "s:@libexecdir@/unity-settings-daemon$:/usr/lib/unity-settings-daemon/unity-settings-daemon:" \
+		gnome-settings-daemon/unity-settings-daemon-localeexec.in || return 1
+	grep -Fqx "exec /usr/lib/unity-settings-daemon/unity-settings-daemon" \
+		gnome-settings-daemon/unity-settings-daemon-localeexec.in || return 1
+	sed -i -e "s:^Exec=@libexecdir@/unity-settings-daemon-localeexec$:Exec=/usr/lib/unity-settings-daemon/unity-settings-daemon-localeexec:" \
+		data/unity-settings-daemon.desktop.in.in || return 1
+	grep -Fqx "Exec=/usr/lib/unity-settings-daemon/unity-settings-daemon-localeexec" \
+		data/unity-settings-daemon.desktop.in.in || return 1
+
 	# Apply the regional formats setting also when started by systemd #
 	sed -i \
 		-e "s:^ExecStart=/usr/lib/unity-settings-daemon/unity-settings-daemon$:&-localeexec:" \

@@ -19,6 +19,12 @@ debian_edit() {
 	grep -q "^ *liblightdm-gobject-dev (>= 1.4.0),$" debian/control || return 1
 	grep -q "^ *lightdm-vala,$" debian/control || return 1
 
+	# 60-lightdm-gtk-greeter.conf of lightdm-gtk-greeter (installed with Ubuntu Unity) #
+	#  overrides 50-unity-greeter.conf, use a later file #
+	mv debian/50-unity-greeter.conf debian/90-unity-greeter.conf || return 1
+	sed -i -e "s:^debian/50-unity-greeter.conf :debian/90-unity-greeter.conf :" debian/install || return 1
+	grep -q "^debian/90-unity-greeter.conf " debian/install || return 1
+
 	# G Unity⁷ logo and the hidden logo of secondary monitors #
 	install -d debian/g-unity7 || return 1
 	install -m 644 "${BRANDING_DIR}"/greeter-logo.png debian/g-unity7/logo.png || return 1
