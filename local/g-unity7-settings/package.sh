@@ -16,4 +16,11 @@ local_prepare() {
 	# +ready-sound: the greeter plays its ready sound #
 	sed -i -e "/play-ready-sound/d" "${greeter}" || return 1
 	! grep -Fq "play-ready-sound" "${greeter}" || return 1
+
+	# The G Unity⁷ logo of unity-greeter, 20_ubuntu-unity.gschema.override of #
+	#  ubuntu-unity-settings sets the Ubuntu Unity logo #
+	sed -i \
+		-e "/^\[com.canonical.unity-greeter:unity-greeter\]$/a logo = '/usr/share/unity-greeter/logo.png'" \
+		"${greeter}" || return 1
+	grep -qx "logo = '/usr/share/unity-greeter/logo.png'" "${greeter}" || return 1
 }

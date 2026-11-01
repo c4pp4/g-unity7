@@ -26,16 +26,19 @@ sudo apt install g-unity7-desktop
 `g-unity7-desktop` installs `g-unity7-apt-pin`, which prefers the packages of
 the PPA to those of Ubuntu.
 
-To remove the applications of Ubuntu Unity that G Unity⁷ replaces, mark them as
-automatically installed (the installer of Ubuntu Unity marks them as manually
-installed) and let apt remove them:
+To remove the applications of Ubuntu Unity that G Unity⁷ replaces, run:
 
 ```
 sudo g-unity7-cleanup
-sudo apt --purge autoremove
 ```
 
-`g-unity7-cleanup --dry-run` shows the packages without changing anything.
+It works as `emerge --depclean` of Gentoo. The installer of Ubuntu Unity marks
+its applications as manually installed, so `apt autoremove` never removes them,
+and apt keeps every installed alternative of a relation such as
+`showtime | vlc`. `g-unity7-cleanup` removes the duplicates and the other
+installed alternatives of the applications of `g-unity7-desktop`, except those
+you installed yourself, and the packages autoremove removes then. It shows all
+of them and asks first, `g-unity7-cleanup --dry-run` changes nothing.
 
 ## Layout
 

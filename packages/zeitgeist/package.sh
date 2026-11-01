@@ -16,11 +16,13 @@ debian_edit() {
 		-e "/rhythmbox/r ${FILESDIR}/music-clients" \
 		-e '/Calculator/a +    arr.add (event_for_desktop_file ("mate-calc.desktop", ++ts));' \
 		-e '/gedit/a +    arr.add (event_for_desktop_file ("pluma.desktop", ++ts));' \
+		-e '/Totem/a +    arr.add (event_for_desktop_file ("org.gnome.Showtime.desktop", ++ts));' \
 		-e '/Totem/a +    arr.add (event_for_desktop_file ("vlc.desktop", ++ts));' \
 		-e "/thunderbird/r ${PKG_DIR}/mail-clients" \
 		-e "s/rhythmbox/org.gnome.Rhythmbox3/" \
 		"${p}" || return 1
 	grep -Fq '"mate-calc.desktop"' "${p}" || return 1
+	grep -Fq '"org.gnome.Showtime.desktop"' "${p}" || return 1
 	grep -Fq '"org.gnome.Rhythmbox3.desktop"' "${p}" || return 1
 	grep -Fq '"thunderbird_thunderbird.desktop"' "${p}" || return 1
 

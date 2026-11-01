@@ -26,6 +26,14 @@ debian_edit() {
 	for f in unity-session-quit unity-portals.conf unity-mimeapps.list; do
 		grep -Fq "debian/g-unity7/${f} " debian/unity-session.install || return 1
 	done
+
+	# GTK_MODULES of the X session with appmenu-gtk-module, as the xinitrc.d script #
+	#  of x11-misc/appmenu-gtk-module (unity-gtk-module.service is not used) #
+	install -m 644 "${PKG_DIR}"/85unity-session_appmenu-gtk-module debian/g-unity7/ || return 1
+	echo "debian/g-unity7/85unity-session_appmenu-gtk-module etc/X11/Xsession.d/" >> debian/unity-session.install || return 1
+	grep -Fqx "debian/g-unity7/85unity-session_appmenu-gtk-module etc/X11/Xsession.d/" debian/unity-session.install || return 1
+	sed -i -e "s/^\( *\)cinnamon-session (>= 6.6.4-1+gu7),$/\1appmenu-gtk3-module,\n&/" debian/control || return 1
+	grep -q "^ *appmenu-gtk3-module,$" debian/control || return 1
 }
 
 src_edit() {

@@ -1,31 +1,41 @@
 .TH G-UNITY7-CLEANUP 8 "November 2026" "g-unity7-desktop" "G Unity7"
 .SH NAME
-g-unity7-cleanup \- let apt autoremove the packages of Ubuntu Unity that G Unity7 does not use
+g-unity7-cleanup \- remove the packages of Ubuntu Unity that G Unity7 replaces
 .SH SYNOPSIS
 .B g-unity7-cleanup
 .RB [ \-n | \-\-dry\-run ]
 .RB [ \-y | \-\-yes ]
 .SH DESCRIPTION
+.B g-unity7-cleanup
+removes the duplicate applications of Ubuntu Unity and the other installed
+alternatives of the applications of
+.BR g-unity7-desktop ,
+as
+.B emerge \-\-depclean
+of Gentoo does.
+.PP
 The installer of Ubuntu Unity installs the
 .B ubuntu-unity-desktop
 task and apt marks its packages as manually installed, so
 .B apt autoremove
-never removes them.
-.B g-unity7-cleanup
-marks
-.B ubuntu-unity-desktop
-and the manually installed packages of the task that
-.B g-unity7-desktop
-does not depend on, recommend or suggest as automatically installed.
-It shows the packages and what
-.B apt \-\-purge autoremove
-will remove then, and asks for confirmation.
-A marked package that is still needed by another package is kept by autoremove.
+never removes them. apt also keeps every installed alternative of a relation
+such as
+.BR "showtime | vlc" .
 .PP
-Run
-.B sudo apt \-\-purge autoremove
-afterwards to remove the packages. To keep one of them, mark it as manually
-installed first:
+The script marks
+.BR ubuntu-unity-desktop ,
+the packages it depends on or recommends that
+.B g-unity7-desktop
+does not use and their dependencies of the task as automatically installed.
+It removes the installed alternatives after the first one of the relations of
+.B g-unity7-desktop
+if the first one is installed and the alternative is automatically installed
+or of the task. An alternative the user installed is kept, as a package of
+@world, and so is an alternative other packages need. The packages autoremove
+removes then are removed as well.
+.PP
+It shows all packages and asks for confirmation. To keep one of them, mark it
+as manually installed first:
 .BI "sudo apt-mark manual " package
 .SH OPTIONS
 .TP

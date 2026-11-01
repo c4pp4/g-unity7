@@ -1,15 +1,23 @@
 #!/bin/bash
-## Mark the packages of Ubuntu Unity that G Unity⁷ does not use as automatically
-##  installed, so that "apt --purge autoremove" removes them.
+## Remove the packages of Ubuntu Unity that G Unity⁷ replaces, like
+##  "emerge --depclean" of Gentoo.
 ##
 ## The installer of Ubuntu Unity installs the ubuntu-unity-desktop task and apt
 ##  marks its packages as manually installed, autoremove never removes them.
-##  Marked are, if manually installed:
-##  - ubuntu-unity-desktop
-##  - the packages ubuntu-unity-desktop depends on or recommends and
-##    g-unity7-desktop does not depend on, recommend or suggest (the duplicates)
-##  - the packages of the task the duplicates depend on or recommend
-##  A marked package that is still needed by another package is kept by autoremove.
+##  apt also keeps every installed alternative of a relation ("showtime | vlc"),
+##  Portage keeps only one. The script:
+##  - marks as automatically installed, if manually installed:
+##    - ubuntu-unity-desktop
+##    - the packages ubuntu-unity-desktop depends on or recommends and
+##      g-unity7-desktop does not depend on, recommend or suggest as the first
+##      alternative (the duplicates)
+##    - the packages of the task the duplicates depend on or recommend
+##  - removes the installed alternatives after the first one of the Depends and
+##    Recommends of g-unity7-desktop (vlc of "showtime | vlc") if the first one
+##    is installed and the alternative is automatically installed or of the task,
+##    a package installed by the user is kept (as a package of @world); an
+##    alternative is kept also if other packages would have to be removed with it
+##  - removes the packages autoremove removes then
 
 set -euo pipefail
 
@@ -20,8 +28,9 @@ usage() {
 	cat <<-EOF
 		Usage: g-unity7-cleanup [-n|--dry-run] [-y|--yes]
 
-		Mark the packages of Ubuntu Unity that G Unity⁷ does not use as automatically
-		installed and show what "apt --purge autoremove" will remove then.
+		Remove the packages of Ubuntu Unity that G Unity⁷ replaces: the duplicate
+		applications and the other installed alternatives of the applications of
+		g-unity7-desktop, as "emerge --depclean" of Gentoo.
 
 		  -n, --dry-run  only show the packages, change nothing (no root needed)
 		  -y, --yes      do not ask for confirmation
@@ -53,40 +62,55 @@ installed() {
 
 installed "${meta}" || die "${meta} is not installed"
 
-## The package names of the Depends, Recommends and Suggests fields of a package
-##  ($1, the installed version or the candidate of the archive), one per line.
+## The relations of the fields $2 of a package ($1, the installed version or the
+##  candidate of the archive), one per line, the alternatives separated by spaces.
 relations() {
 	apt-cache show --no-all-versions "$1" 2>/dev/null \
-		| awk -v fields="${2:-Depends Recommends Suggests}" '
+		| awk -v fields="$2" '
 			BEGIN { n = split(fields, f, " "); for (i = 1; i <= n; i++) want[f[i] ":"] = 1 }
 			/^[^ ]/ { take = ($1 in want) }
 			take { sub(/^[^ ]+: /, ""); print }' \
-		| tr ',|' '\n\n' \
-		| sed -e 's/([^)]*)//g' -e 's/\[[^]]*\]//g' -e 's/:any//' -e 's/^ *//' -e 's/ *$//' \
+		| tr ',' '\n' \
+		| sed -e 's/([^)]*)//g' -e 's/\[[^]]*\]//g' -e 's/:any//g' -e 's/|/ /g' \
+			-e 's/  */ /g' -e 's/^ *//' -e 's/ *$//' \
 		| grep -v '^$' || true
 }
 
-declare -A manual=() keep=()
+## The packages of $@ that are of the task (the Task field of the archive).
+of_task() {
+	[[ $# -gt 0 ]] || return 0
+	apt-cache show --no-all-versions "$@" 2>/dev/null \
+		| awk -v task="${task}" '
+			/^Package: / { pkg = $2 }
+			/^Task: / {
+				n = split(substr($0, 7), tasks, ", *")
+				for (i = 1; i <= n; i++) if (tasks[i] == task) print pkg
+			}' || true
+}
+
+declare -A manual=() keep=() in_list=()
 while read -r name; do
 	manual[${name%:*}]=1
 done < <(apt-mark showmanual)
-while read -r name; do
+
+## The first alternatives of the relations of g-unity7-desktop are kept.
+while read -r name _; do
 	keep[${name}]=1
-done < <(relations "${meta}")
+done < <(relations "${meta}" "Depends Recommends Suggests")
 
 mark=()
-add() {
+add_mark() {
 	local name
 	for name in "$@"; do
 		[[ -n ${manual[${name}]:-} && -z ${keep[${name}]:-} ]] && installed "${name}" || continue
-		[[ " ${mark[*]} " == *" ${name} "* ]] || mark+=( "${name}" )
+		[[ -n ${in_list[${name}]:-} ]] || { mark+=( "${name}" ); in_list[${name}]=1; }
 	done
 }
 
 ## ubuntu-unity-desktop and the duplicates (the relations of the archive if it is removed already).
-add "${task}"
-mapfile -t duplicates < <(relations "${task}" "Depends Recommends")
-add "${duplicates[@]}"
+add_mark "${task}"
+mapfile -t duplicates < <(relations "${task}" "Depends Recommends" | tr ' ' '\n')
+add_mark "${duplicates[@]}"
 
 ## The packages of the task the installed duplicates depend on or recommend.
 installed_duplicates=()
@@ -101,50 +125,107 @@ if [[ ${#installed_duplicates[@]} -gt 0 ]]; then
 	for name in "${closure[@]}"; do
 		[[ -n ${manual[${name}]:-} && -z ${keep[${name}]:-} ]] && candidates+=( "${name}" )
 	done
-	if [[ ${#candidates[@]} -gt 0 ]]; then
-		mapfile -t in_task < <(apt-cache show --no-all-versions "${candidates[@]}" 2>/dev/null \
-			| awk -v task="${task}" '
-				/^Package: / { pkg = $2 }
-				/^Task: / {
-					n = split(substr($0, 7), tasks, ", *")
-					for (i = 1; i <= n; i++) if (tasks[i] == task) print pkg
-				}' || true)
-		add "${in_task[@]}"
-	fi
+	mapfile -t closure_of_task < <(of_task "${candidates[@]}")
+	add_mark "${closure_of_task[@]}"
 fi
 
-if [[ ${#mark[@]} -eq 0 ]]; then
-	echo "Nothing to mark, no manually installed package of Ubuntu Unity is left."
-	exit 0
-fi
-
-## Preview the autoremove with the marks applied to a copy of the apt state.
+## The marks applied to a copy of the apt state, the packages autoremove removes then.
 tmp=$(mktemp -d)
 trap 'rm -rf "${tmp}"' EXIT
 states=${tmp}/extended_states
 cp /var/lib/apt/extended_states "${states}" 2>/dev/null || : > "${states}"
-apt-mark -o Dir::State::extended_states="${states}" auto "${mark[@]}" >/dev/null
-mapfile -t remove < <(apt-get -s -o Dir::State::extended_states="${states}" --purge autoremove 2>/dev/null \
+[[ ${#mark[@]} -eq 0 ]] || apt-mark -o Dir::State::extended_states="${states}" auto "${mark[@]}" >/dev/null
+declare -A autoremoved=()
+while read -r name; do
+	autoremoved[${name}]=1
+done < <(apt-get -s -o Dir::State::extended_states="${states}" --purge autoremove 2>/dev/null \
 	| awk '/^Purg / { print $2 }')
 
-echo "Packages to mark as automatically installed (${#mark[@]}):"
-printf '  %s\n' "${mark[@]}"
-echo
-echo "\"apt --purge autoremove\" will remove then (${#remove[@]}):"
-if [[ ${#remove[@]} -gt 0 ]]; then
-	printf '  %s\n' "${remove[@]}"
-else
-	echo "  nothing"
+## The installed alternatives after an installed first one.
+alternatives=() first_of=() user_kept=() needed_kept=()
+declare -A first=()
+while read -r group; do
+	read -ra names <<< "${group}"
+	[[ ${#names[@]} -gt 1 ]] && installed "${names[0]}" || continue
+	for name in "${names[@]:1}"; do
+		installed "${name}" && [[ -z ${keep[${name}]:-} && -z ${first[${name}]:-} ]] || continue
+		first[${name}]=${names[0]}
+		alternatives+=( "${name}" )
+	done
+done < <(relations "${meta}" "Depends Recommends")
+
+declare -A alternative_of_task=()
+manual_alternatives=()
+for name in "${alternatives[@]}"; do
+	[[ -n ${manual[${name}]:-} ]] && manual_alternatives+=( "${name}" )
+done
+while read -r name; do
+	[[ -n ${name} ]] && alternative_of_task[${name}]=1
+done < <(of_task "${manual_alternatives[@]}")
+
+remove=()
+for name in "${alternatives[@]}"; do
+	if [[ -n ${manual[${name}]:-} && -z ${alternative_of_task[${name}]:-} ]]; then
+		user_kept+=( "${name}" )
+		continue
+	fi
+	## Only the alternative itself, not the packages depending on it (but the
+	##  packages autoremove removes anyway, e.g. ubuntu-unity-desktop)
+	others=
+	while read -r other; do
+		[[ ${other} == "${name}" || -n ${autoremoved[${other}]:-} ]] || others+="${other} "
+	done < <(apt-get -s -o Dir::State::extended_states="${states}" --purge remove "${name}" 2>/dev/null \
+		| awk '/^(Purg|Remv) / { print $2 }')
+	if [[ -n ${others} ]]; then
+		needed_kept+=( "${name} (needed by ${others% })" )
+		continue
+	fi
+	remove+=( "${name}" )
+	first_of+=( "${name} (${first[${name}]} is installed)" )
+done
+
+if [[ ${#mark[@]} -eq 0 && ${#remove[@]} -eq 0 ]]; then
+	echo "Nothing to do, no package of Ubuntu Unity replaced by G Unity⁷ is left."
+	[[ ${#user_kept[@]} -eq 0 ]] || printf 'Kept alternatives installed by you: %s\n' "${user_kept[*]}"
+	exit 0
 fi
-echo
-echo "To keep a package, mark it as manually installed afterwards: sudo apt-mark manual <package>"
+
+## Preview with the marks applied to a copy of the apt state.
+if [[ ${#remove[@]} -gt 0 ]]; then
+	apt_args=( --purge --autoremove remove "${remove[@]}" )
+else
+	apt_args=( --purge autoremove )
+fi
+mapfile -t removed < <(apt-get -s -o Dir::State::extended_states="${states}" "${apt_args[@]}" 2>/dev/null \
+	| awk '/^Purg / { print $2 }')
+
+list() {
+	local title=$1
+	shift
+	[[ $# -gt 0 ]] || return 0
+	echo "${title} ($#):"
+	printf '  %s\n' "$@"
+	echo
+}
+
+list "Packages to mark as automatically installed" "${mark[@]}"
+list "Alternatives to remove" "${first_of[@]}"
+list "Kept alternatives installed by you" "${user_kept[@]}"
+list "Kept alternatives other packages need" "${needed_kept[@]}"
+if [[ ${#removed[@]} -gt 0 ]]; then
+	list "Packages apt removes" "${removed[@]}"
+else
+	echo "Packages apt removes: none"
+	echo
+fi
+echo "To keep a package, mark it as manually installed first: sudo apt-mark manual <package>"
 
 [[ -z ${dry_run} ]] || exit 0
 
 if [[ -z ${yes} ]]; then
-	read -r -p "Mark the packages as automatically installed? [y/N] " answer
+	read -r -p "Remove the packages? [y/N] " answer
 	[[ ${answer} == [yY]* ]] || { echo "Nothing changed."; exit 0; }
 fi
 
-apt-mark auto "${mark[@]}" >/dev/null
-echo "Done. Remove the packages with: sudo apt --purge autoremove"
+[[ ${#mark[@]} -eq 0 ]] || apt-mark auto "${mark[@]}" >/dev/null
+apt-get -y "${apt_args[@]}"

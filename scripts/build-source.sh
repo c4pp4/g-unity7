@@ -213,9 +213,14 @@ if [[ ${PATCH_MODE} == quilt ]]; then
 	rm -rf .pc
 fi
 
-## Hash of the debian/ changes, without the patches and the changelog.
+## Hash of the debian/ changes, without the changelog and the overlay patches
+##  (they have their own patch lines) and their lines in the series file. The
+##  patches of Ubuntu and the series lines changed by debian_edit count
+##  (pre_populator.patch of zeitgeist, the Debian PCRE2 patch of nux).
 debian_diff="${work}/debian.diff"
-(cd "${work}" && diff -Nura -x patches -x changelog debian.orig tree/debian > "${debian_diff}" || true)
+(cd "${work}" && diff -Nura -x changelog debian.orig tree/debian || true) \
+	| awk '/^diff / { skip = ($NF ~ /\/debian\/patches\/g-unity7\//); series = ($NF ~ /\/debian\/patches\/series$/) }
+		!skip && !(series && /^\+g-unity7\//)' > "${debian_diff}"
 if [[ -n ${LOCAL:-} ]]; then
 	## The whole source of an own package.
 	patch_lines+=( "source $(find . -type f ! -path ./debian/changelog -print0 | sort -z \

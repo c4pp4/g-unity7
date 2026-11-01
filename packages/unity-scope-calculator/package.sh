@@ -8,8 +8,8 @@ PATCHES=(
 
 debian_edit() {
 	# Use mate-calc if gnome-calculator is not installed (calculator.patch) #
-	sed -i -e "s/^\( *\)gnome-calculator,$/\1mate-calc | gnome-calculator,/" debian/control || return 1
-	grep -q "^ *mate-calc | gnome-calculator,$" debian/control || return 1
+	sed -i -e "s/^\( *\)gnome-calculator,$/\1gnome-calculator | mate-calc,/" debian/control || return 1
+	grep -q "^ *gnome-calculator | mate-calc,$" debian/control || return 1
 }
 
 src_edit() {
