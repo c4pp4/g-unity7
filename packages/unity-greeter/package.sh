@@ -37,6 +37,15 @@ debian_edit() {
 }
 
 src_edit() {
+	# unity-settings-daemon is installed to /usr/lib/unity-settings-daemon, the binary variable #
+	#  of unity-settings-daemon.pc of Ubuntu is /usr/libexec (the greeter waited for the xsettings #
+	#  plugin of a daemon that was never started and stayed black), don't depend on the version #
+	#  of unity-settings-daemon-dev the greeter is built with #
+	sed -i \
+		-e "s:^USD_BINARY=\`\$PKG_CONFIG --variable=binary unity-settings-daemon\`$:USD_BINARY=/usr/lib/unity-settings-daemon/unity-settings-daemon:" \
+		configure.ac || return 1
+	grep -qx "USD_BINARY=/usr/lib/unity-settings-daemon/unity-settings-daemon" configure.ac || return 1
+
 	# Panel icon size and padding #
 	sed -i \
 		-e "/entry.image.show.connect/i entry.image.set_pixel_size(22);" \

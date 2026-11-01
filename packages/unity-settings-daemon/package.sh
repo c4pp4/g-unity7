@@ -16,6 +16,15 @@ debian_edit() {
 	# The sound server of Ubuntu is PipeWire (pipewire-audio conflicts with pulseaudio) #
 	sed -i -e "s/^\( *\)pulseaudio\(,\?\)$/\1pipewire-pulse | pulseaudio\2/" debian/control || return 1
 	grep -q "^ *pipewire-pulse | pulseaudio,\?$" debian/control || return 1
+
+	# debian/unity-settings-daemon.install moved usr/libexec to usr/lib/unity-settings-daemon, #
+	#  the compiled paths kept /usr/libexec (the daemon started by unity-greeter, the localeexec #
+	#  script, the fallback mount helper, the backlight, locate pointer and Wacom LED helpers) #
+	sed -i -e "s:^CONFIGURE_EXTRA_FLAGS = :&--libexecdir=/usr/lib/unity-settings-daemon :" debian/rules || return 1
+	grep -q "^CONFIGURE_EXTRA_FLAGS = --libexecdir=/usr/lib/unity-settings-daemon " debian/rules || return 1
+	sed -i -e "s:^usr/libexec/\* /usr/lib/unity-settings-daemon/$:usr/lib/unity-settings-daemon:" \
+		debian/unity-settings-daemon.install || return 1
+	grep -qx "usr/lib/unity-settings-daemon" debian/unity-settings-daemon.install || return 1
 }
 
 src_edit() {
@@ -30,17 +39,6 @@ src_edit() {
 		-e "s/execve (canary_argv\[0\], canary_argv, canary_env);/& _exit (1);/" \
 		gnome-settings-daemon/gsd-rr-config.c || return 1
 	grep -Fq "execve (canary_argv[0], canary_argv, canary_env); _exit (1);" gnome-settings-daemon/gsd-rr-config.c || return 1
-
-	# debian/unity-settings-daemon.install moves usr/libexec to usr/lib/unity-settings-daemon, #
-	#  the paths of the script and the XDG autostart file must point there #
-	sed -i -e "s:@libexecdir@/unity-settings-daemon$:/usr/lib/unity-settings-daemon/unity-settings-daemon:" \
-		gnome-settings-daemon/unity-settings-daemon-localeexec.in || return 1
-	grep -Fqx "exec /usr/lib/unity-settings-daemon/unity-settings-daemon" \
-		gnome-settings-daemon/unity-settings-daemon-localeexec.in || return 1
-	sed -i -e "s:^Exec=@libexecdir@/unity-settings-daemon-localeexec$:Exec=/usr/lib/unity-settings-daemon/unity-settings-daemon-localeexec:" \
-		data/unity-settings-daemon.desktop.in.in || return 1
-	grep -Fqx "Exec=/usr/lib/unity-settings-daemon/unity-settings-daemon-localeexec" \
-		data/unity-settings-daemon.desktop.in.in || return 1
 
 	# Apply the regional formats setting also when started by systemd #
 	sed -i \

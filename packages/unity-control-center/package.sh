@@ -59,6 +59,13 @@ src_edit() {
 		panels/sharing/unity-sharing-panel.desktop.in.in || return 1
 	grep -qx "_Name=Sharing" panels/sharing/unity-sharing-panel.desktop.in.in || return 1
 
+	# Install only online-accounts icons (the panel of gnome-online-accounts-gtk), #
+	#  the online-accounts panel is disabled by debian/rules #
+	sed -i \
+		-e "/^if BUILD_ONLINE_ACCOUNTS$/i SUBDIRS += online-accounts/icons\n" \
+		panels/Makefile.am || return 1
+	grep -Fqx "SUBDIRS += online-accounts/icons" panels/Makefile.am || return 1
+
 	# Fix metadata path #
 	sed -i \
 		-e "/appdatadir/{s/\/appdata/\/metainfo/}" \
