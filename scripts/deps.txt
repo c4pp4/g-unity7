@@ -3,6 +3,8 @@ devscripts
 diffstat
 dpkg-dev
 dput-ng
+fakeroot
+gettext
 git
 gnupg
 lintian

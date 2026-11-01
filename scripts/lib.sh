@@ -28,6 +28,42 @@ short_hash() {
 	sha256sum | cut -c1-12
 }
 
+## True if the source tree $1 has a patch in debian/patches/series (a series
+##  file with only an empty line or comments has none, quilt fails on it).
+has_patches() {
+	grep -q '^[^#[:space:]]' "$1"/debian/patches/series 2>/dev/null
+}
+
+## For src_edit: merge the po files of a tarball ($1, po/*.po) into the po files
+##  of the source in the current directory as "msgcat --use-first" of the ehooks
+##  does, but only append the messages the source does not have, so that the
+##  files are not reformatted.
+merge_translations() {
+	local tmp po target body
+	tmp=$(mktemp -d) || return 1
+	tar -xf "$1" -C "${tmp}" || return 1
+	for po in "${tmp}"/po/*.po; do
+		target=po/${po##*/}
+		[[ -f ${target} ]] || continue
+		rm -f "${tmp}"/unique.po "${tmp}"/add.po
+		msgattrib --no-obsolete -o "${tmp}"/new.po "${po}" || return 1
+		# Every message of the source counts as a definition, also a fuzzy, #
+		#  an untranslated (msgcat does not count them) and an obsolete one #
+		#  (msgfmt of gettext 1.0 rejects an active duplicate of it) #
+		msgattrib --clear-obsolete --clear-fuzzy -o "${tmp}"/all.po "${target}" || return 1
+		msgen -o "${tmp}"/old.po "${tmp}"/all.po || return 1
+		# The messages defined only once, of them the ones of the tarball #
+		msgcat --less-than=2 -o "${tmp}"/unique.po "${tmp}"/new.po "${tmp}"/old.po || return 1
+		[[ -f ${tmp}/unique.po ]] || continue
+		msgcomm --more-than=1 -o "${tmp}"/add.po "${tmp}"/unique.po "${tmp}"/new.po || return 1
+		[[ -f ${tmp}/add.po ]] || continue
+		# Without the header entry #
+		body=$(awk 'BEGIN { RS = ""; ORS = "\n\n" } NR > 1' "${tmp}"/add.po)
+		[[ -z ${body} ]] || printf '\n%s\n' "${body}" >> "${target}"
+	done
+	rm -rf "${tmp}"
+}
+
 ## Print only the added and removed lines of a diff on stdin, so that the
 ##  hash of a change does not depend on its context.
 changed_lines() {

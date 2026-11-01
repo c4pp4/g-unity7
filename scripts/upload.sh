@@ -76,9 +76,10 @@ einfo "Uploading ${SOURCE} ${VERSION} to ppa:${PPA_STAGING}$([[ -n ${simulate} ]
 
 ## The FTP server of Launchpad refuses the files of uploads following each
 ##  other closely ("Upload permissions error"), try again after a while.
-##  dput itself reports success, so its output is checked too.
+##  dput itself reports success, so its output is checked too. A transfer
+##  that stalls is stopped after 10 min (dput has no timeout).
 for attempt in 1 2 3 4; do
-	if dput --force "${dput_args[@]}" "ppa:${PPA_STAGING}" "${changes}" > "${base_dir}"/dput.log 2>&1 \
+	if timeout 600 dput --force "${dput_args[@]}" "ppa:${PPA_STAGING}" "${changes}" > "${base_dir}"/dput.log 2>&1 \
 		&& ! grep -q "Upload permissions error\|Could not upload file" "${base_dir}"/dput.log; then
 		cat "${base_dir}"/dput.log >&2
 		break

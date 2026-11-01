@@ -106,7 +106,7 @@ if [[ -z ${PATCH_MODE:-} ]]; then
 		"3.0 (quilt)") PATCH_MODE=quilt ;;
 		"1.0")
 			PATCH_MODE=direct
-			if [[ -s ${tree}/debian/patches/series ]]; then
+			if has_patches "${tree}"; then
 				grep -q quilt "${tree}"/debian/rules "${tree}"/debian/control \
 					|| die "Format 1.0 with debian/patches/series not applied by quilt, set PATCH_MODE."
 				PATCH_MODE=quilt
@@ -132,7 +132,7 @@ if declare -F debian_edit >/dev/null; then
 fi
 
 ## Apply the Ubuntu patchset first, the overlay patches go on top of it.
-if [[ ${PATCH_MODE} == quilt && -s debian/patches/series ]]; then
+if [[ ${PATCH_MODE} == quilt ]] && has_patches .; then
 	quilt push -a -q --fuzz=0 >/dev/null || die "The Ubuntu patchset does not apply."
 fi
 

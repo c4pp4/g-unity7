@@ -14,6 +14,29 @@ leaving out what only concerns Gentoo (libdir, OpenRC, the portage sandbox, …)
 The patches are taken from the overlay at build time, so a patch changed in the
 overlay gets into the next package version by itself.
 
+## Installing
+
+On Ubuntu 26.10 (Ubuntu Unity or any other flavour):
+
+```
+sudo add-apt-repository ppa:c4pp4/g-unity7
+sudo apt install g-unity7-desktop
+```
+
+`g-unity7-desktop` installs `g-unity7-apt-pin`, which prefers the packages of
+the PPA to those of Ubuntu.
+
+To remove the applications of Ubuntu Unity that G Unity⁷ replaces, mark them as
+automatically installed (the installer of Ubuntu Unity marks them as manually
+installed) and let apt remove them:
+
+```
+sudo g-unity7-cleanup
+sudo apt --purge autoremove
+```
+
+`g-unity7-cleanup --dry-run` shows the packages without changing anything.
+
 ## Layout
 
 ```

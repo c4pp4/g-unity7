@@ -24,6 +24,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import traceback
 import urllib.error
 import urllib.request
 import zipfile
@@ -38,6 +39,8 @@ TITLE = "G Unity⁷ approvals"
 STATE_RE = re.compile(r"<!-- g-unity7-state\n(.*?)\n-->", re.S)
 ## Pause after an upload before the next one (seconds).
 UPLOAD_PAUSE = 60
+## upload.sh tries dput four times with pauses (at most 4 × 10 min + 9 min).
+UPLOAD_TIMEOUT = 60 * 60
 STATE_ICONS = {"ok": "✅", "building": "⏳", "failed": "❌", "missing": "❔"}
 
 
@@ -323,19 +326,30 @@ def do_upload(issue, state, names, pkgs):
             messages.append(f"- `{name}`: the port or the overlay changed since the review, "
                             f"build it again (`gh workflow run ppa.yml -f packages={name}`).")
             continue
-        staging = lp.ppa_latest(r["source"], CONFIG["staging"], CONFIG["series"])
-        if staging and not newer(r["version"], staging["version"]):
-            messages.append(f"- `{name}`: staging already has `{staging['version']}`.")
-            del state["review"][name]
-            continue
-        with tempfile.TemporaryDirectory() as build_dir:
-            target = os.path.join(build_dir, CONFIG["series"], name)
-            if not download_artifact(r["run_id"], r["artifact"], target):
-                messages.append(f"- `{name}`: the artifact expired, build it again "
-                                f"(`gh workflow run ppa.yml -f packages={name}`).")
+        try:
+            staging = lp.ppa_latest(r["source"], CONFIG["staging"], CONFIG["series"])
+            if staging and not newer(r["version"], staging["version"]):
+                messages.append(f"- `{name}`: staging already has `{staging['version']}`.")
+                del state["review"][name]
                 continue
-            proc = subprocess.run([f"{SCRIPTS}/upload.sh", name], env=dict(os.environ, BUILD_DIR=build_dir),
-                                  capture_output=True, text=True)
+            with tempfile.TemporaryDirectory() as build_dir:
+                target = os.path.join(build_dir, CONFIG["series"], name)
+                if not download_artifact(r["run_id"], r["artifact"], target):
+                    messages.append(f"- `{name}`: the artifact expired, build it again "
+                                    f"(`gh workflow run ppa.yml -f packages={name}`).")
+                    continue
+                proc = subprocess.run([f"{SCRIPTS}/upload.sh", name], env=dict(os.environ, BUILD_DIR=build_dir),
+                                      capture_output=True, text=True, timeout=UPLOAD_TIMEOUT)
+        except subprocess.TimeoutExpired as e:
+            stderr = e.stderr.decode(errors="replace") if isinstance(e.stderr, bytes) else (e.stderr or "")
+            messages.append(f"- `{name}`: the upload did not finish in {UPLOAD_TIMEOUT // 60} min:\n"
+                            f"```\n{stderr[-1500:]}\n```")
+            continue
+        except Exception as e:  # noqa: BLE001 - report it and go on with the other packages
+            traceback.print_exc()
+            messages.append(f"- `{name}`: the upload failed: `{type(e).__name__}: {e}`")
+            continue
+        sys.stderr.write(proc.stderr)
         if proc.returncode:
             messages.append(f"- `{name}`: the upload failed:\n```\n{proc.stderr[-1500:]}\n```")
             continue
@@ -418,17 +432,22 @@ def run_command(issue, state, text):
         return None
     command, args = words[0], words[1:]
     pkgs = packages()
-    if command == "/upload":
-        messages = do_upload(issue, state, args, pkgs)
-    elif command == "/reject" and args:
-        messages = do_reject(state, args)
-    elif command == "/promote":
-        force = "--force" in args
-        messages = do_promote(state, [a for a in args if a != "--force"], force, pkgs)
-    elif command == "/retry" and len(args) == 2:
-        messages = do_retry(*args)
-    else:
-        messages = [f"Unknown command `{line}`, see the issue description."]
+    ## The state of the issue is saved and the reply sent also if the command fails.
+    try:
+        if command == "/upload":
+            messages = do_upload(issue, state, args, pkgs)
+        elif command == "/reject" and args:
+            messages = do_reject(state, args)
+        elif command == "/promote":
+            force = "--force" in args
+            messages = do_promote(state, [a for a in args if a != "--force"], force, pkgs)
+        elif command == "/retry" and len(args) == 2:
+            messages = do_retry(*args)
+        else:
+            messages = [f"Unknown command `{line}`, see the issue description."]
+    except Exception as e:  # noqa: BLE001
+        traceback.print_exc()
+        messages = [f"The command failed: `{type(e).__name__}: {e}`, see the log of the run."]
     refresh(issue, state, pkgs)
     return f"`{line}`\n\n" + "\n".join(messages)
 

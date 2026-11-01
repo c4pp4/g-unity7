@@ -32,7 +32,7 @@ exclude=( -x .pc )
 if [[ -n ${orig_dsc} ]]; then
 	debdiff "${orig_dsc}" "${new_dsc}" > "${out}"/debdiff.diff 2>/dev/null || true
 	dpkg-source --no-check -x --skip-patches "${orig_dsc}" "${orig_tree}" >/dev/null
-	if [[ ${mode} == quilt && -s ${orig_tree}/debian/patches/series ]]; then
+	if [[ ${mode} == quilt ]] && has_patches "${orig_tree}"; then
 		(cd "${orig_tree}" && QUILT_PATCHES=debian/patches quilt push -a -q >/dev/null)
 	fi
 	exclude+=( -x debian )

@@ -8,6 +8,7 @@ import json
 import re
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -23,18 +24,38 @@ UBUNTU_POCKETS = ("Release", "Updates", "Security")
 HEADERS = {"Accept": "application/json", "Cache-Control": "no-cache"}
 
 
+## Launchpad answers 503 or times out now and then, a request is tried again
+##  after these pauses (s). A 4xx error is final.
+RETRY_PAUSES = (10, 30, 60)
+
+
+def fetch(request):
+    """Return the body of a request, try again after a temporary error."""
+    for pause in (*RETRY_PAUSES, None):
+        try:
+            with urllib.request.urlopen(request, timeout=60) as response:
+                return response.read()
+        except urllib.error.HTTPError as error:
+            if error.code < 500 and error.code != 429 or pause is None:
+                raise
+            reason = f"HTTP {error.code}"
+        except (urllib.error.URLError, TimeoutError, ConnectionError) as error:
+            if pause is None:
+                raise
+            reason = str(error)
+        print(f"lp.py: {request.full_url}: {reason}, trying again in {pause} s", file=sys.stderr)
+        time.sleep(pause)
+
+
 def get(url, params=None):
     if params:
         url += "?" + urllib.parse.urlencode(params)
-    request = urllib.request.Request(url, headers=HEADERS)
-    with urllib.request.urlopen(request, timeout=60) as response:
-        return json.load(response)
+    return json.loads(fetch(urllib.request.Request(url, headers=HEADERS)))
 
 
 def get_text(url):
     request = urllib.request.Request(url, headers={"Cache-Control": "no-cache"})
-    with urllib.request.urlopen(request, timeout=60) as response:
-        return response.read().decode("utf-8", "replace")
+    return fetch(request).decode("utf-8", "replace")
 
 
 def collection(url, params):
