@@ -12,6 +12,12 @@ PATCHES=(
 	shortcut-alt-app.patch
 )
 
+debian_edit() {
+	# The sound server of Ubuntu is PipeWire (pipewire-audio conflicts with pulseaudio) #
+	sed -i -e "s/^\( *\)pulseaudio\(,\?\)$/\1pipewire-pulse | pulseaudio\2/" debian/control || return 1
+	grep -q "^ *pipewire-pulse | pulseaudio,\?$" debian/control || return 1
+}
+
 src_edit() {
 	# https://bugzilla.gnome.org/show_bug.cgi?id=621836
 	sed -i \

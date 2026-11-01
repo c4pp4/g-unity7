@@ -1,4 +1,5 @@
 OVERLAY_PKG="x11-themes/ubuntu-themes"
+GROUP="desktop"
 UBUNTU_SRC="ubuntu-themes"
 
 src_edit() {

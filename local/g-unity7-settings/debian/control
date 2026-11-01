@@ -11,11 +11,14 @@ Package: g-unity7-settings
 Architecture: all
 Depends: ${misc:Depends},
          fonts-ubuntu,
+         humanity-icon-theme (>= 0.6.16build1+gu7),
+         light-themes (>= 24.04-0ubuntu2+gu7),
+         ubuntu-mono (>= 24.04-0ubuntu2+gu7),
          ubuntu-sounds,
-         ubuntu-wallpapers,
+         ubuntu-unity-backgrounds,
          yaru-theme-gtk (>= 26.10.3ubuntu+gu7),
          yaru-theme-icon (>= 26.10.3ubuntu+gu7)
 Description: default settings of the G Unity⁷ desktop
  GSettings overrides of the Unity session and Unity Greeter from the
  gentoo-unity7 overlay: the Yaru-dark theme, Ubuntu fonts, Nemo desktop icons,
- window keybindings and power settings, with the default Ubuntu wallpaper.
+ window keybindings and power settings.

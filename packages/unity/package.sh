@@ -36,18 +36,17 @@ debian_edit() {
 	grep -Fqx "cmake_options += -DUNITY_RELEASE=\"${series_version} ${series^}\"" debian/rules || return 1
 	echo "usr/share/unity/unity-version.xml" >> debian/unity.install || return 1
 
-	# Dash home button, hidden logo of the lock-screen and the Dash and Hud border #
+	# Hidden logo of the lock-screen and the Dash and Hud border #
 	install -d debian/g-unity7 || return 1
-	install -m 644 "${BRANDING_DIR}"/launcher_bfb.svg debian/g-unity7/ || return 1
 	install -m 644 "${FILESDIR}"/branding/empty_cof.png debian/g-unity7/lockscreen_cof.png || return 1
 	for f in "${FILESDIR}"/resources/dash_*.png; do
 		install -m 644 "${f}" debian/g-unity7/ || return 1
 	done
 	printf '\n%s\n\t%s\n' \
 		"execute_after_dh_install:" \
-		"install -m 644 debian/g-unity7/*.svg debian/g-unity7/*.png debian/libunity-core-6.0-9/usr/share/unity/icons/" \
+		"install -m 644 debian/g-unity7/*.png debian/libunity-core-6.0-9/usr/share/unity/icons/" \
 		>> debian/rules || return 1
-	grep -Pq "^\tinstall -m 644 debian/g-unity7/\*\.svg " debian/rules || return 1
+	grep -Pq "^\tinstall -m 644 debian/g-unity7/\*\.png " debian/rules || return 1
 }
 
 src_edit() {
