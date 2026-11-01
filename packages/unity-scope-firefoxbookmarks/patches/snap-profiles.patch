@@ -1,0 +1,32 @@
+From: c4pp4
+Date: Sun, 1 Nov 2026 23:10:00 +0100
+Subject: [PATCH 1/1] Find the profiles of the Firefox snap
+
+Firefox of Ubuntu is a snap with the profiles in
+~/snap/firefox/common/.mozilla/firefox/. Use them if ~/.mozilla/firefox/
+does not exist.
+
+Signed-off-by: c4pp4
+---
+
+diff --git a/src/unity_firefoxbookmarks_daemon.py b/src/unity_firefoxbookmarks_daemon.py
+--- a/src/unity_firefoxbookmarks_daemon.py
++++ b/src/unity_firefoxbookmarks_daemon.py
+@@ -43,6 +43,8 @@
+ DEFAULT_RESULT_TYPE = Unity.ResultType.DEFAULT
+ FIREFOX_EXECUTABLE = GLib.find_program_in_path('firefox') or GLib.find_program_in_path('firefox-bin') or '/usr/bin/firefox'
+ BOOKMARKS_PATH = os.getenv("HOME") + "/.mozilla/firefox/"
++# The profiles of the Firefox snap
++SNAP_BOOKMARKS_PATH = os.getenv("HOME") + "/snap/firefox/common/.mozilla/firefox/"
+ BOOKMARKS_QUERY = '''SELECT moz_bookmarks.title, moz_places.url, '%s', '%s'
+                      FROM moz_bookmarks, moz_places
+                      WHERE moz_places.id = moz_bookmarks.fk
+@@ -100,6 +102,8 @@
+     results = []
+     path = BOOKMARKS_PATH
+     if not os.path.isdir(path):
++        path = SNAP_BOOKMARKS_PATH
++    if not os.path.isdir(path):
+         return results
+     bookmarks = get_bookmarks_from_firefox(path, search)
+ 

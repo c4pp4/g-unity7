@@ -74,9 +74,12 @@ if [[ -n ${LOCAL:-} ]]; then
 	einfo "${SOURCE_NAME} ${ubuntu_version} (local/${pkg})"
 else
 	## 1. Newest Ubuntu version.
+	## UBUNTU_SERIES: a source removed from the series, taken from an older one.
 	read -r ubuntu_version ubuntu_pocket < <(python3 -I "${REPO_ROOT}"/scripts/lp.py \
-		ubuntu-version "${UBUNTU_SRC}" --series "${series}")
-	einfo "${UBUNTU_SRC} ${ubuntu_version} (${series} ${ubuntu_pocket})"
+		ubuntu-version "${UBUNTU_SRC}" --series "${UBUNTU_SERIES:-${series}}")
+	[[ -n ${ubuntu_version} && ${ubuntu_version} != None ]] \
+		|| die "${UBUNTU_SRC} is not published in ${UBUNTU_SERIES:-${series}}."
+	einfo "${UBUNTU_SRC} ${ubuntu_version} (${UBUNTU_SERIES:-${series}} ${ubuntu_pocket})"
 
 	## 2. Download and unpack without patches.
 	(cd "${work}" && pull-lp-source --download-only "${UBUNTU_SRC}" "${ubuntu_version}" >&2) \

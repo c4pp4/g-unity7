@@ -52,7 +52,7 @@ for pkg in "${packages[@]}"; do
 	if [[ -n ${LOCAL:-} ]]; then
 		base=$(sed -n '1s/^[^ ]* (\([^)]*\)).*/\1/p' "${PKG_DIR}"/debian/changelog)
 	else
-		read -r base _ < <(python3 -I "${REPO_ROOT}"/scripts/lp.py ubuntu-version "${UBUNTU_SRC}" --series "${series}")
+		read -r base _ < <(python3 -I "${REPO_ROOT}"/scripts/lp.py ubuntu-version "${UBUNTU_SRC}" --series "${UBUNTU_SERIES:-${series}}")
 	fi
 	input=$(input_hash "${OVERLAY_DIR}")
 	staging=$(python3 -I "${REPO_ROOT}"/scripts/lp.py ppa-latest "${SOURCE_NAME}" \

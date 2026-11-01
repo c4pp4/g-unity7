@@ -115,7 +115,7 @@ list_packages() {
 load_package() {
 	local pkg=$1 file
 
-	unset OVERLAY_PKG UBUNTU_SRC SOURCE_NAME GROUP PATCH_MODE LOCAL
+	unset OVERLAY_PKG UBUNTU_SRC UBUNTU_SERIES SOURCE_NAME GROUP PATCH_MODE LOCAL
 	PATCHES=()
 	OVERLAY_FILES=()
 	unset -f debian_edit src_edit local_prepare
