@@ -225,7 +225,9 @@ if [[ -n ${LOCAL:-} ]]; then
 	## The whole source of an own package.
 	patch_lines+=( "source $(find . -type f ! -path ./debian/changelog -print0 | sort -z \
 		| xargs -0 sha256sum | short_hash)" )
-elif [[ -s ${debian_diff} ]]; then
+elif [[ -n $(changed_lines < "${debian_diff}") ]]; then
+	## Only changed lines count (a series file with only the overlay patches
+	##  added leaves its header in the diff)
 	patch_lines+=( "debian $(changed_lines < "${debian_diff}" | short_hash)" )
 fi
 [[ ${#patch_lines[@]} -gt 0 ]] || die "Nothing is changed in ${pkg}."
