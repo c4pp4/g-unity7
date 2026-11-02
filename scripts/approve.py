@@ -228,16 +228,24 @@ def render(state, pkgs=None):
     out += ["## Waiting for promotion", ""]
     waiting = waiting_groups(state, pkgs or {})
     if state["promote"]:
-        out += ["| Group | Package | Staging | Main PPA | Build | Changes |",
-                "|---|---|---|---|---|---|"]
-        for name, r in sorted(state["promote"].items(), key=lambda i: (i[1]["group"] or "~", i[0])):
-            lock = " 🔒" if r["security"] else ""
-            note = ""
-            if r["group"] and r["group"] in waiting:
-                note = f"; group waits for review: {', '.join(waiting[r['group']])}"
-            out.append(f"| {r['group'] or '–'} | `{name}`{lock} | `{r['staging']}` | "
-                       f"`{r['main'] or '–'}` | {STATE_ICONS[r['state']]} | {r['changes']}{note} |")
-        out += ["", "✅ built and published, ⏳ building, ❌ failed, 🔒 Ubuntu security update. "
+        ## A table for each group: a version does not wrap, one version column
+        ##  leaves the width for the package and its changes
+        groups = {}
+        for name, r in state["promote"].items():
+            groups.setdefault(r["group"], []).append(name)
+        for group in sorted(groups, key=lambda g: g or "~"):
+            out += [f"### Group `{group}`" if group else "### Without a group", ""]
+            if group in waiting:
+                out += [f"The group waits for review: {', '.join(f'`{n}`' for n in waiting[group])}.", ""]
+            out += ["| Package | Staging<br>Main PPA | Build | Changes |", "|---|---|---|---|"]
+            for name in sorted(groups[group]):
+                r = state["promote"][name]
+                lock = " 🔒" if r["security"] else ""
+                main = f"`{r['main']}`" if r["main"] else "–"
+                out.append(f"| `{name}`{lock} | `{r['staging']}`<br>{main} | "
+                           f"{STATE_ICONS[r['state']]} | {r['changes']} |")
+            out.append("")
+        out += ["✅ built and published, ⏳ building, ❌ failed, 🔒 Ubuntu security update. "
                 "`/promote` copies all ✅ versions of complete groups to the main PPA, "
                 "`/promote <package>…` only the given ones, `--force` also with an incomplete group.", ""]
         if state["stale"]:
