@@ -16,6 +16,7 @@ Environment: GITHUB_TOKEN, GITHUB_REPOSITORY, OVERLAY_DIR, LP_CREDENTIALS_FILE
 """
 
 import argparse
+import http.client
 import io
 import json
 import os
@@ -41,6 +42,11 @@ STATE_RE = re.compile(r"<!-- g-unity7-state\n(.*?)\n-->", re.S)
 UPLOAD_PAUSE = 60
 ## upload.sh tries dput four times with pauses (at most 4 × 10 min + 9 min).
 UPLOAD_TIMEOUT = 60 * 60
+## Launchpad is taken as down after so many packages in a row whose state it
+##  did not give, the other packages keep their rows of the last update too.
+LP_FAILURES_MAX = 3
+LP_ERRORS = (urllib.error.URLError, http.client.HTTPException, TimeoutError, ConnectionError,
+             ValueError)
 STATE_ICONS = {"ok": "✅", "building": "⏳", "failed": "❌", "missing": "❔"}
 
 
@@ -91,6 +97,7 @@ def load_state(issue):
             state = json.loads(match.group(1))
     for key in ("review", "rejected", "promote", "seen"):
         state.setdefault(key, {})
+    state.setdefault("stale", [])
     return state
 
 
@@ -138,40 +145,65 @@ def waiting_groups(state, pkgs):
     return groups
 
 
-def promote_rows(pkgs):
-    """Versions of the staging PPA newer than in the main PPA."""
-    rows = {}
-    series = CONFIG["series"]
+def promote_rows(pkgs, old=None):
+    """Versions of the staging PPA newer than in the main PPA, with the names
+    of the packages whose state Launchpad did not give. Without the rows of
+    the last update (old) a Launchpad error is raised, with them the package
+    keeps its row."""
+    rows, stale = {}, []
+    failures = 0
     for name, pkg in pkgs.items():
-        staging = lp.ppa_latest(pkg["source"], CONFIG["staging"], series)
-        if not staging:
-            continue
-        main = lp.ppa_latest(pkg["source"], CONFIG["main"], series)
-        if not newer(staging["version"], main.get("version")):
-            continue
-        state = lp.build_state(pkg["source"], staging["version"], CONFIG["staging"], series)
-        changes = describe_changes(staging.get("patches", {}), main.get("patches")) if main else "new package"
-        if main and not changes:
-            if base_of(staging["version"]) != base_of(main["version"]):
-                changes = "rebased on " + base_of(staging["version"])
-            else:
-                changes = "rebuild"
-        security = False
-        if not pkg["local"]:
-            version, pocket = lp.ubuntu_version(pkg["source"], series)
-            security = pocket == "Security" and base_of(staging["version"]) == version
-        rows[name] = {
-            "source": pkg["source"],
-            "group": pkg["group"],
-            "staging": staging["version"],
-            "main": main.get("version", ""),
-            "state": state["state"],
-            "builds": [b for b in state.get("builds", [])
-                       if b["buildstate"] != "Successfully built"],
-            "changes": changes,
-            "security": security,
-        }
-    return rows
+        if old is None:
+            row = promote_row(pkg)
+        elif failures < LP_FAILURES_MAX:
+            try:
+                row = promote_row(pkg)
+                failures = 0
+            except LP_ERRORS:
+                traceback.print_exc()
+                failures += 1
+                row = old.get(name)
+                stale.append(name)
+        else:
+            row = old.get(name)
+            stale.append(name)
+        if row:
+            rows[name] = row
+    return rows, stale
+
+
+def promote_row(pkg):
+    """The row of a package whose staging version is newer than in the main
+    PPA, None if it is not."""
+    series = CONFIG["series"]
+    staging = lp.ppa_latest(pkg["source"], CONFIG["staging"], series)
+    if not staging:
+        return None
+    main = lp.ppa_latest(pkg["source"], CONFIG["main"], series)
+    if not newer(staging["version"], main.get("version")):
+        return None
+    state = lp.build_state(pkg["source"], staging["version"], CONFIG["staging"], series)
+    changes = describe_changes(staging.get("patches", {}), main.get("patches")) if main else "new package"
+    if main and not changes:
+        if base_of(staging["version"]) != base_of(main["version"]):
+            changes = "rebased on " + base_of(staging["version"])
+        else:
+            changes = "rebuild"
+    security = False
+    if not pkg["local"]:
+        version, pocket = lp.ubuntu_version(pkg["source"], series)
+        security = pocket == "Security" and base_of(staging["version"]) == version
+    return {
+        "source": pkg["source"],
+        "group": pkg["group"],
+        "staging": staging["version"],
+        "main": main.get("version", ""),
+        "state": state["state"],
+        "builds": [b for b in state.get("builds", [])
+                   if b["buildstate"] != "Successfully built"],
+        "changes": changes,
+        "security": security,
+    }
 
 
 ## The issue body.
@@ -208,6 +240,9 @@ def render(state, pkgs=None):
         out += ["", "✅ built and published, ⏳ building, ❌ failed, 🔒 Ubuntu security update. "
                 "`/promote` copies all ✅ versions of complete groups to the main PPA, "
                 "`/promote <package>…` only the given ones, `--force` also with an incomplete group.", ""]
+        if state["stale"]:
+            out += [f"Launchpad did not answer for {len(state['stale'])} packages, "
+                    "their rows are from the last update.", ""]
         failed = [(n, r) for n, r in sorted(state["promote"].items()) if r["state"] == "failed"]
         if failed:
             out += ["### Failed builds", ""]
@@ -262,7 +297,10 @@ def notify_new(issue, state):
 
 def refresh(issue, state, pkgs=None):
     pkgs = pkgs or packages()
-    state["promote"] = promote_rows(pkgs)
+    state["promote"], state["stale"] = promote_rows(pkgs, state["promote"])
+    if state["stale"]:
+        print(f"::warning::Launchpad did not give the state of {len(state['stale'])} packages, "
+              "they keep the rows of the last update.")
     issue = save(issue, state, pkgs)
     notify_new(issue, state)
     return save(issue, state, pkgs)
@@ -375,7 +413,7 @@ def do_reject(state, names):
 def do_promote(state, names, force, pkgs):
     messages = []
     table = state["promote"]
-    current = promote_rows(pkgs)
+    current, _ = promote_rows(pkgs)
     candidates = names or sorted(table)
     groups = {}
     for name, r in current.items():
