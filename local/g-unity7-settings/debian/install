@@ -1,2 +1,3 @@
 90_g-unity7.gschema.override usr/share/glib-2.0/schemas/
 90_g-unity7-greeter.gschema.override usr/share/glib-2.0/schemas/
+91_g-unity7-fonts-ubuntu.gschema.override usr/share/glib-2.0/schemas/

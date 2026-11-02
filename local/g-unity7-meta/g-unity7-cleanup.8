@@ -20,19 +20,37 @@ task and apt marks its packages as manually installed, so
 .B apt autoremove
 never removes them. apt also keeps every installed alternative of a relation
 such as
-.BR "showtime | vlc" .
+.BR "vlc | showtime" .
 .PP
-The script marks
+Of each relation of
+.B g-unity7-desktop
+with more installed alternatives, such as
+.BR "atril | papers | evince" ,
+or with another alternative installed instead of the first one (apt does not
+install
+.B eog
+of
+.B "eog | eom | loupe"
+if
+.B eom
+is installed), it asks which package to keep: the first alternative
+(recommended) or another one, an alternative that is not installed is
+installed with the choice, or to change nothing if more alternatives are
+installed. The installed first alternative is marked as automatically
+installed, another one stays manually installed. The other installed alternatives are removed, also those the
+user installed, except an alternative other packages need.
+.PP
+The script then marks
 .BR ubuntu-unity-desktop ,
 the packages it depends on or recommends that
 .B g-unity7-desktop
-does not use and their dependencies of the task as automatically installed.
-It removes the installed alternatives after the first one of the relations of
-.B g-unity7-desktop
-if the first one is installed and the alternative is automatically installed
-or of the task. An alternative the user installed is kept, as a package of
-@world, and so is an alternative other packages need. The packages autoremove
-removes then are removed as well.
+does not use and the dependencies of the task of these packages and of the
+alternatives to remove (e.g.
+.B file-roller
+of
+.BR nemo-fileroller )
+as automatically installed, except the packages kept by a choice. The packages autoremove removes then are
+removed as well.
 .PP
 It shows all packages and asks for confirmation. To keep one of them, mark it
 as manually installed first:
@@ -40,10 +58,12 @@ as manually installed first:
 .SH OPTIONS
 .TP
 .BR \-n ", " \-\-dry\-run
-Only show the packages, change nothing. It does not need root.
+Only show the packages, change nothing. It asks about the alternatives as
+well, so that the list shows the result of the answers. It does not need root.
 .TP
 .BR \-y ", " \-\-yes
-Do not ask for confirmation.
+Do not ask: keep or install the recommended alternative of each relation and
+do not ask for confirmation.
 .SH SEE ALSO
 .BR apt (8),
 .BR apt-mark (8)

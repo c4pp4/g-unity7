@@ -4,19 +4,23 @@
 ##
 ## The installer of Ubuntu Unity installs the ubuntu-unity-desktop task and apt
 ##  marks its packages as manually installed, autoremove never removes them.
-##  apt also keeps every installed alternative of a relation ("showtime | vlc"),
+##  apt also keeps every installed alternative of a relation ("vlc | showtime"),
 ##  Portage keeps only one. The script:
-##  - marks as automatically installed, if manually installed:
+##  - asks which package to keep of each relation of the Depends and Recommends
+##    of g-unity7-desktop with more installed alternatives or with another
+##    alternative installed instead of the first one (apt does not install
+##    eog of "eog | eom | loupe" if eom is installed): the first one
+##    (recommended) or another one, installed if it is not, or all of them;
+##    the other ones are removed, an alternative is kept if other packages
+##    would have to be removed with it
+##  - marks as automatically installed, if manually installed and not kept by
+##    a choice:
 ##    - ubuntu-unity-desktop
 ##    - the packages ubuntu-unity-desktop depends on or recommends and
 ##      g-unity7-desktop does not depend on, recommend or suggest as the first
 ##      alternative (the duplicates)
-##    - the packages of the task the duplicates depend on or recommend
-##  - removes the installed alternatives after the first one of the Depends and
-##    Recommends of g-unity7-desktop (vlc of "showtime | vlc") if the first one
-##    is installed and the alternative is automatically installed or of the task,
-##    a package installed by the user is kept (as a package of @world); an
-##    alternative is kept also if other packages would have to be removed with it
+##    - the packages of the task the duplicates and the alternatives to remove
+##      depend on or recommend (file-roller of nemo-fileroller)
 ##  - removes the packages autoremove removes then
 
 set -euo pipefail
@@ -30,10 +34,12 @@ usage() {
 
 		Remove the packages of Ubuntu Unity that G Unity⁷ replaces: the duplicate
 		applications and the other installed alternatives of the applications of
-		g-unity7-desktop, as "emerge --depclean" of Gentoo.
+		g-unity7-desktop, as "emerge --depclean" of Gentoo. Of more installed
+		alternatives, or of another alternative installed instead of the
+		recommended one, it asks which one to keep.
 
 		  -n, --dry-run  only show the packages, change nothing (no root needed)
-		  -y, --yes      do not ask for confirmation
+		  -y, --yes      do not ask, keep or install the recommended alternatives
 	EOF
 }
 
@@ -49,7 +55,37 @@ while [[ $# -gt 0 ]]; do
 	shift
 done
 
+## The progress spinner (on a terminal only), as in version_control.sh of the
+##  overlay; the block runs in a subshell.
+spinner=( "|" "/" "-" "\\" )
+spinner_pid=
+
+spinner_start() {
+	[[ -t 2 && -z ${spinner_pid} ]] || return 0
+	{
+		pos=1
+		printf "%s %s" "Looking for packages" "${spinner[0]}"
+		while sleep 0.1; do
+			printf "\b%s" "${spinner[pos]}"
+			pos=$(( (pos + 1) % ${#spinner[@]} ))
+		done
+	} >&2 &
+	spinner_pid=$!
+}
+
+spinner_stop() {
+	[[ -n ${spinner_pid} ]] || return 0
+	kill "${spinner_pid}" 2>/dev/null || true
+	wait "${spinner_pid}" 2>/dev/null || true
+	spinner_pid=
+	printf "\r%22s\r" "" >&2
+}
+
+tmp=
+trap 'spinner_stop; [[ -z ${tmp} ]] || rm -rf "${tmp}"' EXIT
+
 die() {
+	spinner_stop
 	echo "g-unity7-cleanup: $*" >&2
 	exit 1
 }
@@ -61,6 +97,7 @@ installed() {
 }
 
 installed "${meta}" || die "${meta} is not installed"
+spinner_start
 
 ## The relations of the fields $2 of a package ($1, the installed version or the
 ##  candidate of the archive), one per line, the alternatives separated by spaces.
@@ -98,11 +135,244 @@ while read -r name _; do
 	keep[${name}]=1
 done < <(relations "${meta}" "Depends Recommends Suggests")
 
+## The one-line description of a package, installed or of the archive.
+summary() {
+	if installed "$1"; then
+		dpkg-query -W -f='${binary:Summary}' "$1" 2>/dev/null || true
+	else
+		apt-cache show --no-all-versions "$1" 2>/dev/null \
+			| awk '/^Description(-[[:alnum:]_]+)?: / { sub(/^[^:]+: /, ""); print; exit }' || true
+	fi
+}
+
+## True if the archive has a version of $1 to install (the output of apt-cache
+##  policy is translated).
+has_candidate() {
+	local candidate
+	candidate=$(LC_ALL=C apt-cache policy "$1" 2>/dev/null | awk '/^  Candidate: / { print $2 }')
+	[[ -n ${candidate} && ${candidate} != "(none)" ]]
+}
+
+## The words of $@ as "a, b and c".
+and_list() {
+	local out=$1
+	shift
+	while [[ $# -gt 1 ]]; do
+		out+=", $1"
+		shift
+	done
+	[[ $# -eq 0 ]] || out+=" and $1"
+	echo "${out}"
+}
+
+## The relations of g-unity7-desktop to choose from. Relations with the same
+##  first alternative and one other alternative each are one relation of the
+##  first alternative or all the other ones, a set joined with "+" (Debian has
+##  no "mate-utils | (baobab gnome-logs gnome-screenshot)", g-unity7-desktop
+##  recommends "mate-utils | baobab, mate-utils | gnome-logs, ...").
+mapfile -t relations_list < <(relations "${meta}" "Depends Recommends")
+declare -A pairs=() pair_set=()
+for group in "${relations_list[@]}"; do
+	read -ra names <<< "${group}"
+	[[ ${#names[@]} -eq 2 ]] || continue
+	pairs[${names[0]}]=$(( ${pairs[${names[0]}]:-0} + 1 ))
+	pair_set[${names[0]}]+=${pair_set[${names[0]}]:++}${names[1]}
+done
+groups=()
+for group in "${relations_list[@]}"; do
+	read -ra names <<< "${group}"
+	if [[ ${#names[@]} -eq 2 && ${pairs[${names[0]}]} -gt 1 ]]; then
+		[[ -n ${pair_set[${names[0]}]} ]] || continue
+		groups+=( "${names[0]} ${pair_set[${names[0]}]}" )
+		pair_set[${names[0]}]=
+	else
+		groups+=( "${group}" )
+	fi
+done
+
+## A relation as text, with its sets.
+relation_text() {
+	local text=${1// / | }
+	echo "${text//+/ + }"
+}
+
+## The installed packages of the alternatives $@ (a set joined with "+").
+installed_of() {
+	local name part parts
+	for name in "$@"; do
+		read -ra parts <<< "${name//+/ }"
+		for part in "${parts[@]}"; do
+			installed "${part}" && echo "${part}"
+		done
+	done
+	return 0
+}
+
+## The packages of an alternative to install with it: not installed, in the
+##  archive.
+missing_of() {
+	local part
+	for part in ${1//+/ }; do
+		installed "${part}" || ! has_candidate "${part}" || echo "${part}"
+	done
+	return 0
+}
+
+## True if a package of the alternative $1 is decided already.
+decided() {
+	local part
+	for part in ${1//+/ }; do
+		[[ -z ${spared[${part}]:-} && -z ${reason[${part}]:-} ]] || return 0
+	done
+	return 1
+}
+
+## The choices of the relations with more installed alternatives or with
+##  another alternative installed instead of the first one: the kept
+##  packages (spared[]) are not marked, the installed packages of the other
+##  alternatives are removed (reason[]), of "change nothing" no package is
+##  marked or removed.
+declare -A spared=() reason=()
+candidates_remove=() install=() unchanged=() asked=
+for group in "${groups[@]}"; do
+	read -ra names <<< "${group}"
+	[[ ${#names[@]} -gt 1 ]] || continue
+	first_name=${names[0]}
+	## The alternatives with an installed package not decided yet, a first
+	##  alternative of another relation is not one of them
+	present=()
+	for name in "${names[@]}"; do
+		[[ ${name} == "${first_name}" || -z ${keep[${name}]:-} ]] || continue
+		[[ -n $(installed_of "${name}") ]] && ! decided "${name}" || continue
+		present+=( "${name}" )
+	done
+	[[ ${#present[@]} -gt 0 ]] || continue
+
+	## Asked with two installed alternatives, or with another one installed
+	##  instead of the first one the archive has
+	if installed "${first_name}" || ! has_candidate "${first_name}" || decided "${first_name}"; then
+		[[ ${#present[@]} -gt 1 ]] || continue
+	fi
+
+	## The alternatives in the order of the relation: an installed one is kept,
+	##  another one installed if the archive has it
+	options=() actions=() default=
+	for name in "${names[@]}"; do
+		[[ ${name} == "${first_name}" || -z ${keep[${name}]:-} ]] || continue
+		mapfile -t missing < <(missing_of "${name}")
+		if [[ " ${present[*]} " == *" ${name} "* ]]; then
+			if [[ ${name} == *+* ]]; then
+				## A set: the missing packages are installed with it
+				mapfile -t parts < <(installed_of "${name}")
+				label="keep $(and_list "${parts[@]}")"
+				[[ ${#missing[@]} -eq 0 ]] || label+=", install $(and_list "${missing[@]}")"
+			else
+				label="keep ${name}: $(summary "${name}")"
+			fi
+			actions+=( "keep ${name}" )
+		else
+			[[ ${#missing[@]} -gt 0 ]] && ! decided "${name}" || continue
+			if [[ ${name} == *+* ]]; then
+				label="install $(and_list "${missing[@]}")"
+			else
+				label="install ${name}: $(summary "${name}")"
+			fi
+			actions+=( "install ${name}" )
+		fi
+		if [[ ${name} == "${first_name}" ]]; then
+			label+=" (recommended)"
+			default=${#actions[@]}
+		fi
+		options+=( "${label}" )
+	done
+	## Of a single installed alternative "keep" changes nothing
+	if [[ ${#present[@]} -gt 1 ]]; then
+		options+=( "change nothing, I will decide myself" )
+		actions+=( "nothing" )
+	fi
+	default=${default:-${#actions[@]}}
+
+	spinner_stop
+	if [[ -z ${asked} ]]; then
+		echo "For some applications (terminal, image viewer, …) another package than the"
+		echo "recommended one, or several packages, are installed."
+		if [[ -n ${yes} ]]; then
+			echo "The recommended package is kept or installed, the others are removed."
+		else
+			echo "Choose the package to keep, the others are removed (Enter takes the choice"
+			echo "in brackets)."
+		fi
+		echo
+		asked=1
+	fi
+	mapfile -t parts < <(installed_of "${present[@]}")
+	if [[ ${#present[@]} -gt 1 ]]; then
+		echo "$(and_list "${parts[@]}") are installed:"
+	elif [[ ${#parts[@]} -gt 1 ]]; then
+		echo "$(and_list "${parts[@]}") are installed instead of ${first_name}:"
+	else
+		echo "${parts[0]} is installed instead of ${first_name}:"
+	fi
+	if [[ -n ${yes} ]]; then
+		answer=${default}
+		echo "  ${options[answer - 1]}"
+	else
+		for i in "${!options[@]}"; do
+			echo "  $(( i + 1 ))) ${options[i]}"
+		done
+		while :; do
+			read -r -p "Choice [${default}]: " answer \
+				|| die "no answer, use --yes to take the recommended choices"
+			answer=${answer:-${default}}
+			[[ ${answer} =~ ^[1-9][0-9]*$ && ${answer} -le ${#actions[@]} ]] && break
+			echo "Give a number from 1 to ${#actions[@]}."
+		done
+	fi
+	echo
+	spinner_start
+
+	action=${actions[answer - 1]}
+	case ${action} in
+		nothing)
+			while read -r part; do
+				spared[${part}]=1
+			done < <(installed_of "${present[@]}")
+			unchanged+=( "$(relation_text "${group}")" )
+			;;
+		install\ *|keep\ *)
+			kept=${action#* }
+			if [[ ${action} == install\ * ]]; then
+				mapfile -t parts < <(missing_of "${kept}")
+				if [[ ${#parts[@]} -gt 1 ]]; then
+					why="$(and_list "${parts[@]}") are installed instead"
+				else
+					why="${parts[0]} is installed instead"
+				fi
+			else
+				why="you keep $(and_list ${kept//+/ })"
+			fi
+			## The kept alternative, its missing packages installed
+			for part in ${kept//+/ }; do
+				spared[${part}]=1
+				installed "${part}" || ! has_candidate "${part}" || install+=( "${part}" )
+			done
+			for name in "${present[@]}"; do
+				[[ ${name} == "${kept}" ]] && continue
+				while read -r part; do
+					reason[${part}]=${why}
+					candidates_remove+=( "${part}" )
+				done < <(installed_of "${name}")
+			done
+			;;
+	esac
+done
+
 mark=()
 add_mark() {
 	local name
 	for name in "$@"; do
-		[[ -n ${manual[${name}]:-} && -z ${keep[${name}]:-} ]] && installed "${name}" || continue
+		[[ -n ${manual[${name}]:-} && -z ${keep[${name}]:-} && -z ${spared[${name}]:-} ]] \
+			&& installed "${name}" || continue
 		[[ -n ${in_list[${name}]:-} ]] || { mark+=( "${name}" ); in_list[${name}]=1; }
 	done
 }
@@ -112,18 +382,20 @@ add_mark "${task}"
 mapfile -t duplicates < <(relations "${task}" "Depends Recommends" | tr ' ' '\n')
 add_mark "${duplicates[@]}"
 
-## The packages of the task the installed duplicates depend on or recommend.
-installed_duplicates=()
+## The packages of the task the installed duplicates and the alternatives to
+##  remove depend on or recommend (not those of a package kept by a choice).
+roots=( "${candidates_remove[@]}" )
 for name in "${duplicates[@]}"; do
-	installed "${name}" && installed_duplicates+=( "${name}" )
+	[[ -z ${spared[${name}]:-} ]] && installed "${name}" && roots+=( "${name}" )
 done
-if [[ ${#installed_duplicates[@]} -gt 0 ]]; then
+if [[ ${#roots[@]} -gt 0 ]]; then
 	mapfile -t closure < <(apt-cache depends --recurse --installed --no-suggests --no-conflicts \
-		--no-breaks --no-replaces --no-enhances "${installed_duplicates[@]}" 2>/dev/null \
+		--no-breaks --no-replaces --no-enhances "${roots[@]}" 2>/dev/null \
 		| grep -v '^[ <]' | sort -u || true)
 	candidates=()
 	for name in "${closure[@]}"; do
-		[[ -n ${manual[${name}]:-} && -z ${keep[${name}]:-} ]] && candidates+=( "${name}" )
+		[[ -n ${manual[${name}]:-} && -z ${keep[${name}]:-} && -z ${spared[${name}]:-} ]] \
+			&& candidates+=( "${name}" )
 	done
 	mapfile -t closure_of_task < <(of_task "${candidates[@]}")
 	add_mark "${closure_of_task[@]}"
@@ -131,7 +403,6 @@ fi
 
 ## The marks applied to a copy of the apt state, the packages autoremove removes then.
 tmp=$(mktemp -d)
-trap 'rm -rf "${tmp}"' EXIT
 states=${tmp}/extended_states
 cp /var/lib/apt/extended_states "${states}" 2>/dev/null || : > "${states}"
 [[ ${#mark[@]} -eq 0 ]] || apt-mark -o Dir::State::extended_states="${states}" auto "${mark[@]}" >/dev/null
@@ -141,65 +412,59 @@ while read -r name; do
 done < <(apt-get -s -o Dir::State::extended_states="${states}" --purge autoremove 2>/dev/null \
 	| awk '/^Purg / { print $2 }')
 
-## The installed alternatives after an installed first one.
-alternatives=() first_of=() user_kept=() needed_kept=()
-declare -A first=()
-while read -r group; do
-	read -ra names <<< "${group}"
-	[[ ${#names[@]} -gt 1 ]] && installed "${names[0]}" || continue
-	for name in "${names[@]:1}"; do
-		installed "${name}" && [[ -z ${keep[${name}]:-} && -z ${first[${name}]:-} ]] || continue
-		first[${name}]=${names[0]}
-		alternatives+=( "${name}" )
-	done
-done < <(relations "${meta}" "Depends Recommends")
-
-declare -A alternative_of_task=()
-manual_alternatives=()
-for name in "${alternatives[@]}"; do
-	[[ -n ${manual[${name}]:-} ]] && manual_alternatives+=( "${name}" )
-done
-while read -r name; do
-	[[ -n ${name} ]] && alternative_of_task[${name}]=1
-done < <(of_task "${manual_alternatives[@]}")
-
-remove=()
-for name in "${alternatives[@]}"; do
-	if [[ -n ${manual[${name}]:-} && -z ${alternative_of_task[${name}]:-} ]]; then
-		user_kept+=( "${name}" )
-		continue
-	fi
-	## Only the alternative itself, not the packages depending on it (but the
-	##  packages autoremove removes anyway, e.g. ubuntu-unity-desktop)
+## The alternatives of the choices, without those other packages need (but
+##  the packages autoremove removes anyway, e.g. ubuntu-unity-desktop).
+install_args=( "${install[@]/%/+}" )
+remove=() reasons=() needed_kept=()
+for name in "${candidates_remove[@]}"; do
 	others=
 	while read -r other; do
 		[[ ${other} == "${name}" || -n ${autoremoved[${other}]:-} ]] || others+="${other} "
-	done < <(apt-get -s -o Dir::State::extended_states="${states}" --purge remove "${name}" 2>/dev/null \
-		| awk '/^(Purg|Remv) / { print $2 }')
+	done < <(apt-get -s -o Dir::State::extended_states="${states}" --purge remove "${name}" \
+		"${install_args[@]}" 2>/dev/null | awk '/^(Purg|Remv) / { print $2 }')
 	if [[ -n ${others} ]]; then
 		needed_kept+=( "${name} (needed by ${others% })" )
 		continue
 	fi
 	remove+=( "${name}" )
-	first_of+=( "${name} (${first[${name}]} is installed)" )
+	reasons+=( "${name} (${reason[${name}]})" )
 done
 
-if [[ ${#mark[@]} -eq 0 && ${#remove[@]} -eq 0 ]]; then
+if [[ ${#mark[@]} -eq 0 && ${#remove[@]} -eq 0 && ${#install[@]} -eq 0 ]]; then
+	spinner_stop
 	echo "Nothing to do, no package of Ubuntu Unity replaced by G Unity⁷ is left."
-	[[ ${#user_kept[@]} -eq 0 ]] || printf 'Kept alternatives installed by you: %s\n' "${user_kept[*]}"
+	[[ ${#unchanged[@]} -eq 0 ]] || printf 'Left unchanged by your choice: %s\n' "${unchanged[@]}"
+	[[ ${#needed_kept[@]} -eq 0 ]] || printf 'Kept alternative other packages need: %s\n' "${needed_kept[@]}"
 	exit 0
 fi
 
 ## Preview with the marks applied to a copy of the apt state.
-if [[ ${#remove[@]} -gt 0 ]]; then
-	apt_args=( --purge --autoremove remove "${remove[@]}" )
+if [[ ${#remove[@]} -gt 0 || ${#install[@]} -gt 0 ]]; then
+	apt_args=( --purge --autoremove remove "${remove[@]}" "${install_args[@]}" )
 else
 	apt_args=( --purge autoremove )
 fi
-mapfile -t removed < <(apt-get -s -o Dir::State::extended_states="${states}" "${apt_args[@]}" 2>/dev/null \
-	| awk '/^Purg / { print $2 }')
+simulation=$(apt-get -s -o Dir::State::extended_states="${states}" "${apt_args[@]}" 2>/dev/null)
+mapfile -t removed < <(awk '/^Purg / { print $2 }' <<< "${simulation}")
+mapfile -t installs < <(awk '/^Inst / { print $2 }' <<< "${simulation}")
 
-list() {
+spinner_stop
+
+## A list of packages side by side as apt shows it, or one item per line.
+list_words() {
+	local title=$1 width
+	shift
+	[[ $# -gt 0 ]] || return 0
+	width=$(tput cols 2>/dev/null) || width=80
+	echo "${title} ($#):"
+	printf '%s\n' "$@" | awk -v width="${width}" '
+		length(line) && length(line) + 1 + length($0) > width { print line; line = "" }
+		{ line = length(line) ? line " " $0 : "  " $0 }
+		END { if (length(line)) print line }'
+	echo
+}
+
+list_lines() {
 	local title=$1
 	shift
 	[[ $# -gt 0 ]] || return 0
@@ -208,12 +473,15 @@ list() {
 	echo
 }
 
-list "Packages to mark as automatically installed" "${mark[@]}"
-list "Alternatives to remove" "${first_of[@]}"
-list "Kept alternatives installed by you" "${user_kept[@]}"
-list "Kept alternatives other packages need" "${needed_kept[@]}"
+list_words "Alternatives to install" "${install[@]}"
+list_lines "Alternatives to remove" "${reasons[@]}"
+list_words "Leftovers not needed or replaced by G Unity⁷, to mark for autoremove" "${mark[@]}"
+list_lines "Left unchanged by your choice" "${unchanged[@]}"
+list_lines "Kept alternatives other packages need" "${needed_kept[@]}"
+list_words "Packages apt installs" "${installs[@]}"
+## Purged as by apt (with the configuration files), marked with * as apt does
 if [[ ${#removed[@]} -gt 0 ]]; then
-	list "Packages apt removes" "${removed[@]}"
+	list_words "Packages apt removes" "${removed[@]/%/*}"
 else
 	echo "Packages apt removes: none"
 	echo
@@ -223,9 +491,16 @@ echo "To keep a package, mark it as manually installed first: sudo apt-mark manu
 [[ -z ${dry_run} ]] || exit 0
 
 if [[ -z ${yes} ]]; then
-	read -r -p "Remove the packages? [y/N] " answer
+	read -r -p "Continue? [y/N] " answer
 	[[ ${answer} == [yY]* ]] || { echo "Nothing changed."; exit 0; }
 fi
 
 [[ ${#mark[@]} -eq 0 ]] || apt-mark auto "${mark[@]}" >/dev/null
 apt-get -y "${apt_args[@]}"
+## The installed first alternatives are needed by g-unity7-desktop only, the
+##  other ones are chosen by the user (as a package of @world).
+install_auto=()
+for name in "${install[@]}"; do
+	[[ -z ${keep[${name}]:-} ]] || install_auto+=( "${name}" )
+done
+[[ ${#install_auto[@]} -eq 0 ]] || apt-mark auto "${install_auto[@]}" >/dev/null

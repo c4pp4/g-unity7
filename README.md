@@ -35,10 +35,13 @@ sudo g-unity7-cleanup
 It works as `emerge --depclean` of Gentoo. The installer of Ubuntu Unity marks
 its applications as manually installed, so `apt autoremove` never removes them,
 and apt keeps every installed alternative of a relation such as
-`showtime | vlc`. `g-unity7-cleanup` removes the duplicates and the other
-installed alternatives of the applications of `g-unity7-desktop`, except those
-you installed yourself, and the packages autoremove removes then. It shows all
-of them and asks first, `g-unity7-cleanup --dry-run` changes nothing.
+`vlc | showtime`. `g-unity7-cleanup` removes the duplicates and the packages
+autoremove removes then. Of more installed alternatives of an application of
+`g-unity7-desktop` (e.g. atril and papers) it asks which one to keep, the first
+one is recommended, an alternative that is not installed can be installed. apt
+does not install the first alternative if another one is installed (eog of
+`eog | eom | loupe` with eom), so it offers to install it then. It shows all packages and asks first, `g-unity7-cleanup --dry-run`
+changes nothing.
 
 ## Layout
 

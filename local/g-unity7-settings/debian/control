@@ -20,5 +20,6 @@ Depends: ${misc:Depends},
          yaru-theme-icon (>= 26.10.3ubuntu+gu7)
 Description: default settings of the G Unity⁷ desktop
  GSettings overrides of the Unity session and Unity Greeter from the
- gentoo-unity7 overlay: the Yaru-dark theme, Ubuntu fonts, Nemo desktop icons,
- window keybindings and power settings.
+ gentoo-unity7 overlay: the Yaru-dark theme, Ubuntu fonts (with the monospace
+ font size of fonts-ubuntu), Nemo desktop icons, window keybindings and power
+ settings.
