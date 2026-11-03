@@ -299,7 +299,7 @@ for group in "${groups[@]}"; do
 		if [[ -n ${yes} ]]; then
 			echo "The recommended package is kept or installed, the others are removed."
 		else
-			echo "Choose the package to keep, the others are removed (Enter takes the choice"
+			echo "Choose the package to keep, the others are removed (Enter takes the number"
 			echo "in brackets)."
 		fi
 		echo
