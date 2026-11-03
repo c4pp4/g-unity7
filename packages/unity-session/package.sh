@@ -27,6 +27,25 @@ debian_edit() {
 		grep -Fq "debian/g-unity7/${f} " debian/unity-session.install || return 1
 	done
 
+	# Default applications of g-unity7-desktop: atril | papers | evince, #
+	#  vlc | showtime, the Firefox, Chromium and Thunderbird snaps #
+	sed -i \
+		-e "s/org\.gnome\.Evince\.desktop;atril\.desktop;org\.gnome\.Papers\.desktop;/atril.desktop;org.gnome.Papers.desktop;org.gnome.Evince.desktop;/" \
+		-e "s/org\.gnome\.Evince\.desktop;atril\.desktop;/atril.desktop;org.gnome.Evince.desktop;/" \
+		-e "s/org\.gnome\.Evince\.desktop;org\.gnome\.Papers\.desktop;/org.gnome.Papers.desktop;org.gnome.Evince.desktop;/" \
+		-e "/^video\/\(x-ms-wmx\|x-totem-stream\)=/!{/^video\//s/vlc\.desktop;/&org.gnome.Showtime.desktop;/}" \
+		-e "s/firefox\.desktop;/firefox_firefox.desktop;&/" \
+		-e "s/chromium-browser-chromium\.desktop;/chromium_chromium.desktop;chromium-browser.desktop;&/" \
+		-e "s/thunderbird\.desktop;/thunderbird_thunderbird.desktop;&/" \
+		debian/g-unity7/unity-mimeapps.list || return 1
+	grep -qx "application/pdf=atril.desktop;org.gnome.Papers.desktop;org.gnome.Evince.desktop;" debian/g-unity7/unity-mimeapps.list || return 1
+	grep -qx "application/x-dvi=atril.desktop;org.gnome.Evince.desktop;" debian/g-unity7/unity-mimeapps.list || return 1
+	grep -qx "application/x-ext-pdf=org.gnome.Papers.desktop;org.gnome.Evince.desktop;" debian/g-unity7/unity-mimeapps.list || return 1
+	! grep -q "Evince\.desktop;\(atril\|org\.gnome\.Papers\)\.desktop;" debian/g-unity7/unity-mimeapps.list || return 1
+	grep -qx "video/mp4=vlc.desktop;org.gnome.Showtime.desktop;org.gnome.Totem.desktop;" debian/g-unity7/unity-mimeapps.list || return 1
+	grep -q "^text/html=firefox_firefox\.desktop;firefox\.desktop;.*;chromium_chromium\.desktop;chromium-browser\.desktop;chromium-browser-chromium\.desktop;" debian/g-unity7/unity-mimeapps.list || return 1
+	grep -q "^x-scheme-handler/mailto=thunderbird_thunderbird\.desktop;thunderbird\.desktop;" debian/g-unity7/unity-mimeapps.list || return 1
+
 	# GTK_MODULES of the X session with appmenu-gtk-module, as the xinitrc.d script #
 	#  of x11-misc/appmenu-gtk-module (unity-gtk-module.service is not used) #
 	install -m 644 "${PKG_DIR}"/85unity-session_appmenu-gtk-module debian/g-unity7/ || return 1
