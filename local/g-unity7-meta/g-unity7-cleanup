@@ -21,6 +21,8 @@
 ##      alternative (the duplicates)
 ##    - the packages of the task the duplicates and the alternatives to remove
 ##      depend on or recommend (file-roller of nemo-fileroller)
+##    only those autoremove removes then (the others stay needed, e.g. by
+##    another desktop as ubuntu-desktop)
 ##  - removes the packages autoremove removes then
 
 set -euo pipefail
@@ -430,14 +432,6 @@ for name in "${candidates_remove[@]}"; do
 	reasons+=( "${name} (${reason[${name}]})" )
 done
 
-if [[ ${#mark[@]} -eq 0 && ${#remove[@]} -eq 0 && ${#install[@]} -eq 0 ]]; then
-	spinner_stop
-	echo "Nothing to do, no package of Ubuntu Unity replaced by G Unity⁷ is left."
-	[[ ${#unchanged[@]} -eq 0 ]] || printf 'Left unchanged by your choice: %s\n' "${unchanged[@]}"
-	[[ ${#needed_kept[@]} -eq 0 ]] || printf 'Kept alternative other packages need: %s\n' "${needed_kept[@]}"
-	exit 0
-fi
-
 ## Preview with the marks applied to a copy of the apt state.
 if [[ ${#remove[@]} -gt 0 || ${#install[@]} -gt 0 ]]; then
 	apt_args=( --purge --autoremove remove "${remove[@]}" "${install_args[@]}" )
@@ -447,6 +441,28 @@ fi
 simulation=$(apt-get -s -o Dir::State::extended_states="${states}" "${apt_args[@]}" 2>/dev/null)
 mapfile -t removed < <(awk '/^Purg / { print $2 }' <<< "${simulation}")
 mapfile -t installs < <(awk '/^Inst / { print $2 }' <<< "${simulation}")
+
+## Only the marked packages apt removes then. The other ones stay needed (by
+##  G Unity⁷ or by another desktop, e.g. ubuntu-desktop shares most of the
+##  task), marking them would only change their state. apt removes the same
+##  packages without them: a kept package and its dependencies stay needed.
+declare -A removed_set=()
+for name in "${removed[@]}"; do
+	removed_set[${name}]=1
+done
+marked=()
+for name in "${mark[@]}"; do
+	[[ -z ${removed_set[${name}]:-} ]] || marked+=( "${name}" )
+done
+mark=( "${marked[@]}" )
+
+if [[ ${#mark[@]} -eq 0 && ${#remove[@]} -eq 0 && ${#install[@]} -eq 0 ]]; then
+	spinner_stop
+	echo "Nothing to do, no package of Ubuntu Unity replaced by G Unity⁷ is left."
+	[[ ${#unchanged[@]} -eq 0 ]] || printf 'Left unchanged by your choice: %s\n' "${unchanged[@]}"
+	[[ ${#needed_kept[@]} -eq 0 ]] || printf 'Kept alternative other packages need: %s\n' "${needed_kept[@]}"
+	exit 0
+fi
 
 spinner_stop
 

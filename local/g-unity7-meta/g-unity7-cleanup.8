@@ -49,8 +49,11 @@ alternatives to remove (e.g.
 .B file-roller
 of
 .BR nemo-fileroller )
-as automatically installed, except the packages kept by a choice. The packages autoremove removes then are
-removed as well.
+as automatically installed, except the packages kept by a choice, and removes
+them with autoremove. It marks only the packages autoremove removes then, the
+packages still needed (e.g. by
+.B ubuntu-desktop
+on Ubuntu, which shares most of the task) are left as they are.
 .PP
 It shows all packages and asks for confirmation. To keep one of them, mark it
 as manually installed first:

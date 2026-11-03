@@ -40,6 +40,13 @@ src_edit() {
 		gnome-settings-daemon/gsd-rr-config.c || return 1
 	grep -Fq "execve (canary_argv[0], canary_argv, canary_env); _exit (1);" gnome-settings-daemon/gsd-rr-config.c || return 1
 
+	# Log out with the dialog of Unity (Ctrl+Alt+Del), not with gnome-session-quit of #
+	#  gnome-session (the session manager is cinnamon-session) #
+	sed -i \
+		-e 's/"gnome-session-quit --logout"/"unity-session-quit --logout"/' \
+		plugins/media-keys/gsd-media-keys-manager.c || return 1
+	grep -Fq '"unity-session-quit --logout"' plugins/media-keys/gsd-media-keys-manager.c || return 1
+
 	# Apply the regional formats setting also when started by systemd #
 	sed -i \
 		-e "s:^ExecStart=/usr/lib/unity-settings-daemon/unity-settings-daemon$:&-localeexec:" \

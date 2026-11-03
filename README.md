@@ -26,21 +26,24 @@ sudo apt install g-unity7-desktop
 `g-unity7-desktop` installs `g-unity7-apt-pin`, which prefers the packages of
 the PPA to those of Ubuntu.
 
-To remove the applications of Ubuntu Unity that G Unity⁷ replaces, run:
+Then run:
 
 ```
 sudo g-unity7-cleanup
 ```
 
-It works as `emerge --depclean` of Gentoo. The installer of Ubuntu Unity marks
-its applications as manually installed, so `apt autoremove` never removes them,
-and apt keeps every installed alternative of a relation such as
-`vlc | showtime`. `g-unity7-cleanup` removes the duplicates and the packages
-autoremove removes then. Of more installed alternatives of an application of
-`g-unity7-desktop` (e.g. atril and papers) it asks which one to keep, the first
-one is recommended, an alternative that is not installed can be installed. apt
-does not install the first alternative if another one is installed (eog of
-`eog | eom | loupe` with eom), so it offers to install it then. It shows all packages and asks first, `g-unity7-cleanup --dry-run`
+It works as `emerge --depclean` of Gentoo. apt keeps the applications already
+installed and every installed alternative of a relation such as
+`vlc | showtime`, and it does not install the first alternative if another one
+is installed (Atril of `atril | papers | evince` with Papers). Of the installed
+alternatives of an application of `g-unity7-desktop` `g-unity7-cleanup` asks
+which one to keep, the first one is recommended and offered for installation,
+an alternative that is not installed can be installed too.
+
+Coming from Ubuntu Unity, it also removes the packages G Unity⁷ replaces: the
+installer of Ubuntu Unity marks its applications as manually installed, so
+`apt autoremove` never removes them. Other desktops, such as GNOME, are not
+removed. It shows all packages and asks first, `g-unity7-cleanup --dry-run`
 changes nothing.
 
 ## Layout
