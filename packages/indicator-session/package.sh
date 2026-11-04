@@ -13,6 +13,11 @@ debian_edit() {
 	# Unity Help in the Dash, as the ebuild installs it #
 	install -d debian/g-unity7 || return 1
 	install -m 644 "${FILESDIR}"/unity-yelp.desktop debian/g-unity7/ || return 1
+	# The translations are in g-unity7-l10n (unity-help), the language packs of Ubuntu #
+	#  install indicator-session without them and take precedence #
+	sed -i -e "s/^X-GNOME-Gettext-Domain=indicator-session$/X-GNOME-Gettext-Domain=unity-help/" \
+		debian/g-unity7/unity-yelp.desktop || return 1
+	grep -qx "X-GNOME-Gettext-Domain=unity-help" debian/g-unity7/unity-yelp.desktop || return 1
 	echo "debian/g-unity7/unity-yelp.desktop usr/share/applications/" > debian/indicator-session.install || return 1
 }
 

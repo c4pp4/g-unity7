@@ -1,0 +1,21 @@
+#!/usr/bin/make -f
+
+## po/<domain>/<language>.po -> usr/share/locale/<language>/LC_MESSAGES/<domain>.mo
+DESTDIR := debian/g-unity7-l10n
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	set -e; for po in po/*/*.po; do \
+		domain=$${po#po/}; domain=$${domain%%/*}; lang=$${po##*/}; lang=$${lang%.po}; \
+		mkdir -p build/$$lang/LC_MESSAGES; \
+		msgfmt -o build/$$lang/LC_MESSAGES/$$domain.mo $$po; \
+	done
+
+override_dh_auto_install:
+	mkdir -p $(DESTDIR)/usr/share/locale
+	cp -r build/. $(DESTDIR)/usr/share/locale/
+
+override_dh_auto_clean:
+	rm -rf build

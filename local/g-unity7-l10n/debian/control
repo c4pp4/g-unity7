@@ -1,0 +1,18 @@
+Source: g-unity7-l10n
+Section: localization
+Priority: optional
+Maintainer: @MAINTAINER@
+Build-Depends: debhelper-compat (= 13),
+               gettext
+Standards-Version: 4.7.2
+Rules-Requires-Root: no
+Homepage: https://github.com/c4pp4/g-unity7
+
+Package: g-unity7-l10n
+Architecture: all
+Depends: ${misc:Depends}
+Description: translations of the G Unity⁷ desktop missing in Ubuntu
+ Translations of the gentoo-unity7 overlay that no package and no language
+ pack of Ubuntu installs: Activity Log Manager, Startup Applications
+ (unity-session-properties), the appearance and notifications indicators,
+ the quicklist of MATE Screenshot and the Unity Help launcher.
