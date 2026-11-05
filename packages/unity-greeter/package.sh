@@ -4,15 +4,20 @@ GROUP="desktop"
 
 ## envvars-pipewire-indicators.patch is the variant of packages/unity-greeter/patches
 ##  (only the environment variables, the greeter always runs with systemd on
-##  Ubuntu). start-notify-osd.patch is not needed, notify-osd is D-Bus activated.
+##  Ubuntu).
 PATCHES=(
 	envvars-pipewire-indicators.patch
 	fix-prompt-box-resize.patch
 	quit-unity-greeter-immediately-on-active-session-login.patch
+	start-notify-osd.patch
 	rename-ubuntu-session-to-unity.diff
 )
 
 debian_edit() {
+	# notify-osd started by start-notify-osd.patch (it has no D-Bus activation in Ubuntu) #
+	sed -i -e "s/^\( *\)network-manager-gnome,$/&\n\1notify-osd,/" debian/control || return 1
+	grep -q "^ *notify-osd,$" debian/control || return 1
+
 	# liblightdm-gobject-1-dev is only provided without a version by liblightdm-gobject-dev, #
 	#  the Vala API of liblightdm-gobject-1 is in lightdm-vala #
 	sed -i -e "s/^\( *\)liblightdm-gobject-1-dev (>= 1.4.0),$/\1liblightdm-gobject-dev (>= 1.4.0),\n\1lightdm-vala,/" debian/control || return 1
