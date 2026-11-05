@@ -67,6 +67,16 @@ if [[ -n ${staging_version} ]] && dpkg --compare-versions "${VERSION}" le "${sta
 	die "${PPA_STAGING} already has ${SOURCE} ${staging_version}, ${VERSION} is not newer."
 fi
 
+## A source of a PPA (SOURCE_ARCHIVE): its base version is copied to staging
+##  first, with its orig tarball (the port is uploaded without it) and marked
+##  as a copy, Launchpad shows the diff of the port against it.
+if [[ -n ${SOURCE_ARCHIVE:-} && -z ${simulate} ]]; then
+	[[ -f ${LP_CREDENTIALS_FILE:-} ]] || die "LP_CREDENTIALS_FILE is needed to copy ${SOURCE} ${BASE_VERSION} from ppa:${SOURCE_ARCHIVE}."
+	python3 -I "${REPO_ROOT}"/scripts/lp_write.py --credentials "${LP_CREDENTIALS_FILE}" copy-base \
+		"${SOURCE}" "${BASE_VERSION}" --from "${SOURCE_ARCHIVE}" --to "${PPA_STAGING}" --series "${series}" >&2 \
+		|| die "Copying ${SOURCE} ${BASE_VERSION} from ppa:${SOURCE_ARCHIVE} failed."
+fi
+
 einfo "Signing ${changes##*/} with ${GPG_KEY_ID}"
 debsign "${debsign_args[@]}" --re-sign -k"${GPG_KEY_ID}" "${changes}" >&2 || die "Signing failed."
 

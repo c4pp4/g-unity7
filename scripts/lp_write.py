@@ -60,6 +60,35 @@ def cmd_copy(args):
     sys.exit(f"lp_write.py: {args.source} {args.version} did not appear in {args.to_ppa} in time")
 
 
+def cmd_copy_base(args):
+    """Copy the base version of a port from the PPA of its source (e.g. the
+    Firefox of mozillateam) with its binaries, unless the version has ever
+    been in the target PPA. The orig tarball is then in the target PPA (the
+    port is uploaded without it) and Launchpad shows the diff of the port
+    against the base."""
+    lp = login(args)
+    source_archive = archive(lp, args.from_ppa)
+    target = archive(lp, args.to_ppa)
+    series = lp.distributions["ubuntu"].getSeries(name_or_version=args.series)
+    if list(target.getPublishedSources(source_name=args.source, version=args.version,
+                                       exact_match=True, distro_series=series)):
+        print(f"{args.source} {args.version} has been in {args.to_ppa} already", file=sys.stderr)
+        return
+    if not source_of(source_archive, lp, args.source, args.version, args.series):
+        sys.exit(f"lp_write.py: {args.source} {args.version} is not in {args.from_ppa}")
+    target.copyPackage(source_name=args.source, version=args.version, from_archive=source_archive,
+                       to_series=args.series, to_pocket="Release", include_binaries=True)
+    print(f"Copying {args.source} {args.version} from {args.from_ppa} to {args.to_ppa}", file=sys.stderr)
+    deadline = time.time() + COPY_TIMEOUT
+    while time.time() < deadline:
+        copied = source_of(target, lp, args.source, args.version, args.series)
+        if copied:
+            print(copied.status)
+            return
+        time.sleep(30)
+    sys.exit(f"lp_write.py: {args.source} {args.version} did not appear in {args.to_ppa} in time")
+
+
 def cmd_retry(args):
     lp = login(args)
     ppa = archive(lp, args.ppa)
@@ -89,6 +118,14 @@ def main():
     p.add_argument("--to", dest="to_ppa", required=True)
     p.add_argument("--series", required=True)
     p.set_defaults(func=cmd_copy)
+
+    p = sub.add_parser("copy-base", help="copy the base version of a port from the PPA of its source")
+    p.add_argument("source")
+    p.add_argument("version")
+    p.add_argument("--from", dest="from_ppa", required=True)
+    p.add_argument("--to", dest="to_ppa", required=True)
+    p.add_argument("--series", required=True)
+    p.set_defaults(func=cmd_copy_base)
 
     p = sub.add_parser("retry", help="retry the failed builds of a version")
     p.add_argument("source")

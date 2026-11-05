@@ -26,6 +26,9 @@
 ##  - removes the duplicates apt keeps as an installed alternative of another
 ##    relation (lightdm-gtk-greeter, xfwm4), if nothing else is removed with them
 ##  - removes the packages autoremove removes then
+##  - asks whether to install Firefox and Thunderbird of the PPA (with the
+##    global menu) instead of the snaps of Ubuntu, copies the profiles of the
+##    snaps to the users without a profile of the deb, then removes the snaps
 
 set -euo pipefail
 
@@ -371,6 +374,109 @@ for group in "${groups[@]}"; do
 	esac
 done
 
+## Firefox and Thunderbird: the packages of Ubuntu install the snaps, the PPA has
+##  them as debs with the global menu of Unity (a lower version, g-unity7-apt-pin
+##  keeps the packages of Ubuntu until the deb is installed here, the deb then
+##  links its pin). With the deb chosen, the profiles of the snap are copied for
+##  every user who has no profile of the deb yet, then the snap is removed.
+moz_install=() moz_snap_remove=() moz_copy=() moz_lines=()
+
+## The version of $1 in the G Unity⁷ PPA (also the staging PPA), empty if none.
+ppa_version() {
+	LC_ALL=C apt-cache madison "$1" 2>/dev/null \
+		| awk -F'|' '$3 ~ /c4pp4\/g-unity7/ { gsub(/ /, "", $2); print $2; exit }'
+}
+
+## True if the snap $1 is installed.
+snap_installed() {
+	command -v snap >/dev/null && snap list "$1" >/dev/null 2>&1
+}
+
+## The users (UID 1000 to 59999) with a profile of the snap ($1, relative to the
+##  home) and no profile of the deb ($2) yet, as "user:home".
+profiles_to_copy() {
+	local user uid home
+	while IFS=: read -r user _ uid _ _ home _; do
+		[[ ${uid} -ge 1000 && ${uid} -lt 60000 && -d ${home} ]] || continue
+		[[ -d ${home}/$1 && ! -e ${home}/$2 ]] && echo "${user}:${home}"
+	done < <(getent passwd)
+	return 0
+}
+
+## moz_choice <package> <profile of the snap> <profile of the deb> <name>
+moz_choice() {
+	local pkg=$1 snap_profile=$2 deb_profile=$3 app=$4
+	local ppa status deb_installed= snap= users=() copy_text options=() actions=() default=1 i answer u
+	ppa=$(ppa_version "${pkg}")
+	[[ -n ${ppa} ]] || return 0
+	status=$(dpkg-query -W -f='${db:Status-Status} ${Version}' "${pkg}" 2>/dev/null) || true
+	[[ ${status} == "installed "*+gu7* ]] && deb_installed=1
+	snap_installed "${pkg}" && snap=1
+	## Nothing to choose without the snap
+	[[ -n ${snap} ]] || return 0
+
+	mapfile -t users < <(profiles_to_copy "${snap_profile}" "${deb_profile}")
+	copy_text=
+	[[ ${#users[@]} -eq 0 ]] || copy_text=", copy the profiles of the snap of $(and_list "${users[@]%%:*}")"
+	if [[ -n ${deb_installed} ]]; then
+		options=( "remove the snap${copy_text} (recommended)" "keep the snap too" )
+		actions=( snap nothing )
+	else
+		options=( "install ${app} of G Unity⁷ with the global menu${copy_text}, remove the snap (recommended)"
+			"keep the snap of Ubuntu" )
+		actions=( deb nothing )
+	fi
+
+	spinner_stop
+	if [[ -n ${deb_installed} ]]; then
+		echo "${app} of G Unity⁷ and the snap of ${app} are installed:"
+	else
+		echo "${app} is the snap of Ubuntu, G Unity⁷ has it with the global menu of Unity:"
+	fi
+	if [[ -n ${yes} ]]; then
+		answer=${default}
+		echo "  ${options[answer - 1]}"
+	else
+		for i in "${!options[@]}"; do
+			echo "  $(( i + 1 ))) ${options[i]}"
+		done
+		while :; do
+			read -r -p "Choice [${default}]: " answer \
+				|| die "no answer, use --yes to take the recommended choices"
+			answer=${answer:-${default}}
+			[[ ${answer} =~ ^[1-9][0-9]*$ && ${answer} -le ${#actions[@]} ]] && break
+			echo "Give a number from 1 to ${#actions[@]}."
+		done
+	fi
+	echo
+	spinner_start
+
+	case ${actions[answer - 1]} in
+		nothing)
+			moz_lines+=( "${app}: unchanged" )
+			return 0
+			;;
+		deb)
+			moz_install+=( "${pkg}=${ppa}" )
+			moz_lines+=( "${app}: install ${pkg} ${ppa} of G Unity⁷" )
+			;;
+	esac
+	## A running snap is not removed (the copy of an open profile is not consistent)
+	if pgrep -f "/snap/${pkg}/" >/dev/null; then
+		moz_lines+=( "${app}: the snap is running, close ${app} and run g-unity7-cleanup again to remove it" )
+		return 0
+	fi
+	for u in "${users[@]}"; do
+		moz_copy+=( "${u%%:*}:${u#*:}/${snap_profile}:${u#*:}/${deb_profile}" )
+		moz_lines+=( "${app}: copy ${u#*:}/${snap_profile} to ${u#*:}/${deb_profile}" )
+	done
+	moz_snap_remove+=( "${pkg}" )
+	moz_lines+=( "${app}: remove the snap (snapd saves a snapshot of its data)" )
+}
+
+moz_choice firefox snap/firefox/common/.mozilla/firefox .mozilla/firefox Firefox
+moz_choice thunderbird snap/thunderbird/common/.thunderbird .thunderbird Thunderbird
+
 mark=()
 add_mark() {
 	local name
@@ -485,11 +591,13 @@ for name in "${mark[@]}"; do
 done
 mark=( "${marked[@]}" )
 
-if [[ ${#mark[@]} -eq 0 && ${#remove[@]} -eq 0 && ${#install[@]} -eq 0 ]]; then
+if [[ ${#mark[@]} -eq 0 && ${#remove[@]} -eq 0 && ${#install[@]} -eq 0 \
+	&& ${#moz_install[@]} -eq 0 && ${#moz_snap_remove[@]} -eq 0 ]]; then
 	spinner_stop
 	echo "Nothing to do, no package of Ubuntu Unity replaced by G Unity⁷ is left."
 	[[ ${#unchanged[@]} -eq 0 ]] || printf 'Left unchanged by your choice: %s\n' "${unchanged[@]}"
 	[[ ${#needed_kept[@]} -eq 0 ]] || printf 'Kept alternative other packages need: %s\n' "${needed_kept[@]}"
+	[[ ${#moz_lines[@]} -eq 0 ]] || printf '%s\n' "${moz_lines[@]}"
 	exit 0
 fi
 
@@ -524,6 +632,7 @@ list_words "Replaced by G Unity⁷, kept by apt as an alternative of another pac
 list_words "Leftovers not needed or replaced by G Unity⁷, to mark for autoremove" "${mark[@]}"
 list_lines "Left unchanged by your choice" "${unchanged[@]}"
 list_lines "Kept alternatives other packages need" "${needed_kept[@]}"
+list_lines "Firefox and Thunderbird" "${moz_lines[@]}"
 list_words "Packages apt installs" "${installs[@]}"
 ## Purged as by apt (with the configuration files), marked with * as apt does
 if [[ ${#removed[@]} -gt 0 ]]; then
@@ -542,7 +651,9 @@ if [[ -z ${yes} ]]; then
 fi
 
 [[ ${#mark[@]} -eq 0 ]] || apt-mark auto "${mark[@]}" >/dev/null
-apt-get -y "${apt_args[@]}"
+if [[ ${#mark[@]} -gt 0 || ${#remove[@]} -gt 0 || ${#install[@]} -gt 0 ]]; then
+	apt-get -y "${apt_args[@]}"
+fi
 ## The installed first alternatives are needed by g-unity7-desktop only, the
 ##  other ones are chosen by the user (as a package of @world).
 install_auto=()
@@ -550,3 +661,20 @@ for name in "${install[@]}"; do
 	[[ -z ${keep[${name}]:-} ]] || install_auto+=( "${name}" )
 done
 [[ ${#install_auto[@]} -eq 0 ]] || apt-mark auto "${install_auto[@]}" >/dev/null
+
+## Firefox and Thunderbird of G Unity⁷ (a lower version than the packages of
+##  Ubuntu, their pin comes with them), the profiles of the snaps, the snaps.
+if [[ ${#moz_install[@]} -gt 0 ]]; then
+	apt-get -y --allow-downgrades install "${moz_install[@]}"
+fi
+for entry in "${moz_copy[@]}"; do
+	IFS=: read -r user src dst <<< "${entry}"
+	[[ -e ${dst} ]] && continue
+	mkdir -p "$(dirname "${dst}")"
+	cp -a "${src}" "${dst}" || die "copying ${src} failed"
+	chown "${user}": "$(dirname "${dst}")"
+	echo "Copied ${src} to ${dst}"
+done
+for name in "${moz_snap_remove[@]}"; do
+	snap remove "${name}"
+done

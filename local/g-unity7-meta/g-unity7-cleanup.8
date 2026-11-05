@@ -63,6 +63,21 @@ of
 .BR lightdm-greeter ),
 if no other package is removed with them.
 .PP
+Firefox and Thunderbird of Ubuntu are packages that install their snaps. The
+G Unity⁷ PPA has them as debs with the global menu of Unity, with a lower
+version, so
+.B g-unity7-apt-pin
+keeps the packages of Ubuntu until the script installs the debs. If a snap is
+installed, the script asks whether to install the deb instead. It then copies
+the profile of the snap
+.RI ( ~/snap/firefox/common/.mozilla/firefox ,
+.IR ~/snap/thunderbird/common/.thunderbird )
+of every user without a profile of the deb
+.RI ( ~/.mozilla/firefox ,
+.IR ~/.thunderbird )
+and removes the snap (snapd saves a snapshot of its data). A running snap is
+not removed, close the application and run the script again.
+.PP
 It shows all packages and asks for confirmation. To keep one of them, mark it
 as manually installed first:
 .BI "sudo apt-mark manual " package

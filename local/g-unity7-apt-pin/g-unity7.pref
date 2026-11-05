@@ -4,3 +4,12 @@
 Package: *
 Pin: release o=LP-PPA-c4pp4-g-unity7
 Pin-Priority: 1001
+
+# Firefox and Thunderbird of the PPA have a lower version than the packages of
+# Ubuntu that install the snaps. They are installed only by the choice of
+# g-unity7-cleanup, their packages then link firefox.pref or thunderbird.pref
+# of /usr/share/g-unity7-apt-pin as g-unity7-firefox.pref or
+# g-unity7-thunderbird.pref, which come before this file.
+Package: firefox thunderbird
+Pin: release o=LP-PPA-c4pp4-g-unity7
+Pin-Priority: 100

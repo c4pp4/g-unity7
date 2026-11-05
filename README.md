@@ -46,6 +46,11 @@ installer of Ubuntu Unity marks its applications as manually installed, so
 removed. It shows all packages and asks first, `g-unity7-cleanup --dry-run`
 changes nothing.
 
+Firefox and Thunderbird of Ubuntu are snaps. `g-unity7-cleanup` offers their
+debs of the PPA with the global menu of Unity instead, copies the profiles of
+the snaps to the users without a profile of the deb and removes the snaps.
+Without that choice `g-unity7-apt-pin` keeps the snaps.
+
 ## Layout
 
 ```

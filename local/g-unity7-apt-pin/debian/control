@@ -16,3 +16,6 @@ Description: apt pin of the G Unity⁷ PPA
  it, a newer Ubuntu version would replace a G Unity⁷ package and its changes.
  .
  Packages that are not in the PPA are not affected.
+ .
+ Firefox and Thunderbird of the PPA are kept only after g-unity7-cleanup
+ installed them instead of the snaps of Ubuntu.

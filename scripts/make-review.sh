@@ -50,7 +50,11 @@ description() {
 	echo "# ${SOURCE_NAME} $(dpkg-parsechangelog -l "${checked}"/debian/changelog -S Version)"
 	echo
 	if [[ -n ${orig_dsc} ]]; then
-		echo "- Ubuntu source: \`${orig_dsc##*/}\`"
+		if [[ -n ${SOURCE_ARCHIVE:-} ]]; then
+			echo "- Source: \`${orig_dsc##*/}\` of ppa:${SOURCE_ARCHIVE}"
+		else
+			echo "- Ubuntu source: \`${orig_dsc##*/}\`"
+		fi
 	else
 		echo "- Own package: \`local/${pkg}\` (the whole source is in code.diff)"
 	fi

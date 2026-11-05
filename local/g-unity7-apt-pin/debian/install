@@ -1,1 +1,3 @@
 g-unity7.pref etc/apt/preferences.d/
+firefox.pref usr/share/g-unity7-apt-pin/
+thunderbird.pref usr/share/g-unity7-apt-pin/

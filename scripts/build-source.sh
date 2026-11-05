@@ -75,15 +75,23 @@ if [[ -n ${LOCAL:-} ]]; then
 else
 	## 1. Newest Ubuntu version.
 	## UBUNTU_SERIES: a source removed from the series, taken from an older one.
+	## SOURCE_ARCHIVE: the source of a PPA (owner/name) instead of the Ubuntu archive.
 	read -r ubuntu_version ubuntu_pocket < <(python3 -I "${REPO_ROOT}"/scripts/lp.py \
-		ubuntu-version "${UBUNTU_SRC}" --series "${UBUNTU_SERIES:-${series}}")
+		ubuntu-version "${UBUNTU_SRC}" --series "${UBUNTU_SERIES:-${series}}" \
+		${SOURCE_ARCHIVE:+--archive "${SOURCE_ARCHIVE}"})
 	[[ -n ${ubuntu_version} && ${ubuntu_version} != None ]] \
-		|| die "${UBUNTU_SRC} is not published in ${UBUNTU_SERIES:-${series}}."
-	einfo "${UBUNTU_SRC} ${ubuntu_version} (${UBUNTU_SERIES:-${series}} ${ubuntu_pocket})"
+		|| die "${UBUNTU_SRC} is not published in ${SOURCE_ARCHIVE:+ppa:${SOURCE_ARCHIVE} }${UBUNTU_SERIES:-${series}}."
+	einfo "${UBUNTU_SRC} ${ubuntu_version} (${SOURCE_ARCHIVE:+ppa:${SOURCE_ARCHIVE} }${UBUNTU_SERIES:-${series}} ${ubuntu_pocket})"
 
 	## 2. Download and unpack without patches.
-	(cd "${work}" && pull-lp-source --download-only "${UBUNTU_SRC}" "${ubuntu_version}" >&2) \
-		|| die "Download of ${UBUNTU_SRC} ${ubuntu_version} failed."
+	if [[ -n ${SOURCE_ARCHIVE:-} ]]; then
+		(cd "${work}" && pull-ppa-source --ppa "${SOURCE_ARCHIVE}" --download-only \
+			"${UBUNTU_SRC}" "${ubuntu_version}" >&2) \
+			|| die "Download of ${UBUNTU_SRC} ${ubuntu_version} from ppa:${SOURCE_ARCHIVE} failed."
+	else
+		(cd "${work}" && pull-lp-source --download-only "${UBUNTU_SRC}" "${ubuntu_version}" >&2) \
+			|| die "Download of ${UBUNTU_SRC} ${ubuntu_version} failed."
+	fi
 	orig_dsc="${work}/${UBUNTU_SRC}_${ubuntu_version#*:}.dsc"
 	dpkg-source --no-check -x --skip-patches "${orig_dsc}" "${tree}" >/dev/null \
 		|| die "Unpacking ${orig_dsc##*/} failed."
@@ -328,8 +336,21 @@ mv "${work}"/changelog.new debian/changelog
 dpkg-parsechangelog -S Version >/dev/null || die "Generated changelog is not valid."
 einfo "Version ${version}"
 
-## 9. Source package.
-dpkg-buildpackage -S -sa -d -nc -us -uc >"${work}"/dpkg-buildpackage.log 2>&1 \
+## 9. Source package. The orig tarball is left out of the upload if Launchpad
+##  has it in the staging PPA: a version of the same upstream version is there,
+##  or the base version of a source of a PPA (SOURCE_ARCHIVE) is copied there
+##  before the upload (upload.sh). The orig tarball of Firefox has 785 MiB.
+orig_opt=-sa
+upstream_of() { local v=${1#*:}; echo "${v%-*}"; }
+if [[ -n ${SOURCE_ARCHIVE:-} ]]; then
+	orig_opt=-sd
+	einfo "Orig tarball comes with the copy of ${UBUNTU_SRC} ${ubuntu_version} from ppa:${SOURCE_ARCHIVE}."
+elif [[ -n ${staging_version} && $(upstream_of "${staging_version}") == "$(upstream_of "${version}")" ]] \
+	&& compgen -G "${work}/${SOURCE_NAME}_$(upstream_of "${version}").orig*" >/dev/null; then
+	orig_opt=-sd
+	einfo "Orig tarball of $(upstream_of "${version}") is in ${PPA_STAGING}, not uploaded again."
+fi
+dpkg-buildpackage -S "${orig_opt}" -d -nc -us -uc >"${work}"/dpkg-buildpackage.log 2>&1 \
 	|| { tail -n 30 "${work}"/dpkg-buildpackage.log >&2; die "dpkg-buildpackage failed."; }
 changes="${work}/${SOURCE_NAME}_${version#*:}_source.changes"
 dsc="${work}/${SOURCE_NAME}_${version#*:}.dsc"
@@ -362,5 +383,7 @@ cat > "${base_dir}"/result.env <<-EOF
 	CHANGES=out/${changes##*/}
 	STAGING_VERSION=${staging_version}
 	MAIN_VERSION=${main_version}
+	SOURCE_ARCHIVE=${SOURCE_ARCHIVE:-}
+	BASE_VERSION=${ubuntu_version}
 EOF
 einfo "Done: ${base_dir}/out/${changes##*/}$([[ -n ${needs_review} ]] && echo ", review needed")"

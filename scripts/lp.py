@@ -113,7 +113,7 @@ def parse_changelog(text):
 
 
 def cmd_ubuntu_version(args):
-    version, pocket = ubuntu_version(args.source, args.series)
+    version, pocket = ubuntu_version(args.source, args.series, args.archive)
     if not version:
         sys.exit(f"lp.py: {args.source} is not published in {args.series}")
     print(version, pocket)
@@ -145,10 +145,15 @@ def ppa_latest(source, ppa, series):
     return result
 
 
-def ubuntu_version(source, series):
-    """Return (version, pocket) of the newest version in an Ubuntu series."""
-    entries = [e for e in published_sources(f"{API}/ubuntu/+archive/primary",
-                                            source, series, ["Published"])
+def ubuntu_version(source, series, archive=None):
+    """Return (version, pocket) of the newest version in an Ubuntu series, or
+    in the PPA archive (owner/name, e.g. mozillateam/ppa) if given."""
+    if archive:
+        owner, name = archive.split("/")
+        url = f"{API}/~{owner}/+archive/ubuntu/{name}"
+    else:
+        url = f"{API}/ubuntu/+archive/primary"
+    entries = [e for e in published_sources(url, source, series, ["Published"])
                if e["pocket"] in UBUNTU_POCKETS]
     if not entries:
         return None, None
@@ -214,6 +219,7 @@ def main():
     p = sub.add_parser("ubuntu-version", help="newest version in a stable Ubuntu series")
     p.add_argument("source")
     p.add_argument("--series", required=True)
+    p.add_argument("--archive", help="a PPA (owner/name) instead of the Ubuntu archive")
     p.set_defaults(func=cmd_ubuntu_version)
 
     p = sub.add_parser("ppa-latest", help="newest version in a PPA with its fingerprint")
