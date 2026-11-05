@@ -2,8 +2,8 @@ OVERLAY_PKG="unity-indicators/indicator-messages"
 UBUNTU_SRC="indicator-messages"
 
 ## X-GNOME-HiddenUnderSystemd of the ebuild, the other changes concern Gentoo
-##  (tests, gtk-doc, SYSTEMD_USERDIR). Not the one of indicator-application: in
-##  Ubuntu it has no systemd user unit and runs from XDG autostart only.
+##  (tests, gtk-doc, SYSTEMD_USERDIR). Ubuntu builds it with systemd-dev, the
+##  systemd user unit is installed.
 
 src_edit() {
 	# Started by the systemd user unit (unity-panel-service.service.wants of #

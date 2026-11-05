@@ -3,7 +3,6 @@ UBUNTU_SRC="network-manager-applet"
 GROUP="desktop"
 
 PATCHES=(
-	do-not-autostart-in-cinnamon.patch
 	do-not-warn-about-deprecated-appindicator.patch
 	show-notifications-via-libnotify-when-in-unity.patch
 )

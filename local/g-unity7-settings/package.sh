@@ -30,4 +30,13 @@ local_prepare() {
 		-e "/^\[com.canonical.unity-greeter\]$/a logo = '/usr/share/unity-greeter/logo.png'" \
 		"${greeter}" || return 1
 	grep -qx "logo = '/usr/share/unity-greeter/logo.png'" "${greeter}" || return 1
+
+	# spice-vdagent is started by its systemd user unit (graphical-session.target.wants #
+	#  of Debian), its XDG autostart file has X-systemd-skip, which cinnamon-session #
+	#  does not know: the second agent was refused by spice-vdagentd and flooded the #
+	#  journal. Added to the autostart-blacklist of the Unity session #
+	sed -i \
+		-e "/^\[org.cinnamon.SessionManager:Unity\]$/,/^\[/{s/^\(autostart-blacklist = \[.*\)\]$/\1, 'spice-vdagent']/}" \
+		"${unity}" || return 1
+	grep -q "^autostart-blacklist = \[.*, 'spice-vdagent'\]$" "${unity}" || return 1
 }

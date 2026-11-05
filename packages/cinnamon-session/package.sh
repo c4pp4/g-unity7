@@ -7,7 +7,6 @@ PATCHES=(
 	Support-X-GNOME-HiddenUnderSystemd.patch
 	unity-session-properties-application.patch
 	Use-the-default-mechanism-to-check-XDG_CURRENT_DESKTOP.patch
-	enable-nm-applet-autostart.diff
 )
 
 debian_edit() {
