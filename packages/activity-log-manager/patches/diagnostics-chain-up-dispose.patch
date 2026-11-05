@@ -1,0 +1,56 @@
+From a5d45fcbb826236d34f20a9e63abe2c406c41cbe Mon Sep 17 00:00:00 2001
+From: c4pp4
+Date: Thu, 05 Nov 2026 11:09:47 +0100
+Subject: [PATCH 1/1] Diagnostics: chain up dispose, disconnect the permission handlers
+
+whoopsie_daisy_preferences_dispose() did not chain up, so the dispose of
+GtkWidget and GtkContainer never ran: the destroy signal was not emitted
+and the children were not unparented. The widget was freed while the
+privacy page with the GtkLockButton stayed alive with a dangling parent.
+unity-control-center crashed in gtk_widget_get_screen() when the next panel
+(Network) added a CSS provider to the screen and GTK invalidated the style
+of the orphaned lock button image.
+
+The handlers of the permission, which the GtkLockButton keeps alive, were
+not disconnected either and kept a pointer to the freed widgets. Disconnect
+them and the handler of the whoopsie preferences proxy in dispose.
+
+Signed-off-by: c4pp4
+---
+ src/diagnostics-widget.c | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/src/diagnostics-widget.c b/src/diagnostics-widget.c
+--- a/src/diagnostics-widget.c
++++ b/src/diagnostics-widget.c
+@@ -45,6 +45,9 @@
+ 
+ G_DEFINE_TYPE (WhoopsieDaisyPreferences, whoopsie_daisy_preferences, GTK_TYPE_BOX)
+ 
++static void on_permission_changed (GPermission* permission, GParamSpec* pspec, gpointer data);
++static void on_permission_changed_widget (GPermission *permission, GParamSpec *pspec, gpointer data);
++
+ static void
+ whoopsie_daisy_preferences_dispose (GObject* object)
+ {
+@@ -55,13 +58,20 @@
+         priv->builder = NULL;
+     }
+     if (priv->permission) {
++        /* The GtkLockButton keeps the permission alive */
++        g_signal_handlers_disconnect_by_func (priv->permission, on_permission_changed, object);
++        g_signal_handlers_disconnect_matched (priv->permission, G_SIGNAL_MATCH_FUNC, 0, 0, NULL,
++                                              on_permission_changed_widget, NULL);
+         g_object_unref (priv->permission);
+         priv->permission = NULL;
+     }
+     if (priv->proxy) {
++        g_signal_handlers_disconnect_by_data (priv->proxy, object);
+         g_object_unref (priv->proxy);
+         priv->proxy = NULL;
+     }
++
++    G_OBJECT_CLASS (whoopsie_daisy_preferences_parent_class)->dispose (object);
+ }
+ 
+ static void

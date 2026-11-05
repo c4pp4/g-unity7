@@ -54,6 +54,14 @@ them with autoremove. It marks only the packages autoremove removes then, the
 packages still needed (e.g. by
 .B ubuntu-desktop
 on Ubuntu, which shares most of the task) are left as they are.
+It removes directly the packages
+.B ubuntu-unity-desktop
+depends on or recommends that apt keeps only as an installed alternative of
+another relation (e.g.
+.B lightdm-gtk-greeter
+of
+.BR lightdm-greeter ),
+if no other package is removed with them.
 .PP
 It shows all packages and asks for confirmation. To keep one of them, mark it
 as manually installed first:

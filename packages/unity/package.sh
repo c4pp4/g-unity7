@@ -56,16 +56,16 @@ src_edit() {
 		unity-shared/PreviewStyle.cpp || return 1
 	grep -Fq "const RawPixel preview_width = 700_em;" unity-shared/PreviewStyle.cpp || return 1
 
-	# Setup Unity side launcher default applications #
+	# Setup Unity side launcher default applications (GNOME Software, which #
+	#  g-unity7-desktop recommends, and the installer of a live ISO stay) #
 	sed -i \
 		-e "s/org.gnome.Nautilus/nemo/" \
 		-e "/firefox/r ${PKG_DIR}/www-clients" \
-		-e '/ubiquity/d' \
-		-e '/org.gnome.Software/d' \
 		data/com.canonical.Unity.gschema.xml || return 1
 	grep -Fq "'application://nemo.desktop'" data/com.canonical.Unity.gschema.xml || return 1
 	grep -Fq "'application://firefox_firefox.desktop'" data/com.canonical.Unity.gschema.xml || return 1
-	! grep -q "ubiquity\|org.gnome.Software" data/com.canonical.Unity.gschema.xml || return 1
+	grep -Fq "'application://org.gnome.Software.desktop'" data/com.canonical.Unity.gschema.xml || return 1
+	grep -Fq "'application://ubiquity.desktop'" data/com.canonical.Unity.gschema.xml || return 1
 
 	# Change ubuntu to unity #
 	sed -i \

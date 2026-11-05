@@ -1,4 +1,4 @@
-# G Unity⁷
+# G Unity⁷ Desktop
 
 Ubuntu packages of the Unity7 desktop with the patches of the
 [gentoo-unity7](https://github.com/c4pp4/gentoo-unity7) overlay, built for the

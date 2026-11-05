@@ -2,8 +2,11 @@ OVERLAY_PKG="gnome-extra/activity-log-manager"
 UBUNTU_SRC="activity-log-manager"
 GROUP="desktop"
 
+## diagnostics-chain-up-dispose.patch is for Ubuntu only (the Diagnostics page
+##  of whoopsie, Gentoo builds without it).
 PATCHES=(
 	remove-dash-online-search-tab.patch
+	diagnostics-chain-up-dispose.patch
 )
 
 debian_edit() {
@@ -18,4 +21,11 @@ src_edit() {
 		"/record_button = new Switch();/a record_button.valign = Gtk.Align.CENTER;" \
 		src/unified-privacy.vala || return 1
 	grep -Fq "record_button.valign = Gtk.Align.CENTER;" src/unified-privacy.vala || return 1
+
+	# Fix LOCALE_DIR, THEME_DIR and PKG_DATA_DIR prefix (PREFIX is not set and #
+	#  DATADIRNAME only later, the panel of unity-control-center looked for its #
+	#  translations in //locale), as the ebuild fixes config.h #
+	sed -i -e 's:"${PREFIX}/${DATADIRNAME}/:"/usr/share/:' configure.ac || return 1
+	grep -Fq 'AC_DEFINE_UNQUOTED(LOCALE_DIR, "/usr/share/locale",' configure.ac || return 1
+	! grep -Fq '${PREFIX}/${DATADIRNAME}' configure.ac || return 1
 }

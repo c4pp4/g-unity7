@@ -53,6 +53,12 @@ debian_edit() {
 	grep -Fqx "debian/g-unity7/85unity-session_appmenu-gtk-module etc/X11/Xsession.d/" debian/unity-session.install || return 1
 	sed -i -e "s/^\( *\)cinnamon-session (>= 6.6.4-1+gu7),$/\1appmenu-gtk3-module,\n&/" debian/control || return 1
 	grep -q "^ *appmenu-gtk3-module,$" debian/control || return 1
+
+	# The accessibility bus of the session instead of the one left by the greeter, #
+	#  as 99unity-session of unity-base/unity #
+	install -m 644 "${PKG_DIR}"/99unity-session_a11y-bus debian/g-unity7/ || return 1
+	echo "debian/g-unity7/99unity-session_a11y-bus etc/X11/Xsession.d/" >> debian/unity-session.install || return 1
+	grep -Fqx "debian/g-unity7/99unity-session_a11y-bus etc/X11/Xsession.d/" debian/unity-session.install || return 1
 }
 
 src_edit() {

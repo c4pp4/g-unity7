@@ -22,6 +22,7 @@ local_prepare() {
 		indicator-appearance-translations-261017 indicator-appearance
 		indicator-notifications-translations-261017 indicator-notifications
 		mate-screenshot-translations-focal mate-screenshot
+		session-shortcuts-translations-artful session-shortcuts
 		unity-help-translations-261017 unity-help
 	EOF
 }

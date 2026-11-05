@@ -23,6 +23,8 @@
 ##      depend on or recommend (file-roller of nemo-fileroller)
 ##    only those autoremove removes then (the others stay needed, e.g. by
 ##    another desktop as ubuntu-desktop)
+##  - removes the duplicates apt keeps as an installed alternative of another
+##    relation (lightdm-gtk-greeter, xfwm4), if nothing else is removed with them
 ##  - removes the packages autoremove removes then
 
 set -euo pipefail
@@ -432,6 +434,29 @@ for name in "${candidates_remove[@]}"; do
 	reasons+=( "${name} (${reason[${name}]})" )
 done
 
+## The duplicates autoremove keeps as an installed alternative of another
+##  relation (lightdm-gtk-greeter of lightdm-greeter, xfwm4 of x-window-manager),
+##  removed if no other package would be removed with them. The alternatives
+##  of g-unity7-desktop are left to the choices.
+declare -A of_meta=() in_remove=()
+while read -r name; do
+	of_meta[${name}]=1
+done < <(relations "${meta}" "Depends Recommends Suggests" | tr ' ' '\n')
+dup_remove=()
+for name in "${duplicates[@]}"; do
+	[[ -z ${of_meta[${name}]:-} && -z ${spared[${name}]:-} && -z ${autoremoved[${name}]:-} \
+		&& -z ${in_remove[${name}]:-} ]] && installed "${name}" || continue
+	in_remove[${name}]=1
+	others=
+	while read -r other; do
+		[[ ${other} == "${name}" || -n ${autoremoved[${other}]:-} ]] || others+="${other} "
+	done < <(apt-get -s -o Dir::State::extended_states="${states}" --purge remove "${name}" \
+		"${install_args[@]}" 2>/dev/null | awk '/^(Purg|Remv) / { print $2 }')
+	[[ -n ${others} ]] && continue
+	remove+=( "${name}" )
+	dup_remove+=( "${name}" )
+done
+
 ## Preview with the marks applied to a copy of the apt state.
 if [[ ${#remove[@]} -gt 0 || ${#install[@]} -gt 0 ]]; then
 	apt_args=( --purge --autoremove remove "${remove[@]}" "${install_args[@]}" )
@@ -449,6 +474,10 @@ mapfile -t installs < <(awk '/^Inst / { print $2 }' <<< "${simulation}")
 declare -A removed_set=()
 for name in "${removed[@]}"; do
 	removed_set[${name}]=1
+done
+## The duplicates removed directly are not marked.
+for name in "${dup_remove[@]}"; do
+	removed_set[${name}]=
 done
 marked=()
 for name in "${mark[@]}"; do
@@ -491,6 +520,7 @@ list_lines() {
 
 list_words "Alternatives to install" "${install[@]}"
 list_lines "Alternatives to remove" "${reasons[@]}"
+list_words "Replaced by G Unity⁷, kept by apt as an alternative of another package, to remove" "${dup_remove[@]}"
 list_words "Leftovers not needed or replaced by G Unity⁷, to mark for autoremove" "${mark[@]}"
 list_lines "Left unchanged by your choice" "${unchanged[@]}"
 list_lines "Kept alternatives other packages need" "${needed_kept[@]}"
