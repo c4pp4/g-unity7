@@ -12,8 +12,9 @@ Architecture: all
 Depends: ${misc:Depends},
 # G Unity⁷ packages
          g-unity7-apt-pin,
+         g-unity7-l10n,
          g-unity7-settings,
-# The Unity desktop ported to G Unity⁷
+# The core of the Unity desktop, ported to G Unity⁷
          cinnamon-session (>= 6.6.4-1+gu7),
          hud (>= 14.10+17.10.20170619-0ubuntu6+gu7),
          indicator-appmenu (>= 15.02.0+20.10.20260311-0ubuntu1+gu7),
@@ -27,17 +28,13 @@ Depends: ${misc:Depends},
          unity-scope-home (>= 6.8.2+19.04.20190412-0ubuntu8+gu7),
          unity-session (>= 49.4+gu7),
          unity-settings-daemon (>= 26.10.2ubuntu+gu7),
-# Needed by G Unity⁷, not in the desktop seed of Ubuntu Unity
-         apt,
-         indicator-datetime,
-         libgtk-nocsd0,
-         overlay-scrollbar,
+# PipeWire sound server (Ubuntu Unity has pulseaudio)
          pipewire-audio,
-         policykit-desktop-privileges,
 # The desktop seed of Ubuntu Unity, without the packages that G Unity⁷ replaces
          alsa-base,
          alsa-utils,
          anacron,
+         at-spi2-core,
          bc,
          ca-certificates,
          dbus-x11,
@@ -48,6 +45,7 @@ Depends: ${misc:Depends},
          foomatic-db-compressed-ppds,
          ghostscript,
          gnome-menus,
+         gnome-session-canberra,
          gstreamer1.0-alsa,
          gstreamer1.0-libav,
          gstreamer1.0-plugins-bad,
@@ -58,6 +56,9 @@ Depends: ${misc:Depends},
          inputattach,
          iw,
          language-selector-common,
+         language-selector-gnome,
+         libatk-adaptor,
+         libnotify-bin,
          libsasl2-modules,
          lightdm,
          openprinting-ppds,
@@ -89,14 +90,12 @@ Depends: ${misc:Depends},
          zenity,
          zip
 Recommends:
-# G Unity⁷ packages
-            g-unity7-l10n,
-# Unity indicators, lenses, scopes and tools ported to G Unity⁷. The overlay installs
-#  compizconfig-settings-manager with unity-base/compiz
+# Unity indicators, lenses, scopes and tools ported to G Unity⁷
             activity-log-manager (>= 0.9.7-0ubuntu31+gu7),
             compizconfig-settings-manager (>= 0.9.14.2+25.10.20250930-0ubuntu3+gu7),
             gnome-online-accounts-gtk (>= 3.50.9-1+gu7),
             indicator-application (>= 12.10.1+19.04.20190308.1-0ubuntu6+gu7),
+            indicator-bluetooth (>= 0.0.6+17.10.20170605-0ubuntu7+gu7),
             indicator-keyboard (>= 0.0.0+19.10.20240924-0ubuntu4+gu7),
             indicator-notifications (>= 0.4.2-0ubuntu5+gu7),
             indicator-printers (>= 0.1.7+17.10.20171101-0ubuntu8+gu7),
@@ -114,8 +113,7 @@ Recommends:
             unity-scope-chromiumbookmarks (>= 0.1+13.10.20130723-0ubuntu1+gu7),
             unity-scope-firefoxbookmarks (>= 0.1+13.10.20130809.1-0ubuntu1+gu7),
             unity-tweak-tool (>= 0.0.7+-0ubuntu12+gu7),
-# Applications with alternatives. The first one is the G Unity⁷ choice;
-#  g-unity7-cleanup asks which one to keep when more of them are installed
+# Applications with alternatives; the first one is the G Unity⁷ choice
             atril | papers | evince,
             eog (>= 50.3-1+gu7) | eom | loupe,
             gnome-calculator | mate-calc | lomiri-calculator-app,
@@ -130,8 +128,14 @@ Recommends:
             rhythmbox (>= 3.4.9-4ubuntu1+gu7) | audacious,
             thunderbird | evolution,
             vlc | showtime,
-# GNOME applications (the gnome USE flag of unity-base/unity-meta, which the
-#  desktop/gnome parent profile enables)
+# Additional applications and tools
+            dconf-editor,
+            ffmpegthumbnailer,
+            firefox,
+            synaptic,
+            transmission-qt,
+            unity-docs,
+# GNOME applications
             deja-dup (>= 50.1-2+gu7),
             gnome-calendar (>= 51.0-1+gu7),
             gnome-characters,
@@ -167,29 +171,8 @@ Recommends:
             quadrapassel,
             swell-foop,
             tali,
-# Fonts
-            fonts-freefont-ttf,
-            fonts-liberation,
-            fonts-noto,
-            fonts-noto-cjk,
-            fonts-noto-color-emoji,
-            fonts-noto-core,
-            fonts-ubuntu,
-            fonts-urw-base35,
-# From the overlay, not in the Ubuntu Unity seeds
-            dconf-editor,
-            ffmpegthumbnailer,
-            firefox,
-            indicator-power,
-            pulseaudio-utils,
-            synaptic,
-            transmission-qt,
-            ubuntu-wallpapers,
-            unity-docs,
-# The desktop-recommends seed of Ubuntu Unity, and the packages of its desktop seed
-#  that the overlay makes optional
+# The desktop-recommends seed of Ubuntu Unity
             a11y-profile-manager-indicator,
-            at-spi2-core,
             avahi-autoipd,
             avahi-daemon,
             bluez,
@@ -203,6 +186,11 @@ Recommends:
             cups-filters,
             dirmngr,
             example-content,
+            fonts-liberation,
+            fonts-noto-cjk,
+            fonts-noto-color-emoji,
+            fonts-noto-core,
+            fonts-ubuntu,
             fwupd,
             fwupd-signed,
             gdebi,
@@ -211,7 +199,6 @@ Recommends:
             gnome-disk-utility,
             gnome-keyring,
             gnome-power-manager,
-            gnome-session-canberra,
             gnome-software,
             gnome-system-tools,
             gpg-agent,
@@ -222,12 +209,10 @@ Recommends:
             ibus,
             ibus-table,
             im-config,
-            language-selector-gnome,
             laptop-detect,
-            libatk-adaptor,
             libgail-common,
             libglib2.0-bin,
-            libnotify-bin,
+            libgtk-nocsd0,
             libnss-mdns,
             libpam-gnome-keyring,
             libwmf-0.2-7-gtk,
@@ -238,6 +223,7 @@ Recommends:
             packagekit,
             pcmciautils,
             plymouth-theme-ubuntu-unity,
+            policykit-desktop-privileges,
             ppa-purge,
             ppp,
             pppconfig,
@@ -266,13 +252,9 @@ Recommends:
             xserver-xorg-input-synaptics,
             xserver-xorg-input-wacom
 Suggests:
-# Optional parts of the overlay that are off by default
+# Optional applications ported to G Unity⁷
           diodon (>= 1.13.0-1build4+gu7),
-          indicator-bluetooth (>= 0.0.6+17.10.20170605-0ubuntu7+gu7),
-          mailnag (>= 2.2.0-3build1+gu7),
-          meteo-qt,
-          pidgin,
-          psensor
+          mailnag (>= 2.2.0-3build1+gu7)
 Breaks: activity-log-manager (<< 0.9.7-0ubuntu31+gu7),
         compizconfig-settings-manager (<< 0.9.14.2+25.10.20250930-0ubuntu3+gu7),
         deja-dup (<< 50.1-2+gu7),

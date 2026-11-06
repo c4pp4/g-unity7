@@ -13,6 +13,12 @@ debian_edit() {
 	sed -i -e "s/^\( *\)cinnamon-session,$/\1cinnamon-session (>= 6.6.4-1+gu7),/" debian/control || return 1
 	grep -q "^ *cinnamon-session (>= 6.6.4-1+gu7),$" debian/control || return 1
 
+	# pactl for release-sound-card-at-session-end.patch. PipeWire only suggests #
+	#  pulseaudio-utils #
+	sed -i -e "/^Package: unity-session$/,/^$/{s/^\(Recommends: \)\(libgtk-nocsd0,\)$/\1\2\n            pulseaudio-utils,/}" \
+		debian/control || return 1
+	grep -qx "            pulseaudio-utils," debian/control || return 1
+
 	# The ebuild's files, installed from debian/g-unity7 #
 	install -d debian/g-unity7 || return 1
 	install -m 755 "${FILESDIR}"/unity-session-quit debian/g-unity7/ || return 1
