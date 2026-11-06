@@ -10,7 +10,7 @@ PATCHES=(
 )
 
 debian_edit() {
-	# Panel icons of Yaru (Add-more-accent-colors.patch) #
+	# Yaru panel icons (Add-more-accent-colors.patch) #
 	install -d debian/g-unity7 || return 1
 	cp -r "${FILESDIR}"/icons debian/g-unity7/ || return 1
 	sed -i -e "\$a debian/g-unity7/icons /usr/share/" debian/install || return 1

@@ -1,8 +1,8 @@
 OVERLAY_PKG="ehooks/media-plugins/audacious-plugins"
 UBUNTU_SRC="audacious-plugins"
 
-## unity-shortcuts-plugin.patch is the variant of packages/audacious-plugins/patches
-##  for audacious-plugins 4.5 (the patch of the overlay is for 4.6).
+## unity-shortcuts-plugin.patch in packages/audacious-plugins/patches is a
+##  variant for audacious-plugins 4.5. The overlay's patch is for 4.6.
 PATCHES=(
 	unity-shortcuts-plugin.patch
 )

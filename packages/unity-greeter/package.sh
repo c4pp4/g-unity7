@@ -2,9 +2,9 @@ OVERLAY_PKG="unity-base/unity-greeter"
 UBUNTU_SRC="unity-greeter"
 GROUP="desktop"
 
-## envvars-pipewire-indicators.patch is the variant of packages/unity-greeter/patches
-##  (only the environment variables, the greeter always runs with systemd on
-##  Ubuntu).
+## envvars-pipewire-indicators.patch in packages/unity-greeter/patches is a
+##  variant with only the environment variables, because the greeter always
+##  runs with systemd on Ubuntu.
 PATCHES=(
 	envvars-pipewire-indicators.patch
 	fix-prompt-box-resize.patch
@@ -14,23 +14,23 @@ PATCHES=(
 )
 
 debian_edit() {
-	# notify-osd started by start-notify-osd.patch (it has no D-Bus activation in Ubuntu) #
+	# start-notify-osd.patch starts notify-osd, which has no D-Bus activation in Ubuntu #
 	sed -i -e "s/^\( *\)network-manager-gnome,$/&\n\1notify-osd,/" debian/control || return 1
 	grep -q "^ *notify-osd,$" debian/control || return 1
 
-	# liblightdm-gobject-1-dev is only provided without a version by liblightdm-gobject-dev, #
-	#  the Vala API of liblightdm-gobject-1 is in lightdm-vala #
+	# liblightdm-gobject-dev provides liblightdm-gobject-1-dev only without a #
+	#  version, and the liblightdm-gobject-1 Vala API is in lightdm-vala #
 	sed -i -e "s/^\( *\)liblightdm-gobject-1-dev (>= 1.4.0),$/\1liblightdm-gobject-dev (>= 1.4.0),\n\1lightdm-vala,/" debian/control || return 1
 	grep -q "^ *liblightdm-gobject-dev (>= 1.4.0),$" debian/control || return 1
 	grep -q "^ *lightdm-vala,$" debian/control || return 1
 
-	# 60-lightdm-gtk-greeter.conf of lightdm-gtk-greeter (installed with Ubuntu Unity) #
-	#  overrides 50-unity-greeter.conf, use a later file #
+	# 60-lightdm-gtk-greeter.conf from lightdm-gtk-greeter, which Ubuntu Unity #
+	#  installs, overrides 50-unity-greeter.conf, so use a later file #
 	mv debian/50-unity-greeter.conf debian/90-unity-greeter.conf || return 1
 	sed -i -e "s:^debian/50-unity-greeter.conf :debian/90-unity-greeter.conf :" debian/install || return 1
 	grep -q "^debian/90-unity-greeter.conf " debian/install || return 1
 
-	# G Unity⁷ logo and the hidden logo of secondary monitors #
+	# G Unity⁷ logo, and hide the logo on secondary monitors #
 	install -d debian/g-unity7 || return 1
 	install -m 644 "${BRANDING_DIR}"/greeter-logo.png debian/g-unity7/logo.png || return 1
 	install -m 644 "${FILESDIR}"/branding/empty_cof.png debian/g-unity7/cof.png || return 1
@@ -42,10 +42,11 @@ debian_edit() {
 }
 
 src_edit() {
-	# unity-settings-daemon is installed to /usr/lib/unity-settings-daemon, the binary variable #
-	#  of unity-settings-daemon.pc of Ubuntu is /usr/libexec (the greeter waited for the xsettings #
-	#  plugin of a daemon that was never started and stayed black), don't depend on the version #
-	#  of unity-settings-daemon-dev the greeter is built with #
+	# unity-settings-daemon is installed to /usr/lib/unity-settings-daemon, but the #
+	#  binary variable in Ubuntu's unity-settings-daemon.pc is /usr/libexec. The #
+	#  greeter waited for the xsettings plugin of a daemon that never started and #
+	#  stayed black. Use a fixed path instead of depending on the #
+	#  unity-settings-daemon-dev version that the greeter is built with #
 	sed -i \
 		-e "s:^USD_BINARY=\`\$PKG_CONFIG --variable=binary unity-settings-daemon\`$:USD_BINARY=/usr/lib/unity-settings-daemon/unity-settings-daemon:" \
 		configure.ac || return 1

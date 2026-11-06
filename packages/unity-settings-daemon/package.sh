@@ -2,8 +2,8 @@ OVERLAY_PKG="unity-base/unity-settings-daemon"
 UBUNTU_SRC="unity-settings-daemon"
 GROUP="desktop"
 
-## The default USE flags of the ebuild: +colord +input_devices_wacom
-##  +short-touchpad-timeout (optional-colord-and-wacom.patch is not needed).
+## The ebuild's default USE flags: +colord +input_devices_wacom
+##  +short-touchpad-timeout, so optional-colord-and-wacom.patch is not needed.
 PATCHES=(
 	do-not-close-osd-notifications-on-stop.patch
 	fix-volume-queue-use-after-free.patch
@@ -13,13 +13,14 @@ PATCHES=(
 )
 
 debian_edit() {
-	# The sound server of Ubuntu is PipeWire (pipewire-audio conflicts with pulseaudio) #
+	# Ubuntu's sound server is PipeWire (pipewire-audio conflicts with pulseaudio) #
 	sed -i -e "s/^\( *\)pulseaudio\(,\?\)$/\1pipewire-pulse | pulseaudio\2/" debian/control || return 1
 	grep -q "^ *pipewire-pulse | pulseaudio,\?$" debian/control || return 1
 
-	# debian/unity-settings-daemon.install moved usr/libexec to usr/lib/unity-settings-daemon, #
-	#  the compiled paths kept /usr/libexec (the daemon started by unity-greeter, the localeexec #
-	#  script, the fallback mount helper, the backlight, locate pointer and Wacom LED helpers) #
+	# debian/unity-settings-daemon.install moved usr/libexec to #
+	#  usr/lib/unity-settings-daemon, but the compiled paths kept /usr/libexec: the #
+	#  daemon that unity-greeter starts, the localeexec script, the fallback mount #
+	#  helper, and the backlight, locate pointer and Wacom LED helpers #
 	sed -i -e "s:^CONFIGURE_EXTRA_FLAGS = :&--libexecdir=/usr/lib/unity-settings-daemon :" debian/rules || return 1
 	grep -q "^CONFIGURE_EXTRA_FLAGS = --libexecdir=/usr/lib/unity-settings-daemon " debian/rules || return 1
 	sed -i -e "s:^usr/libexec/\* /usr/lib/unity-settings-daemon/$:usr/lib/unity-settings-daemon:" \
@@ -40,8 +41,8 @@ src_edit() {
 		gnome-settings-daemon/gsd-rr-config.c || return 1
 	grep -Fq "execve (canary_argv[0], canary_argv, canary_env); _exit (1);" gnome-settings-daemon/gsd-rr-config.c || return 1
 
-	# Log out with the dialog of Unity (Ctrl+Alt+Del), not with gnome-session-quit of #
-	#  gnome-session (the session manager is cinnamon-session) #
+	# Log out with Unity's dialog on Ctrl+Alt+Del, not with gnome-session's #
+	#  gnome-session-quit, because the session manager is cinnamon-session #
 	sed -i \
 		-e 's/"gnome-session-quit --logout"/"unity-session-quit --logout"/' \
 		plugins/media-keys/gsd-media-keys-manager.c || return 1
@@ -54,6 +55,6 @@ src_edit() {
 	grep -Fqx "ExecStart=/usr/lib/unity-settings-daemon/unity-settings-daemon-localeexec" \
 		debian/user/unity-settings-daemon.service || return 1
 
-	# Started by the systemd user unit when cinnamon-session runs as a systemd service #
+	# The systemd user unit starts it when cinnamon-session runs as a systemd service #
 	echo "X-GNOME-HiddenUnderSystemd=true" >> data/unity-settings-daemon.desktop.in.in || return 1
 }

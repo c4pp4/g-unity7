@@ -10,10 +10,10 @@ Files: po/*
 Copyright: The translators of Launchpad (https://translations.launchpad.net/ubuntu)
  and of the gentoo-unity7 overlay (https://github.com/c4pp4/gentoo-unity7)
 License: GPL-2
-Comment: The translations of unity-base/unity-language-pack of the
+Comment: Translations from unity-base/unity-language-pack in the
  gentoo-unity7 overlay: activity-log-manager (Ubuntu 17.10),
  unity-session-properties (cinnamon-session), indicator-appearance,
- indicator-notifications, the quicklist of mate-screenshot (Ubuntu 20.04),
+ indicator-notifications, the mate-screenshot quicklist (Ubuntu 20.04),
  session-shortcuts (Ubuntu 17.10) and the Unity Help launcher (unity-help).
 
 License: GPL-2

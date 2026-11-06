@@ -1,19 +1,20 @@
-From a5d45fcbb826236d34f20a9e63abe2c406c41cbe Mon Sep 17 00:00:00 2001
+From f208abcc0fd9bbf0acc3ba76985a6982233ed411 Mon Sep 17 00:00:00 2001
 From: c4pp4
-Date: Thu, 05 Nov 2026 11:09:47 +0100
-Subject: [PATCH 1/1] Diagnostics: chain up dispose, disconnect the permission handlers
+Date: Fri, 06 Nov 2026 13:30:02 +0100
+Subject: [PATCH 1/1] Diagnostics: chain up dispose and disconnect the permission handlers
 
-whoopsie_daisy_preferences_dispose() did not chain up, so the dispose of
-GtkWidget and GtkContainer never ran: the destroy signal was not emitted
+whoopsie_daisy_preferences_dispose() did not chain up, so the GtkWidget and
+GtkContainer dispose handlers never ran: the destroy signal was not emitted
 and the children were not unparented. The widget was freed while the
 privacy page with the GtkLockButton stayed alive with a dangling parent.
 unity-control-center crashed in gtk_widget_get_screen() when the next panel
 (Network) added a CSS provider to the screen and GTK invalidated the style
 of the orphaned lock button image.
 
-The handlers of the permission, which the GtkLockButton keeps alive, were
-not disconnected either and kept a pointer to the freed widgets. Disconnect
-them and the handler of the whoopsie preferences proxy in dispose.
+The permission handlers were not disconnected either. The GtkLockButton
+keeps the permission alive, so the handlers kept pointers to the freed
+widgets. Disconnect them, and the whoopsie preferences proxy handler, in
+dispose.
 
 Signed-off-by: c4pp4
 ---

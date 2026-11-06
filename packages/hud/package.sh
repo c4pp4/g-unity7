@@ -2,10 +2,10 @@ OVERLAY_PKG="unity-base/hud"
 UBUNTU_SRC="hud"
 GROUP="desktop"
 
-## Qt 6 as in the overlay, with dee-qt6, libdbusmenu-qt6 (packages of the PPA)
-##  and gsettings-qt6 of Ubuntu. The tests are disabled as by the default USE
-##  flags of the ebuild (-test), so the Qt 6 libqtdbustest and libqtdbusmock
-##  are not needed.
+## Qt 6 as in the overlay, with dee-qt6 and libdbusmenu-qt6 from the PPA and
+##  Ubuntu's gsettings-qt6. The tests are disabled, as with the ebuild's default
+##  USE flags (-test), so the Qt 6 libqtdbustest and libqtdbusmock are not
+##  needed.
 PATCHES=(
 	Qt6-migration.patch
 )
@@ -23,15 +23,15 @@ debian_edit() {
 		-e "/^ *qtdbustest-runner,$/d" \
 		-e "s/^\( *\)systemd,$/\1systemd-dev,/" \
 		debian/control || return 1
-	# systemd.pc (the systemd user unit dir) is in systemd-dev #
+	# systemd.pc, which gives the systemd user unit directory, is in systemd-dev #
 	grep -q "^ *systemd-dev,$" debian/control || return 1
 	! grep -q "qt5\|libqtdbus\|qtdbustest" debian/control || return 1
 	grep -q "^ *libdee-qt6-dev (>= " debian/control || return 1
 	grep -Fq "cmake (>= 3.16)," debian/control || return 1
 	grep -q "^ *libdbusmenu-qt6-dev (>= " debian/control || return 1
 
-	# The Qt 6 symbols of libhud-client2 differ from the Qt 5 ones, only the #
-	#  packages of hud use the library #
+	# The Qt 6 symbols of libhud-client2 differ from the Qt 5 ones. Only the hud #
+	#  packages use the library #
 	rm debian/libhud-client2.symbols || return 1
 
 	sed -i \

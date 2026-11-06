@@ -1,9 +1,9 @@
-# Global menu of the GTK applications in the Unity session (appmenu-gtk-module),
-# as the xinitrc.d script of x11-misc/appmenu-gtk-module in Gentoo. The systemd
-# user unit of appmenu-gtk-module-common is not started in the Unity session
-# and sets GTK_MODULES only for the activated services, the applications started
-# by other applications (system-config-printer from unity-control-center)
-# inherit the environment of the session.
+# Global menu for GTK applications in the Unity session (appmenu-gtk-module), as
+# the xinitrc.d script of x11-misc/appmenu-gtk-module does in Gentoo. The
+# appmenu-gtk-module-common systemd user unit is not started in the Unity
+# session, and it sets GTK_MODULES only for activated services. Applications
+# started by other applications, such as system-config-printer from
+# unity-control-center, inherit the session environment.
 
 case :$XDG_CURRENT_DESKTOP: in
 	*:Unity:*)

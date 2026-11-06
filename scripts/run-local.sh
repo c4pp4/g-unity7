@@ -1,16 +1,18 @@
 #!/bin/bash
-## Run a script in the Ubuntu build container (rootless podman), e.g.:
+## Run a script in the Ubuntu build container (rootless podman), for example:
 ##  scripts/run-local.sh scripts/build-source.sh libunity
 ##
 ## Options before the command:
 ##  --rebuild  rebuild the container image first
 ##  --root     run as root in the container (to install build dependencies)
 ##  --gpg      forward the gpg-agent (extra socket) and the public key of
-##             GPG_KEY_ID, the secret key stays outside the container
+##             GPG_KEY_ID; the secret key stays outside the container
 ##  --shell    start an interactive shell instead of a command
 ##
 ## Environment:
 ##  OVERLAY_DIR  gentoo-unity7 checkout (default: ../gentoo-unity7)
+##  BUILD_DIR    output directory, also outside the repository (default: build/,
+##               which may be a symlink to another disk)
 
 set -euo pipefail
 source "$(dirname "$0")"/lib.sh
@@ -48,7 +50,18 @@ args=(
 	-e DEBFULLNAME="${DEBFULLNAME}"
 	-w /work
 )
-## Root in a rootless container is the user outside, files keep their owner.
+## The container sees only the repository and the overlay. Mount BUILD_DIR as
+##  /build, and the target of a build/ symlink at the same path, so that the
+##  link resolves in the container.
+if [[ -n ${BUILD_DIR:-} ]]; then
+	mkdir -p "${BUILD_DIR}"
+	args+=( -v "$(realpath "${BUILD_DIR}"):/build" -e BUILD_DIR=/build )
+elif [[ -L ${REPO_ROOT}/build ]]; then
+	build_target=$(realpath "${REPO_ROOT}/build")
+	[[ -d ${build_target} ]] || die "build/ links to ${build_target}, which is not a directory."
+	args+=( -v "${build_target}:${build_target}" )
+fi
+## Root in a rootless container is the user outside, so files keep their owner.
 [[ -n ${root} ]] || args+=( --userns=keep-id )
 if [[ -n ${gpg} ]]; then
 	[[ -n ${GPG_KEY_ID} ]] || die "GPG_KEY_ID is not set (config.sh or environment)."

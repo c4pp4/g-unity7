@@ -6,7 +6,7 @@
 ##
 ##  --simulate  sign and run dput without uploading
 ##
-## Locally the key stays in the gpg-agent outside the container:
+## Locally, the key stays in the gpg-agent outside the container:
 ##  scripts/run-local.sh --gpg scripts/upload.sh libunity
 
 set -euo pipefail
@@ -35,7 +35,7 @@ changes="${base_dir}/${CHANGES}"
 
 debsign_args=()
 if [[ -n ${G_UNITY7_GPG_FORWARD:-} ]]; then
-	## The forwarded agent of run-local.sh --gpg.
+	## The agent forwarded by run-local.sh --gpg.
 	GNUPGHOME=$(mktemp -d) || die "mktemp failed."
 	export GNUPGHOME
 	echo "no-autostart" > "${GNUPGHOME}"/gpg.conf
@@ -43,10 +43,11 @@ if [[ -n ${G_UNITY7_GPG_FORWARD:-} ]]; then
 	gpg --batch --quiet --import /run/gpg-pubkey.asc
 elif [[ -n ${GPG_PRIVATE_KEY:-} ]]; then
 	## CI: the signing subkey (gpg --export-secret-subkeys <subkey>!) and its
-	##  passphrase from the environment, used with a loopback pinentry.
+	##  passphrase come from the environment and are used with a loopback
+	##  pinentry.
 	GNUPGHOME=$(mktemp -d) || die "mktemp failed."
 	export GNUPGHOME
-	gpg --batch --quiet --import <<< "${GPG_PRIVATE_KEY}" || die "Importing GPG_PRIVATE_KEY failed."
+	gpg --batch --quiet --import <<< "${GPG_PRIVATE_KEY}" || die "Cannot import GPG_PRIVATE_KEY."
 	printf '%s' "${GPG_PASSPHRASE:-}" > "${GNUPGHOME}"/passphrase
 	cat > "${GNUPGHOME}"/gpg-loopback <<-EOF
 		#!/bin/sh
@@ -59,7 +60,7 @@ fi
 gpg --batch --list-secret-keys "${GPG_KEY_ID}" >/dev/null 2>&1 \
 	|| die "Secret key ${GPG_KEY_ID} is not available."
 
-## The same version can't be uploaded twice.
+## The same version cannot be uploaded twice.
 staging_version=$(python3 -I "${REPO_ROOT}"/scripts/lp.py ppa-latest "${SOURCE}" \
 	--ppa "${PPA_STAGING}" --series "${series}" \
 	| python3 -I -c 'import json,sys; print(json.load(sys.stdin).get("version", ""))')
@@ -67,14 +68,14 @@ if [[ -n ${staging_version} ]] && dpkg --compare-versions "${VERSION}" le "${sta
 	die "${PPA_STAGING} already has ${SOURCE} ${staging_version}, ${VERSION} is not newer."
 fi
 
-## A source of a PPA (SOURCE_ARCHIVE): its base version is copied to staging
-##  first, with its orig tarball (the port is uploaded without it) and marked
-##  as a copy, Launchpad shows the diff of the port against it.
+## A PPA source (SOURCE_ARCHIVE): copy its base version to staging first. The
+##  copy brings the orig tarball, which the port is uploaded without, and
+##  Launchpad marks it as a copy and shows the port's diff against it.
 if [[ -n ${SOURCE_ARCHIVE:-} && -z ${simulate} ]]; then
 	[[ -f ${LP_CREDENTIALS_FILE:-} ]] || die "LP_CREDENTIALS_FILE is needed to copy ${SOURCE} ${BASE_VERSION} from ppa:${SOURCE_ARCHIVE}."
 	python3 -I "${REPO_ROOT}"/scripts/lp_write.py --credentials "${LP_CREDENTIALS_FILE}" copy-base \
 		"${SOURCE}" "${BASE_VERSION}" --from "${SOURCE_ARCHIVE}" --to "${PPA_STAGING}" --series "${series}" >&2 \
-		|| die "Copying ${SOURCE} ${BASE_VERSION} from ppa:${SOURCE_ARCHIVE} failed."
+		|| die "Cannot copy ${SOURCE} ${BASE_VERSION} from ppa:${SOURCE_ARCHIVE}."
 fi
 
 einfo "Signing ${changes##*/} with ${GPG_KEY_ID}"
@@ -84,10 +85,10 @@ dput_args=()
 [[ -n ${simulate} ]] && dput_args+=( --simulate )
 einfo "Uploading ${SOURCE} ${VERSION} to ppa:${PPA_STAGING}$([[ -n ${simulate} ]] && echo " (simulated)")"
 
-## The FTP server of Launchpad refuses the files of uploads following each
-##  other closely ("Upload permissions error"), try again after a while.
-##  dput itself reports success, so its output is checked too. A transfer
-##  that stalls is stopped after 10 min (dput has no timeout).
+## Launchpad's FTP server refuses files from uploads that follow each other
+##  closely ("Upload permissions error"), so try again after a while. dput
+##  reports success anyway, so check its output too. Stop a stalled transfer
+##  after 10 min, because dput has no timeout.
 for attempt in 1 2 3 4; do
 	if timeout 600 dput --force "${dput_args[@]}" "ppa:${PPA_STAGING}" "${changes}" > "${base_dir}"/dput.log 2>&1 \
 		&& ! grep -q "Upload permissions error\|Could not upload file" "${base_dir}"/dput.log; then
@@ -96,9 +97,9 @@ for attempt in 1 2 3 4; do
 	fi
 	cat "${base_dir}"/dput.log >&2
 	[[ ${attempt} -eq 4 ]] && die "Upload failed."
-	ewarn "Upload refused, trying again in $(( attempt * 90 )) s."
+	ewarn "Upload refused; trying again in $(( attempt * 90 )) s."
 	sleep $(( attempt * 90 ))
 done
 
 [[ -z ${simulate} ]] && echo "UPLOADED=$(date -u +%FT%TZ)" >> "${base_dir}"/result.env
-einfo "Done, Launchpad sends the result to ${DEBEMAIL}."
+einfo "Done. Launchpad sends the result to ${DEBEMAIL}."

@@ -9,11 +9,11 @@ PATCHES=(
 debian_edit() {
 	local f
 
-	# HiddenUnderSystemd and the session fixes of the G Unity⁷ cinnamon-session #
+	# The G Unity⁷ cinnamon-session has HiddenUnderSystemd and the session fixes #
 	sed -i -e "s/^\( *\)cinnamon-session,$/\1cinnamon-session (>= 6.6.4-1+gu7),/" debian/control || return 1
 	grep -q "^ *cinnamon-session (>= 6.6.4-1+gu7),$" debian/control || return 1
 
-	# Files of the ebuild, installed from debian/g-unity7 #
+	# The ebuild's files, installed from debian/g-unity7 #
 	install -d debian/g-unity7 || return 1
 	install -m 755 "${FILESDIR}"/unity-session-quit debian/g-unity7/ || return 1
 	install -m 644 "${FILESDIR}"/unity-portals.conf debian/g-unity7/ || return 1
@@ -28,8 +28,8 @@ debian_edit() {
 	done
 
 	# Default applications of g-unity7-desktop: atril | papers | evince, #
-	#  vlc | showtime, the Firefox and Thunderbird debs of G Unity⁷ before their #
-	#  snaps, the Chromium snap #
+	#  vlc | showtime, the G Unity⁷ Firefox and Thunderbird packages before their #
+	#  snaps, and the Chromium snap #
 	sed -i \
 		-e "s/org\.gnome\.Evince\.desktop;atril\.desktop;org\.gnome\.Papers\.desktop;/atril.desktop;org.gnome.Papers.desktop;org.gnome.Evince.desktop;/" \
 		-e "s/org\.gnome\.Evince\.desktop;atril\.desktop;/atril.desktop;org.gnome.Evince.desktop;/" \
@@ -47,16 +47,17 @@ debian_edit() {
 	grep -q "^text/html=firefox\.desktop;firefox_firefox\.desktop;.*;chromium_chromium\.desktop;chromium-browser\.desktop;chromium-browser-chromium\.desktop;" debian/g-unity7/unity-mimeapps.list || return 1
 	grep -q "^x-scheme-handler/mailto=thunderbird\.desktop;thunderbird_thunderbird\.desktop;" debian/g-unity7/unity-mimeapps.list || return 1
 
-	# GTK_MODULES of the X session with appmenu-gtk-module, as the xinitrc.d script #
-	#  of x11-misc/appmenu-gtk-module (unity-gtk-module.service is not used) #
+	# Add appmenu-gtk-module to GTK_MODULES in the X session, as the xinitrc.d #
+	#  script of x11-misc/appmenu-gtk-module does. unity-gtk-module.service is #
+	#  not used #
 	install -m 644 "${PKG_DIR}"/85unity-session_appmenu-gtk-module debian/g-unity7/ || return 1
 	echo "debian/g-unity7/85unity-session_appmenu-gtk-module etc/X11/Xsession.d/" >> debian/unity-session.install || return 1
 	grep -Fqx "debian/g-unity7/85unity-session_appmenu-gtk-module etc/X11/Xsession.d/" debian/unity-session.install || return 1
 	sed -i -e "s/^\( *\)cinnamon-session (>= 6.6.4-1+gu7),$/\1appmenu-gtk3-module,\n&/" debian/control || return 1
 	grep -q "^ *appmenu-gtk3-module,$" debian/control || return 1
 
-	# The accessibility bus of the session instead of the one left by the greeter, #
-	#  as 99unity-session of unity-base/unity #
+	# Use the session's accessibility bus instead of the one the greeter left, as #
+	#  99unity-session of unity-base/unity does #
 	install -m 644 "${PKG_DIR}"/99unity-session_a11y-bus debian/g-unity7/ || return 1
 	echo "debian/g-unity7/99unity-session_a11y-bus etc/X11/Xsession.d/" >> debian/unity-session.install || return 1
 	grep -Fqx "debian/g-unity7/99unity-session_a11y-bus etc/X11/Xsession.d/" debian/unity-session.install || return 1

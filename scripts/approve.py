@@ -1,9 +1,9 @@
 #!/usr/bin/python3 -I
-"""The approval issue of G Unity⁷: versions waiting for review before the
+"""Manage the G Unity⁷ approval issue: versions waiting for review before the
 upload to the staging PPA, versions waiting for promotion to the main PPA,
 failed builds, and the commands given in its comments.
 
-Commands (comments of the repository owner):
+Commands (in comments by the repository owner):
   /upload [<package>...]   upload the reviewed source packages to staging
   /reject <package>...     drop versions waiting for review
   /promote [<package>...] [--force]
@@ -12,7 +12,8 @@ Commands (comments of the repository owner):
                            retry the failed builds of a version in staging
 
 Environment: GITHUB_TOKEN, GITHUB_REPOSITORY, OVERLAY_DIR, LP_CREDENTIALS_FILE
-(for /promote and /retry), the GPG variables of upload.sh (for /upload).
+(for /promote, /retry and deleting the base copies of ports from another PPA
+on every update), and the GPG variables of upload.sh (for /upload).
 """
 
 import argparse
@@ -38,12 +39,12 @@ REPO_ROOT = os.path.dirname(SCRIPTS)
 LABEL = "approve"
 TITLE = "G Unity⁷ approvals"
 STATE_RE = re.compile(r"<!-- g-unity7-state\n(.*?)\n-->", re.S)
-## Pause after an upload before the next one (seconds).
+## Pause between uploads (seconds).
 UPLOAD_PAUSE = 60
 ## upload.sh tries dput four times with pauses (at most 4 × 10 min + 9 min).
 UPLOAD_TIMEOUT = 60 * 60
-## Launchpad is taken as down after so many packages in a row whose state it
-##  did not give, the other packages keep their rows of the last update too.
+## Launchpad counts as down after this many packages in a row without a state.
+##  The remaining packages also keep their rows from the last update.
 LP_FAILURES_MAX = 3
 LP_ERRORS = (urllib.error.URLError, http.client.HTTPException, TimeoutError, ConnectionError,
              ValueError)
@@ -122,7 +123,7 @@ def base_of(version):
 
 
 def describe_changes(new, old):
-    """Describe the patch changes from the patches of new and old ({name: hash})."""
+    """Describe the patch changes between new and old ({name: hash})."""
     if not old:
         return "new package"
     changes = []
@@ -135,8 +136,8 @@ def describe_changes(new, old):
 
 
 def waiting_groups(state, pkgs):
-    """Members of each group still waiting for review before the upload: the
-    group is not complete in staging until they are uploaded or rejected."""
+    """Return the members of each group that still wait for review. A group is
+    not complete in staging until they are uploaded or rejected."""
     groups = {}
     for name in state["review"]:
         group = pkgs.get(name, {}).get("group")
@@ -146,10 +147,10 @@ def waiting_groups(state, pkgs):
 
 
 def promote_rows(pkgs, old=None):
-    """Versions of the staging PPA newer than in the main PPA, with the names
-    of the packages whose state Launchpad did not give. Without the rows of
-    the last update (old) a Launchpad error is raised, with them the package
-    keeps its row."""
+    """Return the staging versions that are newer than in the main PPA, and the
+    names of the packages that Launchpad gave no state for. Without the rows
+    from the last update (old), a Launchpad error is raised. With them, the
+    package keeps its row."""
     rows, stale = {}, []
     failures = 0
     for name, pkg in pkgs.items():
@@ -173,8 +174,8 @@ def promote_rows(pkgs, old=None):
 
 
 def promote_row(pkg):
-    """The row of a package whose staging version is newer than in the main
-    PPA, None if it is not."""
+    """Return the row of a package whose staging version is newer than in the
+    main PPA, or None."""
     series = CONFIG["series"]
     staging = lp.ppa_latest(pkg["source"], CONFIG["staging"], series)
     if not staging:
@@ -211,7 +212,7 @@ def promote_row(pkg):
 def render(state, pkgs=None):
     out = [f"<!-- g-unity7-state\n{json.dumps(state, indent=1, ensure_ascii=False)}\n-->", ""]
     out += ["G Unity⁷ packages waiting for the owner's decision. The `review.yml` workflow "
-            "updates the tables every hour, commands are given in comments.", ""]
+            "updates the tables every hour. Give commands in comments.", ""]
 
     out += ["## Review before upload", ""]
     if state["review"]:
@@ -220,23 +221,23 @@ def render(state, pkgs=None):
             run = f"https://github.com/{repo()}/actions/runs/{r['run_id']}"
             out.append(f"| `{name}` | `{r['version']}` | {r['reason']} | "
                        f"[run summary]({run}) · artifact `{r['artifact']}` |")
-        out += ["", "`/upload` uploads all of them to staging, `/upload <package>…` only the given "
-                "ones, `/reject <package>…` drops the version.", ""]
+        out += ["", "`/upload` uploads all of them to staging, and `/upload <package>…` only the "
+                "given ones. `/reject <package>…` drops the version.", ""]
     else:
         out += ["Nothing is waiting.", ""]
 
     out += ["## Waiting for promotion", ""]
     waiting = waiting_groups(state, pkgs or {})
     if state["promote"]:
-        ## A table for each group: a version does not wrap, one version column
-        ##  leaves the width for the package and its changes
+        ## One table per group. Versions do not wrap, and a single version
+        ##  column leaves room for the package and its changes
         groups = {}
         for name, r in state["promote"].items():
             groups.setdefault(r["group"], []).append(name)
         for group in sorted(groups, key=lambda g: g or "~"):
             out += [f"### Group `{group}`" if group else "### Without a group", ""]
             if group in waiting:
-                out += [f"The group waits for review: {', '.join(f'`{n}`' for n in waiting[group])}.", ""]
+                out += [f"Still waiting for review in this group: {', '.join(f'`{n}`' for n in waiting[group])}.", ""]
             out += ["| Package | Staging<br>Main PPA | Build | Changes |", "|---|---|---|---|"]
             for name in sorted(groups[group]):
                 r = state["promote"][name]
@@ -246,11 +247,12 @@ def render(state, pkgs=None):
                            f"{STATE_ICONS[r['state']]} | {r['changes']} |")
             out.append("")
         out += ["✅ built and published, ⏳ building, ❌ failed, 🔒 Ubuntu security update. "
-                "`/promote` copies all ✅ versions of complete groups to the main PPA, "
-                "`/promote <package>…` only the given ones, `--force` also with an incomplete group.", ""]
+                "`/promote` copies all ✅ versions of complete groups to the main PPA, and "
+                "`/promote <package>…` only the given ones. `--force` also promotes from an "
+                "incomplete group.", ""]
         if state["stale"]:
-            out += [f"Launchpad did not answer for {len(state['stale'])} packages, "
-                    "their rows are from the last update.", ""]
+            out += [f"Launchpad did not answer for {len(state['stale'])} packages. "
+                    "Their rows are from the last update.", ""]
         failed = [(n, r) for n, r in sorted(state["promote"].items()) if r["state"] == "failed"]
         if failed:
             out += ["### Failed builds", ""]
@@ -270,7 +272,7 @@ def render(state, pkgs=None):
 
 
 def save(issue, state, pkgs=None):
-    """Write the state to the issue, create, close or reopen it."""
+    """Write the state to the issue, and create, close or reopen it."""
     body = render(state, pkgs)
     waiting = bool(state["review"] or state["promote"])
     if not issue:
@@ -284,7 +286,7 @@ def save(issue, state, pkgs=None):
 
 
 def notify_new(issue, state):
-    """Comment on versions that appeared since the last refresh."""
+    """Comment on the versions that appeared since the last refresh."""
     new = []
     for section in ("review", "promote"):
         for name, r in state[section].items():
@@ -303,12 +305,38 @@ def notify_new(issue, state):
         comment(issue, "New versions:\n" + "\n".join(new))
 
 
+def prune_bases(issue, pkgs):
+    """Delete the base copies of ports from another PPA (copy-base) in the
+    staging PPA once the ports are published there (lp_write.py prune-base),
+    and say so in the issue."""
+    credentials = os.environ.get("LP_CREDENTIALS_FILE")
+    if not credentials:
+        return
+    deleted = []
+    for pkg in pkgs.values():
+        if not pkg.get("source_archive"):
+            continue
+        proc = subprocess.run([f"{SCRIPTS}/lp_write.py", "--credentials", credentials, "prune-base",
+                               pkg["source"], "--ppa", CONFIG["staging"], "--series", CONFIG["series"],
+                               "--tag", CONFIG["tag"]], capture_output=True, text=True)
+        if proc.returncode:
+            print(f"::warning::Cannot delete the base copies of {pkg['source']}: "
+                  f"{proc.stderr.strip()[-500:]}")
+            continue
+        deleted += [f"- `{pkg['source']}` `{v}` from `ppa:{pkg['source_archive']}`"
+                    for v in proc.stdout.split()]
+    if deleted and issue:
+        comment(issue, "Deleted base copies that the published ports no longer need "
+                       "(the ports keep the orig tarball):\n" + "\n".join(deleted))
+
+
 def refresh(issue, state, pkgs=None):
     pkgs = pkgs or packages()
+    prune_bases(issue, pkgs)
     state["promote"], state["stale"] = promote_rows(pkgs, state["promote"])
     if state["stale"]:
-        print(f"::warning::Launchpad did not give the state of {len(state['stale'])} packages, "
-              "they keep the rows of the last update.")
+        print(f"::warning::Launchpad gave no state for {len(state['stale'])} packages. "
+              "They keep their rows from the last update.")
     issue = save(issue, state, pkgs)
     notify_new(issue, state)
     return save(issue, state, pkgs)
@@ -326,7 +354,7 @@ def read_result(path):
 
 
 def cmd_add_review(args):
-    """Put the built versions needing review (build directories) in the issue."""
+    """Add the built versions that need review (build directories) to the issue."""
     issue = find_issue()
     state = load_state(issue)
     for directory in args.dirs:
@@ -369,8 +397,8 @@ def do_upload(issue, state, names, pkgs):
             messages.append(f"- `{name}`: not waiting for review.")
             continue
         if name not in pkgs or pkgs[name]["input"] != r["input"]:
-            messages.append(f"- `{name}`: the port or the overlay changed since the review, "
-                            f"build it again (`gh workflow run ppa.yml -f packages={name}`).")
+            messages.append(f"- `{name}`: the port or the overlay changed after the review. "
+                            f"Build it again (`gh workflow run ppa.yml -f packages={name}`).")
             continue
         try:
             staging = lp.ppa_latest(r["source"], CONFIG["staging"], CONFIG["series"])
@@ -381,14 +409,14 @@ def do_upload(issue, state, names, pkgs):
             with tempfile.TemporaryDirectory() as build_dir:
                 target = os.path.join(build_dir, CONFIG["series"], name)
                 if not download_artifact(r["run_id"], r["artifact"], target):
-                    messages.append(f"- `{name}`: the artifact expired, build it again "
+                    messages.append(f"- `{name}`: the artifact has expired. Build it again "
                                     f"(`gh workflow run ppa.yml -f packages={name}`).")
                     continue
                 proc = subprocess.run([f"{SCRIPTS}/upload.sh", name], env=dict(os.environ, BUILD_DIR=build_dir),
                                       capture_output=True, text=True, timeout=UPLOAD_TIMEOUT)
         except subprocess.TimeoutExpired as e:
             stderr = e.stderr.decode(errors="replace") if isinstance(e.stderr, bytes) else (e.stderr or "")
-            messages.append(f"- `{name}`: the upload did not finish in {UPLOAD_TIMEOUT // 60} min:\n"
+            messages.append(f"- `{name}`: the upload did not finish within {UPLOAD_TIMEOUT // 60} min:\n"
                             f"```\n{stderr[-1500:]}\n```")
             continue
         except Exception as e:  # noqa: BLE001 - report it and go on with the other packages
@@ -401,7 +429,7 @@ def do_upload(issue, state, names, pkgs):
             continue
         messages.append(f"- `{name}` `{r['version']}` uploaded to `ppa:{CONFIG['staging']}`.")
         del state["review"][name]
-        ## Launchpad refuses uploads following each other closely.
+        ## Launchpad refuses uploads that follow each other closely.
         time.sleep(UPLOAD_PAUSE)
     return messages
 
@@ -414,7 +442,7 @@ def do_reject(state, names):
             messages.append(f"- `{name}`: not waiting for review.")
             continue
         state["rejected"][name] = {"base": r["base"], "input": r["input"]}
-        messages.append(f"- `{name}` `{r['version']}` dropped, it is offered again after a change of the port or the overlay.")
+        messages.append(f"- `{name}` `{r['version']}` dropped. It is offered again after the port or the overlay changes.")
     return messages
 
 
@@ -435,18 +463,18 @@ def do_promote(state, names, force, pkgs):
             messages.append(f"- `{name}`: not waiting for promotion.")
             continue
         if name in table and table[name]["staging"] != r["staging"]:
-            messages.append(f"- `{name}`: staging has `{r['staging']}` now instead of "
-                            f"`{table[name]['staging']}`, check it and give the command again.")
+            messages.append(f"- `{name}`: staging now has `{r['staging']}` instead of "
+                            f"`{table[name]['staging']}`. Check it and give the command again.")
             continue
         if r["state"] != "ok":
-            messages.append(f"- `{name}`: the build is not finished ({STATE_ICONS[r['state']]}).")
+            messages.append(f"- `{name}`: the build has not finished ({STATE_ICONS[r['state']]}).")
             continue
         incomplete = [n for n in groups.get(r["group"], []) if current[n]["state"] != "ok"
                       or (names and n not in names)]
-        incomplete += [f"{n} (waits for review)" for n in waiting.get(r["group"], [])]
+        incomplete += [f"{n} (waiting for review)" for n in waiting.get(r["group"], [])]
         if incomplete and not force:
             messages.append(f"- `{name}`: group `{r['group']}` is incomplete "
-                            f"({', '.join(incomplete)}), use `--force`.")
+                            f"({', '.join(incomplete)}). Use `--force` to promote it anyway.")
             continue
         proc = subprocess.run([f"{SCRIPTS}/lp_write.py", "--credentials", credentials, "copy",
                                r["source"], r["staging"], "--from", CONFIG["staging"],
@@ -467,18 +495,18 @@ def do_retry(source, version):
                            "--series", CONFIG["series"]], capture_output=True, text=True)
     if proc.returncode:
         return [f"- `{source}` `{version}`: {proc.stderr.strip()[-500:]}"]
-    return [f"- `{source}` `{version}`: the build is retried."]
+    return [f"- `{source}` `{version}`: retrying the build."]
 
 
 def run_command(issue, state, text):
-    """Run the command of a comment, return the reply."""
+    """Run the command in a comment and return the reply."""
     line = text.strip().splitlines()[0] if text.strip() else ""
     words = line.split()
     if not words or not words[0].startswith("/"):
         return None
     command, args = words[0], words[1:]
     pkgs = packages()
-    ## The state of the issue is saved and the reply sent also if the command fails.
+    ## Save the issue state and send the reply even if the command fails.
     try:
         if command == "/upload":
             messages = do_upload(issue, state, args, pkgs)
@@ -490,10 +518,10 @@ def run_command(issue, state, text):
         elif command == "/retry" and len(args) == 2:
             messages = do_retry(*args)
         else:
-            messages = [f"Unknown command `{line}`, see the issue description."]
+            messages = [f"Unknown command `{line}`. See the issue description."]
     except Exception as e:  # noqa: BLE001
         traceback.print_exc()
-        messages = [f"The command failed: `{type(e).__name__}: {e}`, see the log of the run."]
+        messages = [f"The command failed: `{type(e).__name__}: {e}`. See the run log."]
     refresh(issue, state, pkgs)
     return f"`{line}`\n\n" + "\n".join(messages)
 

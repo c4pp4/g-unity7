@@ -1,7 +1,7 @@
-## Derived source: ubuntu-docs of xenial, the last one with the help of Unity
-##  (help:ubuntu-help, linked from unity-control-center, mate-utils and
-##  indicator-session). ubuntu-docs of the current series has only pages of
-##  gnome-help, the help id ubuntu-help is free.
+## Derived source: ubuntu-docs from xenial, the last version with the Unity help
+##  (help:ubuntu-help), which unity-control-center, mate-utils and
+##  indicator-session link to. The current ubuntu-docs has only gnome-help
+##  pages, so the ubuntu-help ID is free.
 OVERLAY_PKG="unity-base/ubuntu-docs"
 UBUNTU_SRC="ubuntu-docs"
 UBUNTU_SERIES="xenial"
@@ -22,7 +22,7 @@ debian_edit() {
 	grep -qx " using Yelp, the GNOME help browser (help:ubuntu-help)." debian/control || return 1
 	! grep -q "^Vcs-\|Ubuntu-specific" debian/control || return 1
 
-	# cdbs has no gnome.mk any more: dh with autoreconf (YELP_HELP_INIT of yelp-tools) #
+	# cdbs no longer has gnome.mk, so use dh with autoreconf (YELP_HELP_INIT from yelp-tools) #
 	sed -i \
 		-e "s/^Build-Depends: debhelper (>= 8), cdbs$/Build-Depends: debhelper-compat (= 13)/" \
 		-e "/^Build-Depends-Indep: gnome-common,$/{N;s/gnome-common,\n *//}" \
@@ -33,7 +33,7 @@ debian_edit() {
 	printf '#!/usr/bin/make -f\n\n%%:\n\tdh $@\n' > debian/rules || return 1
 	grep -qxF "$(printf '\tdh $@')" debian/rules || return 1
 
-	# Removes an alternative of firefox-homepage of 11.04 #
+	# Removes a firefox-homepage alternative from 11.04 #
 	rm debian/ubuntu-docs.preinst || return 1
 }
 
@@ -42,7 +42,7 @@ src_edit() {
 	local -a pages po_files
 
 	pushd ubuntu-help >/dev/null || return 1
-		# Ubuntu Software Center is not in Ubuntu any more #
+		# Ubuntu Software Center is no longer in Ubuntu #
 		sed -i -e "/addremove/d" Makefile.am || return 1
 		! grep -q "addremove" Makefile.am || return 1
 		sed -i -e "s/ addremove//" C/index.page || return 1
@@ -98,8 +98,8 @@ src_edit() {
 		! grep -q -e "قېتىم <link" -e "دا كۆرسەت<gui>" -e " app>" -e " gui>" ug/ug.po || return 1
 	popd >/dev/null || return 1
 
-	# G Unity⁷ instead of the Ubuntu desktop (the Ubuntu logo and button of #
-	#  the Dash stay, as the icon of the Dash of Ubuntu Unity) #
+	# G Unity⁷ instead of the Ubuntu desktop. The Ubuntu logo and Dash button #
+	#  stay, as the Dash icon of Ubuntu Unity #
 	mapfile -t pages < <(find ubuntu-help -maxdepth 2 -type f -name "*.page")
 	for f in ubuntu-help/*/*.po; do
 		po_files+=( "${f}" )
@@ -110,7 +110,7 @@ src_edit() {
 		-e "s/Welcome to Ubuntu/Welcome to G Unity⁷/" \
 		-e "s/Ubuntu features/G Unity⁷ features/" \
 		"${pages[@]}" "${po_files[@]}" || return 1
-	## The translations of the changed messages (the lines up to the next comment)
+	## Translations of the changed messages (the lines up to the next comment)
 	sed -i ":bgn;/Unity⁷/{:loop;n;/^#/b bgn;s/Ubuntu/G Unity⁷/g;b loop;}" "${po_files[@]}" || return 1
 	grep -q "<title type='text'>G Unity⁷ Desktop Guide</title>" ubuntu-help/C/index.page || return 1
 	! grep -q "Ubuntu Desktop\|Ubuntu desktop\|Welcome to Ubuntu\|Ubuntu features" "${pages[@]}" || return 1

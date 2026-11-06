@@ -11,7 +11,7 @@ PATCHES=(
 debian_edit() {
 	local p=debian/patches/pre_populator.patch n
 
-	# Fix pre_populator.patch (the mail clients of Ubuntu in packages/zeitgeist/mail-clients) #
+	# Fix pre_populator.patch with Ubuntu's mail clients from packages/zeitgeist/mail-clients #
 	sed -i \
 		-e "/rhythmbox/r ${FILESDIR}/music-clients" \
 		-e '/Calculator/a +    arr.add (event_for_desktop_file ("mate-calc.desktop", ++ts));' \

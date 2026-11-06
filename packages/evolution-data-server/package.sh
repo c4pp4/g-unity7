@@ -1,8 +1,8 @@
 OVERLAY_PKG="ehooks/gnome-extra/evolution-data-server"
 UBUNTU_SRC="evolution-data-server"
 
-## Use-libnotify-when-available.patch is the variant of
-##  packages/evolution-data-server/patches (the context of the libnotify include).
+## Use-libnotify-when-available.patch in packages/evolution-data-server/patches
+##  is a variant with a different context around the libnotify include.
 PATCHES=(
 	Use-libnotify-when-available.patch
 )

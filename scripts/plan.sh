@@ -1,12 +1,12 @@
 #!/bin/bash
 ## Print the packages to build as a JSON list: those whose Ubuntu version or
-##  input hash differs from their newest version in the staging PPA. A package
-##  waiting for review, or rejected, with the same Ubuntu version and input
-##  hash is not built again.
+##  input hash differs from their latest version in the staging PPA. A package
+##  that waits for review or was rejected with the same Ubuntu version and
+##  input hash is not built again.
 ##
 ## Usage: plan.sh [--series <series>] [--force] [--state <file>] [<package>...]
 ##
-##  --force  list the given packages (all without them) even if unchanged
+##  --force  list the given packages (or all packages) even if unchanged
 ##  --state  state JSON of the approval issue (see approve.py)
 
 set -euo pipefail
@@ -29,7 +29,7 @@ OVERLAY_DIR=$(realpath "${OVERLAY_DIR:-${REPO_ROOT}/../gentoo-unity7}")
 packages=( "$@" )
 [[ ${#packages[@]} -gt 0 ]] || mapfile -t packages < <(list_packages)
 
-## Print field $2 of JSON $1, or of the entry $3 of the state section $2.
+## Print field $2 of JSON $1, or of entry $3 in state section $2.
 json_get() {
 	python3 -I -c '
 import json, sys
@@ -68,7 +68,7 @@ for pkg in "${packages[@]}"; do
 	for section in review rejected; do
 		if [[ $(json_get "${state_json}" "${section}" "${pkg}" base) == "${base}" \
 			&& $(json_get "${state_json}" "${section}" "${pkg}" input) == "${input}" ]]; then
-			einfo "${pkg}: unchanged since it was put for review (${section})"
+			einfo "${pkg}: unchanged since it was queued (${section})"
 			continue 2
 		fi
 	done

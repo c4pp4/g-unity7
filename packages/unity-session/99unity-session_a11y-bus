@@ -1,7 +1,8 @@
-# Start the accessibility bus of the Unity session now, as 99unity-session of
-# unity-base/unity in Gentoo: at-spi-bus-launcher sets the AT_SPI_BUS property
-# of the X root window, the property left by unity-greeter points to the bus of
-# the greeter user (/run/user/<uid of lightdm>, access denied).
+# Start the Unity session's accessibility bus now, as 99unity-session of
+# unity-base/unity does in Gentoo. at-spi-bus-launcher sets the AT_SPI_BUS
+# property of the X root window. The property that unity-greeter leaves behind
+# points to the greeter user's bus (/run/user/<lightdm uid>), which the session
+# cannot access.
 
 case :$XDG_CURRENT_DESKTOP: in
 	*:Unity:*)

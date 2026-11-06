@@ -14,7 +14,7 @@ debian_edit() {
 		>> debian/compiz-gnome.gsettings-override || return 1
 	grep -Fqx "y-bottom-offset = 5" debian/compiz-gnome.gsettings-override || return 1
 
-	# Ctrl+Alt+Del does not run gnome-system-monitor (ctrl-alt-del-leave-to-logout.patch) #
+	# Ctrl+Alt+Del no longer runs gnome-system-monitor (ctrl-alt-del-leave-to-logout.patch) #
 	sed -i -e "/^Recommends: gnome-system-monitor | mate-system-monitor,$/d" debian/control || return 1
 	! grep -q "system-monitor" debian/control || return 1
 }

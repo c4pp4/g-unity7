@@ -2,14 +2,14 @@ OVERLAY_PKG="unity-extra/unity-tweak-tool"
 UBUNTU_SRC="unity-tweak-tool"
 GROUP="desktop"
 
-## The default USE flags of the ebuild (+bluetooth +files +hud).
-##  xorg-cursor-themes-path.diff is for the Gentoo cursor themes path.
+## The ebuild's default USE flags (+bluetooth +files +hud).
+##  xorg-cursor-themes-path.diff is for Gentoo's cursor theme path.
 PATCHES=(
 	unity-cursor-scale-factor.diff
 )
 
 debian_edit() {
-	# Cursor theme of gsettings for the X applications #
+	# Use the GSettings cursor theme for X applications #
 	install -d debian/g-unity7 || return 1
 	install -m 755 "${FILESDIR}"/95-xcursor-theme debian/g-unity7/95xcursor-theme || return 1
 	echo "debian/g-unity7/95xcursor-theme etc/X11/Xsession.d/" >> debian/install || return 1

@@ -1,7 +1,7 @@
 name: Setup
 description: >-
-  Check out the overlay at the commit of the series and install the build
-  dependencies in the Ubuntu container (the repository is checked out already).
+  Check out the overlay at the series commit and install the build
+  dependencies in the Ubuntu container. The repository is already checked out.
 outputs:
   series:
     description: The series to build

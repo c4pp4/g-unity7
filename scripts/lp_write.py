@@ -1,8 +1,10 @@
 #!/usr/bin/python3 -I
-"""Launchpad changes of the G Unity⁷ scripts (authenticated, launchpadlib):
-copy a version from the staging PPA to the main PPA, retry failed builds.
+"""Make Launchpad changes for the G Unity⁷ scripts (authenticated, with
+launchpadlib): copy a version from the staging PPA to the main PPA, copy the
+base version of a port and delete it when it is no longer needed, and retry
+failed builds.
 
-The credentials file is made once with scripts/lp_login.py.
+Create the credentials file once with scripts/lp_login.py.
 """
 
 import argparse
@@ -15,8 +17,8 @@ from launchpadlib.credentials import Credentials
 from launchpadlib.launchpad import Launchpad
 
 ## How long to wait for a copied version to appear in the main PPA (Pending or
-##  Published). Its publication is up to Launchpad, the first one of a new PPA
-##  takes hours.
+##  Published). Publishing is up to Launchpad, and the first publication in a
+##  new PPA takes hours.
 COPY_TIMEOUT = 20 * 60
 
 
@@ -61,18 +63,18 @@ def cmd_copy(args):
 
 
 def cmd_copy_base(args):
-    """Copy the base version of a port from the PPA of its source (e.g. the
-    Firefox of mozillateam) with its binaries, unless the version has ever
-    been in the target PPA. The orig tarball is then in the target PPA (the
-    port is uploaded without it) and Launchpad shows the diff of the port
-    against the base."""
+    """Copy the base version of a port with its binaries from the PPA of its
+    source (such as mozillateam's Firefox), unless the version has ever been
+    in the target PPA, even if it was deleted. The target PPA then has the
+    orig tarball, so the port is uploaded without it. prune-base deletes the
+    copy once the port is published."""
     lp = login(args)
     source_archive = archive(lp, args.from_ppa)
     target = archive(lp, args.to_ppa)
     series = lp.distributions["ubuntu"].getSeries(name_or_version=args.series)
     if list(target.getPublishedSources(source_name=args.source, version=args.version,
                                        exact_match=True, distro_series=series)):
-        print(f"{args.source} {args.version} has been in {args.to_ppa} already", file=sys.stderr)
+        print(f"{args.source} {args.version} has already been in {args.to_ppa}", file=sys.stderr)
         return
     if not source_of(source_archive, lp, args.source, args.version, args.series):
         sys.exit(f"lp_write.py: {args.source} {args.version} is not in {args.from_ppa}")
@@ -87,6 +89,29 @@ def cmd_copy_base(args):
             return
         time.sleep(30)
     sys.exit(f"lp_write.py: {args.source} {args.version} did not appear in {args.to_ppa} in time")
+
+
+def cmd_prune_base(args):
+    """Delete the base copies of a port (copy-base) once a version of the port
+    built on the same base is published in the PPA. The port keeps the orig
+    tarball, and Launchpad removes a file only when no publication uses it. The
+    copy also has binaries of architectures that the PPA does not build, which
+    no upload ever supersedes. Print each deleted version."""
+    lp = login(args)
+    ppa = archive(lp, args.ppa)
+    series = lp.distributions["ubuntu"].getSeries(name_or_version=args.series)
+    pubs = list(ppa.getPublishedSources(source_name=args.source, exact_match=True, distro_series=series))
+    ours = [p.source_package_version for p in pubs
+            if p.status == "Published" and f"+{args.tag}." in p.source_package_version]
+    for pub in pubs:
+        base = pub.source_package_version
+        if pub.status not in ("Published", "Superseded") or f"+{args.tag}." in base:
+            continue
+        if not any(v.startswith(f"{base}+{args.tag}.") for v in ours):
+            continue
+        pub.requestDeletion(removal_comment=f"Base copy of the G Unity⁷ port, no longer needed: "
+                                            f"the published port keeps the orig tarball")
+        print(base)
 
 
 def cmd_retry(args):
@@ -119,13 +144,20 @@ def main():
     p.add_argument("--series", required=True)
     p.set_defaults(func=cmd_copy)
 
-    p = sub.add_parser("copy-base", help="copy the base version of a port from the PPA of its source")
+    p = sub.add_parser("copy-base", help="copy the base version of a port from its source PPA")
     p.add_argument("source")
     p.add_argument("version")
     p.add_argument("--from", dest="from_ppa", required=True)
     p.add_argument("--to", dest="to_ppa", required=True)
     p.add_argument("--series", required=True)
     p.set_defaults(func=cmd_copy_base)
+
+    p = sub.add_parser("prune-base", help="delete the base copies of a port once the port is published")
+    p.add_argument("source")
+    p.add_argument("--ppa", required=True)
+    p.add_argument("--series", required=True)
+    p.add_argument("--tag", required=True, help="version tag of the ports (gu7)")
+    p.set_defaults(func=cmd_prune_base)
 
     p = sub.add_parser("retry", help="retry the failed builds of a version")
     p.add_argument("source")

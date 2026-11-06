@@ -1,5 +1,5 @@
-## The approval issue: update it every hour, run the commands of its comments
-##  (/upload, /reject, /promote, /retry) given by the repository owner.
+## The approval issue: update it every hour and run the commands that the
+##  repository owner gives in its comments (/upload, /reject, /promote, /retry).
 name: Review
 
 on:
@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       command:
-        description: Command as in a comment of the issue (empty only updates it)
+        description: Command as in an issue comment (empty to only update the issue)
         required: false
         default: ''
 

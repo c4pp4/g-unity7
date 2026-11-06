@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-# G Unity⁷: the caches of the accent themes of Yaru list the panel icons too
+# G Unity⁷: the Yaru accent theme caches list the panel icons too
 if [ "$1" = "remove" ] && command -v update-icon-caches >/dev/null; then
 	update-icon-caches /usr/share/icons/Yaru-*
 fi

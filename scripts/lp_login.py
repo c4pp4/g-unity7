@@ -1,6 +1,7 @@
 #!/usr/bin/python3 -I
-"""Make the Launchpad credentials file of lp_write.py (secret LP_CREDENTIALS):
-an OAuth token of the consumer g-unity7 with "Change Non-Private Data" only.
+"""Create the Launchpad credentials file for lp_write.py (the LP_CREDENTIALS
+secret): an OAuth token for the g-unity7 consumer with "Change Non-Private
+Data" access only.
 
 Usage: lp_login.py <credentials file>
 

@@ -1,5 +1,5 @@
 From: c4pp4
-Date: Sat, 31 Oct 2026 16:00:00 +0100
+Date: Fri, 06 Nov 2026 13:30:02 +0100
 Subject: [PATCH 1/1] Fix environment variables
 
 Set the XDG_CURRENT_DESKTOP environment variable for gsettings overrides
@@ -9,8 +9,8 @@ the keyboard layout to correspond with the indicator-keyboard icon.
 Import the XDG_SESSION_CLASS environment variable, which is used
 by indicator-sound.
 
-The part of the gentoo-unity7 patch for Ubuntu, which always runs the
-greeter with the 'systemd --user' process.
+This is the part of the gentoo-unity7 patch that Ubuntu needs, because
+Ubuntu always runs the greeter with a 'systemd --user' process.
 
 Signed-off-by: c4pp4
 ---

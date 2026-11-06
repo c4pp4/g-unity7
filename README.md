@@ -1,30 +1,32 @@
 # G Unity⁷ Desktop
 
-Ubuntu packages of the Unity7 desktop with the patches of the
+Ubuntu packages of the Unity7 desktop with the patches from the
 [gentoo-unity7](https://github.com/c4pp4/gentoo-unity7) overlay, built for the
 `ppa:c4pp4/g-unity7` PPA.
 
-Each package is the newest Ubuntu source with:
+Each package is the latest Ubuntu source with:
 
-- the patches the overlay ebuild applies (from the overlay `files/` directory),
-- the edits the ebuild makes with `sed` and other commands, as one more patch,
-- the `debian/` changes the port needs,
+- the patches that the overlay ebuild applies (from the overlay's `files/`
+  directory),
+- the edits that the ebuild makes with `sed` and other commands, as one more
+  patch,
+- the `debian/` changes that the port needs.
 
-leaving out what only concerns Gentoo (libdir, OpenRC, the portage sandbox, …).
-The patches are taken from the overlay at build time, so a patch changed in the
-overlay gets into the next package version by itself.
+Changes that only matter on Gentoo (libdir, OpenRC, the Portage sandbox, …) are
+left out. The patches are taken from the overlay at build time, so a patch
+changed in the overlay is included in the next package version automatically.
 
 ## Installing
 
-On Ubuntu 26.10 (Ubuntu Unity or any other flavour):
+On Ubuntu 26.10 (Ubuntu Unity or any other flavor):
 
 ```
 sudo add-apt-repository ppa:c4pp4/g-unity7
 sudo apt install g-unity7-desktop
 ```
 
-`g-unity7-desktop` installs `g-unity7-apt-pin`, which prefers the packages of
-the PPA to those of Ubuntu.
+`g-unity7-desktop` installs `g-unity7-apt-pin`, which makes apt prefer the PPA
+packages to the Ubuntu ones.
 
 Then run:
 
@@ -32,24 +34,25 @@ Then run:
 sudo g-unity7-cleanup
 ```
 
-It works as `emerge --depclean` of Gentoo. apt keeps the applications already
-installed and every installed alternative of a relation such as
-`vlc | showtime`, and it does not install the first alternative if another one
-is installed (Atril of `atril | papers | evince` with Papers). Of the installed
-alternatives of an application of `g-unity7-desktop` `g-unity7-cleanup` asks
-which one to keep, the first one is recommended and offered for installation,
-an alternative that is not installed can be installed too.
+It works like Gentoo's `emerge --depclean`. apt keeps the applications that are
+already installed and every installed alternative of a relation such as
+`vlc | showtime`. It also does not install the first alternative when another
+one is installed, for example Atril from `atril | papers | evince` when Papers
+is installed. For each `g-unity7-desktop` application with several installed
+alternatives, `g-unity7-cleanup` asks which one to keep. The first alternative
+is recommended and offered for installation, and you can also install another
+one.
 
-Coming from Ubuntu Unity, it also removes the packages G Unity⁷ replaces: the
-installer of Ubuntu Unity marks its applications as manually installed, so
-`apt autoremove` never removes them. Other desktops, such as GNOME, are not
-removed. It shows all packages and asks first, `g-unity7-cleanup --dry-run`
-changes nothing.
+If you are coming from Ubuntu Unity, it also removes the packages that G Unity⁷
+replaces. The Ubuntu Unity installer marks its applications as manually
+installed, so `apt autoremove` never removes them. Other desktops, such as
+GNOME, are not removed. `g-unity7-cleanup` shows all changes and asks before
+making them. `g-unity7-cleanup --dry-run` only shows them.
 
-Firefox and Thunderbird of Ubuntu are snaps. `g-unity7-cleanup` offers their
-debs of the PPA with the global menu of Unity instead, copies the profiles of
-the snaps to the users without a profile of the deb and removes the snaps.
-Without that choice `g-unity7-apt-pin` keeps the snaps.
+Ubuntu installs Firefox and Thunderbird as snaps. `g-unity7-cleanup` offers the
+PPA packages with Unity's global menu instead. It copies the snap profiles for
+users who have no profile yet and removes the snaps. If you keep the snaps,
+`g-unity7-apt-pin` keeps them too.
 
 ## Layout
 
@@ -57,20 +60,20 @@ Without that choice `g-unity7-apt-pin` keeps the snaps.
 config.sh                 series, PPAs, version tag
 packages/<package>/
   package.sh              the port (see below)
-  patches/                Ubuntu variants of overlay patches (same name wins)
+  patches/                Ubuntu variants of overlay patches (a file with the same name wins)
   debian/                 files copied over debian/
 scripts/
   build-source.sh         build the source package of one package
-  make-review.sh          debdiff.diff, code.diff and summary.md of a build
-  test-build.sh           local binary build of a built source package
+  make-review.sh          create debdiff.diff, code.diff and summary.md for a build
+  test-build.sh           build binary packages locally from a source package
   run-local.sh            run a script in the Ubuntu build container
-  plan.sh                 packages whose Ubuntu version or input changed
+  plan.sh                 list packages whose Ubuntu version or input changed
   upload.sh               sign a source package and upload it to staging
-  approve.py              the approval issue and its commands
-  lp.py                   Launchpad queries (versions, build states)
-  lp_write.py             Launchpad changes (copy to the main PPA, retry)
-  lp_login.py             Launchpad credentials of lp_write.py (public write only)
-  dep3.py                 overlay patch header → DEP-3 header
+  approve.py              manage the approval issue and its commands
+  lp.py                   query Launchpad (versions, build states)
+  lp_write.py             change Launchpad (copy to the main PPA, retry builds)
+  lp_login.py             create Launchpad credentials for lp_write.py (public write access only)
+  dep3.py                 convert an overlay patch header to a DEP-3 header
 local/<package>/          own packages (package.sh and the whole source)
 Containerfile             the build container (Ubuntu of the series)
 ```
@@ -86,61 +89,81 @@ PATCHES=(
 	fix-dash-preview-thumbnails.patch
 )
 
-# debian/ changes, run before the Ubuntu patchset is applied #
+# debian/ changes, made before the Ubuntu patches are applied #
 debian_edit() {
 	sed -i -e "s/unity-gtk-module/appmenu-gtk-module/" debian/control || return 1
 	grep -Fq "appmenu-gtk-module" debian/control || return 1
 }
 
-# Source edits of the ebuild, saved as debian/patches/g-unity7/ebuild-edits.patch #
+# Source edits from the ebuild, saved as debian/patches/g-unity7/ebuild-edits.patch #
 src_edit() {
 	sed -i -e "/preview_width =/{s/770/700/}" unity-shared/PreviewStyle.cpp || return 1
 	grep -Fq "const RawPixel preview_width = 700_em;" unity-shared/PreviewStyle.cpp || return 1
 }
 ```
 
-`FILESDIR` (the overlay `files/` directory) and `BRANDING_DIR` can be used in
-the functions. Optional: `PATCH_MODE=quilt|direct` overrides the mode chosen from
-`debian/source/format`, `GROUP` names packages promoted together,
-`OVERLAY_FILES` lists further overlay files the package is made from (they are
-part of its input hash), `SOURCE_NAME` makes a derived source package of
-`UBUNTU_SRC` under another name (e.g. nemo-engrampa from nemo-fileroller). Own packages may set `local_prepare()` to make their
-source from overlay files.
+The functions can use `FILESDIR` (the overlay's `files/` directory) and
+`BRANDING_DIR`. Optional settings:
+
+- `PATCH_MODE=quilt|direct` overrides the mode chosen from
+  `debian/source/format`.
+- `GROUP` names packages that are promoted together.
+- `OVERLAY_FILES` lists other overlay files the package is made from. They are
+  part of its input hash.
+- `SOURCE_NAME` builds a source package derived from `UBUNTU_SRC` under another
+  name, such as nemo-engrampa from nemo-fileroller.
+- `UBUNTU_SERIES` takes the source from an older Ubuntu release when Ubuntu
+  has removed it.
+- `SOURCE_ARCHIVE` takes the source from another PPA (`owner/name`) instead of
+  the Ubuntu archive, such as Firefox from `mozillateam/ppa`. Before the
+  first upload of a new base version, `upload.sh` copies it with its binaries
+  to the staging PPA, so the port is uploaded without the orig tarball. Once
+  the port is published, the hourly issue update deletes the copy. The port
+  keeps the orig tarball, and the copy's binaries for other architectures would
+  otherwise stay forever.
+
+Own packages can set `local_prepare()` to create their source from overlay
+files.
 
 ## Building locally
 
-Rootless podman is enough, the container image is built on the first run.
+Rootless podman is enough. The container image is built on the first run.
 
 ```sh
 scripts/run-local.sh scripts/build-source.sh libunity
 scripts/run-local.sh --root scripts/test-build.sh libunity
 ```
 
-`OVERLAY_DIR` points to the overlay checkout (default `../gentoo-unity7`). The
-result is in `build/<series>/<package>/`: `out/` holds the source package,
-`review/` the review and `result.env` the version and fingerprint.
+`OVERLAY_DIR` points to the overlay checkout (default: `../gentoo-unity7`).
+The result is in `build/<series>/<package>/`: `out/` holds the source package,
+`review/` the review, and `result.env` the version and fingerprint. The
+unpacked source trees are removed when the build succeeds and kept when it
+fails. While they exist, Firefox and Thunderbird need about 17 GB.
+
+To build on another disk, set `BUILD_DIR` or make `build` a symlink;
+`run-local.sh` mounts either one in the container.
 
 ## Versions
 
-`<Ubuntu version>+gu7.<N>~<series version>`, e.g.
-`7.1.4+19.04.20190319-8+gu7.1~26.10`. `N` grows when the patches change on the
-same Ubuntu version. The changelog entry lists the patches with their hashes
-and the fingerprint of the whole change, which decides whether a new version
-is needed.
+`<Ubuntu version>+gu7.<N>~<series version>`, for example
+`7.1.4+19.04.20190319-8+gu7.1~26.10`. `N` increases when the patches change
+for the same Ubuntu version. The changelog entry lists the patches with their
+hashes and the fingerprint of the whole change, which decides whether a new
+version is needed.
 
 ## Uploading and promoting
 
-Nothing gets to the users without the owner's approval:
+Nothing reaches users without the owner's approval:
 
 1. `ppa.yml` (daily) builds the changed packages. A version with the same
-   fingerprint as the staging PPA (a new Ubuntu revision) is uploaded to
-   `ppa:c4pp4/g-unity7-staging` right away, any other version waits in the
-   approval issue for review: `/upload` or `/reject`.
-2. `review.yml` (hourly) lists the versions of staging newer than in
-   `ppa:c4pp4/g-unity7` with their build state. `/promote` copies them with
-   their binaries, packages of one `GROUP` only together; `/retry` retries
-   failed builds.
-3. The users' apt keeps the PPA versions (`g-unity7-apt-pin`) until a newer
+   fingerprint as in the staging PPA (a new Ubuntu revision) is uploaded to
+   `ppa:c4pp4/g-unity7-staging` right away. Any other version waits for review
+   in the approval issue: `/upload` or `/reject`.
+2. `review.yml` (hourly) lists the staging versions that are newer than in
+   `ppa:c4pp4/g-unity7`, with their build state. `/promote` copies them with
+   their binaries. Packages of the same `GROUP` are promoted only together.
+   `/retry` retries failed builds.
+3. `g-unity7-apt-pin` keeps the PPA versions on users' systems until a newer
    version is promoted.
 
 `pr.yml` checks on every push that all patches still apply.
@@ -153,10 +176,11 @@ scripts/run-local.sh --gpg scripts/upload.sh libunity
 
 ## GitHub setup
 
-- Label `approve` (the approval issue is found by it).
-- Environment `launchpad`, deployment branches limited to `master`:
+- The `approve` label. The approval issue is found by this label.
+- The `launchpad` environment, with deployment branches limited to `master`:
   - secrets `GPG_PRIVATE_KEY` (only the signing subkey:
-    `gpg --armor --export-secret-subkeys <subkey>!`), `GPG_PASSPHRASE`,
-    `LP_CREDENTIALS` (launchpadlib credentials file made by `scripts/lp_login.py`)
-  - variables `DEBEMAIL`, `DEBFULLNAME`, `GPG_KEY_ID`
+    `gpg --armor --export-secret-subkeys <subkey>!`), `GPG_PASSPHRASE` and
+    `LP_CREDENTIALS` (a launchpadlib credentials file created by
+    `scripts/lp_login.py`)
+  - variables `DEBEMAIL`, `DEBFULLNAME` and `GPG_KEY_ID`
 - Repository variables `DEBEMAIL` and `DEBFULLNAME` for the build jobs.

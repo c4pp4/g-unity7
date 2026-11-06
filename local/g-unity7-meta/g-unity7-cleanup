@@ -1,34 +1,35 @@
 #!/bin/bash
-## Remove the packages of Ubuntu Unity that G Unity⁷ replaces, like
-##  "emerge --depclean" of Gentoo.
+## Remove the Ubuntu Unity packages that G Unity⁷ replaces, like Gentoo's
+##  "emerge --depclean".
 ##
-## The installer of Ubuntu Unity installs the ubuntu-unity-desktop task and apt
-##  marks its packages as manually installed, autoremove never removes them.
-##  apt also keeps every installed alternative of a relation ("vlc | showtime"),
-##  Portage keeps only one. The script:
-##  - asks which package to keep of each relation of the Depends and Recommends
-##    of g-unity7-desktop with more installed alternatives or with another
-##    alternative installed instead of the first one (apt does not install
-##    eog of "eog | eom | loupe" if eom is installed): the first one
-##    (recommended) or another one, installed if it is not, or all of them;
-##    the other ones are removed, an alternative is kept if other packages
-##    would have to be removed with it
-##  - marks as automatically installed, if manually installed and not kept by
-##    a choice:
+## The Ubuntu Unity installer installs the ubuntu-unity-desktop task, and apt
+##  marks its packages as manually installed, so autoremove never removes them.
+##  apt also keeps every installed alternative of a relation such as
+##  "vlc | showtime", while Portage keeps only one. The script:
+##  - asks which package to keep for each Depends and Recommends relation of
+##    g-unity7-desktop that has several installed alternatives, or a different
+##    alternative installed instead of the first one (apt does not install eog
+##    from "eog | eom | loupe" when eom is installed). The user keeps the first
+##    alternative (recommended), another one, which is installed if needed, or
+##    all of them. The other alternatives are removed, unless other packages
+##    would have to be removed with them.
+##  - marks these packages as automatically installed if they are manually
+##    installed and not kept by a choice:
 ##    - ubuntu-unity-desktop
-##    - the packages ubuntu-unity-desktop depends on or recommends and
-##      g-unity7-desktop does not depend on, recommend or suggest as the first
-##      alternative (the duplicates)
-##    - the packages of the task the duplicates and the alternatives to remove
-##      depend on or recommend (file-roller of nemo-fileroller)
-##    only those autoremove removes then (the others stay needed, e.g. by
-##    another desktop as ubuntu-desktop)
-##  - removes the duplicates apt keeps as an installed alternative of another
-##    relation (lightdm-gtk-greeter, xfwm4), if nothing else is removed with them
-##  - removes the packages autoremove removes then
-##  - asks whether to install Firefox and Thunderbird of the PPA (with the
-##    global menu) instead of the snaps of Ubuntu, copies the profiles of the
-##    snaps to the users without a profile of the deb, then removes the snaps
+##    - the packages that ubuntu-unity-desktop depends on or recommends and
+##      that g-unity7-desktop does not have as a first alternative (the
+##      duplicates)
+##    - the task packages that the duplicates and the removed alternatives
+##      depend on or recommend, such as file-roller for nemo-fileroller
+##    It marks only the packages that autoremove then removes. The others are
+##    still needed, for example by another desktop such as ubuntu-desktop.
+##  - removes the duplicates that apt keeps as an installed alternative of
+##    another relation (lightdm-gtk-greeter, xfwm4) if nothing else is removed
+##    with them
+##  - runs autoremove
+##  - offers the G Unity⁷ Firefox and Thunderbird packages, which have Unity's
+##    global menu, instead of the Ubuntu snaps, copies the snap profiles for
+##    users who have no profile yet, and removes the snaps
 
 set -euo pipefail
 
@@ -39,14 +40,14 @@ usage() {
 	cat <<-EOF
 		Usage: g-unity7-cleanup [-n|--dry-run] [-y|--yes]
 
-		Remove the packages of Ubuntu Unity that G Unity⁷ replaces: the duplicate
-		applications and the other installed alternatives of the applications of
-		g-unity7-desktop, as "emerge --depclean" of Gentoo. Of more installed
-		alternatives, or of another alternative installed instead of the
-		recommended one, it asks which one to keep.
+		Remove the Ubuntu Unity packages that G Unity⁷ replaces: duplicate
+		applications and other installed alternatives of the g-unity7-desktop
+		applications, like Gentoo's "emerge --depclean". When several alternatives
+		are installed, or a different one is installed instead of the recommended
+		one, it asks which one to keep.
 
-		  -n, --dry-run  only show the packages, change nothing (no root needed)
-		  -y, --yes      do not ask, keep or install the recommended alternatives
+		  -n, --dry-run  show the changes without making them (no root needed)
+		  -y, --yes      do not ask; keep or install the recommended alternatives
 	EOF
 }
 
@@ -62,8 +63,8 @@ while [[ $# -gt 0 ]]; do
 	shift
 done
 
-## The progress spinner (on a terminal only), as in version_control.sh of the
-##  overlay; the block runs in a subshell.
+## Progress spinner, shown only on a terminal, as in the overlay's
+##  version_control.sh. The block runs in a subshell.
 spinner=( "|" "/" "-" "\\" )
 spinner_pid=
 
@@ -97,7 +98,7 @@ die() {
 	exit 1
 }
 
-[[ -n ${dry_run} || ${EUID} -eq 0 ]] || die "run it as root (sudo g-unity7-cleanup) or with --dry-run"
+[[ -n ${dry_run} || ${EUID} -eq 0 ]] || die "run as root (sudo g-unity7-cleanup) or with --dry-run"
 
 installed() {
 	[[ $(dpkg-query -W -f='${db:Status-Status}' "$1" 2>/dev/null) == installed ]]
@@ -106,8 +107,8 @@ installed() {
 installed "${meta}" || die "${meta} is not installed"
 spinner_start
 
-## The relations of the fields $2 of a package ($1, the installed version or the
-##  candidate of the archive), one per line, the alternatives separated by spaces.
+## Print the relations in fields $2 of package $1 (the installed version or the
+##  archive candidate), one per line, with alternatives separated by spaces.
 relations() {
 	apt-cache show --no-all-versions "$1" 2>/dev/null \
 		| awk -v fields="$2" '
@@ -120,7 +121,7 @@ relations() {
 		| grep -v '^$' || true
 }
 
-## The packages of $@ that are of the task (the Task field of the archive).
+## Print the packages of $@ that belong to the task (the Task field in the archive).
 of_task() {
 	[[ $# -gt 0 ]] || return 0
 	apt-cache show --no-all-versions "$@" 2>/dev/null \
@@ -137,12 +138,12 @@ while read -r name; do
 	manual[${name%:*}]=1
 done < <(apt-mark showmanual)
 
-## The first alternatives of the relations of g-unity7-desktop are kept.
+## Keep the first alternative of each g-unity7-desktop relation.
 while read -r name _; do
 	keep[${name}]=1
 done < <(relations "${meta}" "Depends Recommends Suggests")
 
-## The one-line description of a package, installed or of the archive.
+## Print the short description of a package, installed or from the archive.
 summary() {
 	if installed "$1"; then
 		dpkg-query -W -f='${binary:Summary}' "$1" 2>/dev/null || true
@@ -152,15 +153,15 @@ summary() {
 	fi
 }
 
-## True if the archive has a version of $1 to install (the output of apt-cache
-##  policy is translated).
+## Succeed if the archive has a version of $1 to install. LC_ALL=C because the
+##  output of apt-cache policy is translated.
 has_candidate() {
 	local candidate
 	candidate=$(LC_ALL=C apt-cache policy "$1" 2>/dev/null | awk '/^  Candidate: / { print $2 }')
 	[[ -n ${candidate} && ${candidate} != "(none)" ]]
 }
 
-## The words of $@ as "a, b and c".
+## Print the words of $@ as "a, b and c".
 and_list() {
 	local out=$1
 	shift
@@ -172,11 +173,11 @@ and_list() {
 	echo "${out}"
 }
 
-## The relations of g-unity7-desktop to choose from. Relations with the same
-##  first alternative and one other alternative each are one relation of the
-##  first alternative or all the other ones, a set joined with "+" (Debian has
-##  no "mate-utils | (baobab gnome-logs gnome-screenshot)", g-unity7-desktop
-##  recommends "mate-utils | baobab, mate-utils | gnome-logs, ...").
+## The g-unity7-desktop relations to choose from. Relations that share the
+##  first alternative and have one other alternative each become one relation:
+##  the first alternative or all the others as a set joined with "+". Debian
+##  has no "mate-utils | (baobab gnome-logs gnome-screenshot)", so
+##  g-unity7-desktop recommends "mate-utils | baobab, mate-utils | gnome-logs".
 mapfile -t relations_list < <(relations "${meta}" "Depends Recommends")
 declare -A pairs=() pair_set=()
 for group in "${relations_list[@]}"; do
@@ -197,13 +198,13 @@ for group in "${relations_list[@]}"; do
 	fi
 done
 
-## A relation as text, with its sets.
+## Print a relation as text, including its sets.
 relation_text() {
 	local text=${1// / | }
 	echo "${text//+/ + }"
 }
 
-## The installed packages of the alternatives $@ (a set joined with "+").
+## Print the installed packages of the alternatives $@. A set is joined with "+".
 installed_of() {
 	local name part parts
 	for name in "$@"; do
@@ -215,8 +216,8 @@ installed_of() {
 	return 0
 }
 
-## The packages of an alternative to install with it: not installed, in the
-##  archive.
+## Print the packages of alternative $1 that must be installed with it: not
+##  installed, but available in the archive.
 missing_of() {
 	local part
 	for part in ${1//+/ }; do
@@ -225,7 +226,7 @@ missing_of() {
 	return 0
 }
 
-## True if a package of the alternative $1 is decided already.
+## Succeed if a package of alternative $1 has already been decided.
 decided() {
 	local part
 	for part in ${1//+/ }; do
@@ -234,19 +235,18 @@ decided() {
 	return 1
 }
 
-## The choices of the relations with more installed alternatives or with
-##  another alternative installed instead of the first one: the kept
-##  packages (spared[]) are not marked, the installed packages of the other
-##  alternatives are removed (reason[]), of "change nothing" no package is
-##  marked or removed.
+## Ask about the relations that have several installed alternatives, or a
+##  different alternative installed instead of the first one. Kept packages
+##  (spared[]) are not marked, installed packages of the other alternatives are
+##  removed (reason[]). With "change nothing", no package is marked or removed.
 declare -A spared=() reason=()
 candidates_remove=() install=() unchanged=() asked=
 for group in "${groups[@]}"; do
 	read -ra names <<< "${group}"
 	[[ ${#names[@]} -gt 1 ]] || continue
 	first_name=${names[0]}
-	## The alternatives with an installed package not decided yet, a first
-	##  alternative of another relation is not one of them
+	## Alternatives with an installed package that is not decided yet. The first
+	##  alternative of another relation does not count.
 	present=()
 	for name in "${names[@]}"; do
 		[[ ${name} == "${first_name}" || -z ${keep[${name}]:-} ]] || continue
@@ -255,34 +255,34 @@ for group in "${groups[@]}"; do
 	done
 	[[ ${#present[@]} -gt 0 ]] || continue
 
-	## Asked with two installed alternatives, or with another one installed
-	##  instead of the first one the archive has
+	## Ask when two alternatives are installed, or when another one is installed
+	##  instead of a first alternative that the archive has
 	if installed "${first_name}" || ! has_candidate "${first_name}" || decided "${first_name}"; then
 		[[ ${#present[@]} -gt 1 ]] || continue
 	fi
 
-	## The alternatives in the order of the relation: an installed one is kept,
-	##  another one installed if the archive has it
+	## List the alternatives in relation order: keep an installed one, or install
+	##  one that the archive has
 	options=() actions=() default=
 	for name in "${names[@]}"; do
 		[[ ${name} == "${first_name}" || -z ${keep[${name}]:-} ]] || continue
 		mapfile -t missing < <(missing_of "${name}")
 		if [[ " ${present[*]} " == *" ${name} "* ]]; then
 			if [[ ${name} == *+* ]]; then
-				## A set: the missing packages are installed with it
+				## A set: install its missing packages too
 				mapfile -t parts < <(installed_of "${name}")
-				label="keep $(and_list "${parts[@]}")"
-				[[ ${#missing[@]} -eq 0 ]] || label+=", install $(and_list "${missing[@]}")"
+				label="Keep $(and_list "${parts[@]}")"
+				[[ ${#missing[@]} -eq 0 ]] || label+=", and install $(and_list "${missing[@]}")"
 			else
-				label="keep ${name}: $(summary "${name}")"
+				label="Keep ${name}: $(summary "${name}")"
 			fi
 			actions+=( "keep ${name}" )
 		else
 			[[ ${#missing[@]} -gt 0 ]] && ! decided "${name}" || continue
 			if [[ ${name} == *+* ]]; then
-				label="install $(and_list "${missing[@]}")"
+				label="Install $(and_list "${missing[@]}")"
 			else
-				label="install ${name}: $(summary "${name}")"
+				label="Install ${name}: $(summary "${name}")"
 			fi
 			actions+=( "install ${name}" )
 		fi
@@ -292,22 +292,22 @@ for group in "${groups[@]}"; do
 		fi
 		options+=( "${label}" )
 	done
-	## Of a single installed alternative "keep" changes nothing
+	## With only one installed alternative, "Keep" already changes nothing
 	if [[ ${#present[@]} -gt 1 ]]; then
-		options+=( "change nothing, I will decide myself" )
+		options+=( "Change nothing; I will handle it myself" )
 		actions+=( "nothing" )
 	fi
 	default=${default:-${#actions[@]}}
 
 	spinner_stop
 	if [[ -z ${asked} ]]; then
-		echo "For some applications (terminal, image viewer, …) another package than the"
-		echo "recommended one, or several packages, are installed."
+		echo "For some applications (terminal, image viewer, …), a different package than"
+		echo "the recommended one, or more than one package, is installed."
 		if [[ -n ${yes} ]]; then
-			echo "The recommended package is kept or installed, the others are removed."
+			echo "The recommended packages are kept or installed, and the others are removed."
 		else
-			echo "Choose the package to keep, the others are removed (Enter takes the number"
-			echo "in brackets)."
+			echo "Choose the package to keep; the others will be removed. Press Enter to accept"
+			echo "the number in brackets."
 		fi
 		echo
 		asked=1
@@ -329,10 +329,10 @@ for group in "${groups[@]}"; do
 		done
 		while :; do
 			read -r -p "Choice [${default}]: " answer \
-				|| die "no answer, use --yes to take the recommended choices"
+				|| die "no answer; use --yes to accept the recommended choices"
 			answer=${answer:-${default}}
 			[[ ${answer} =~ ^[1-9][0-9]*$ && ${answer} -le ${#actions[@]} ]] && break
-			echo "Give a number from 1 to ${#actions[@]}."
+			echo "Enter a number from 1 to ${#actions[@]}."
 		done
 	fi
 	echo
@@ -356,9 +356,14 @@ for group in "${groups[@]}"; do
 					why="${parts[0]} is installed instead"
 				fi
 			else
-				why="you keep $(and_list ${kept//+/ })"
+				read -ra parts <<< "${kept//+/ }"
+				if [[ ${#parts[@]} -gt 1 ]]; then
+					why="$(and_list "${parts[@]}") are kept"
+				else
+					why="${parts[0]} is kept"
+				fi
 			fi
-			## The kept alternative, its missing packages installed
+			## Keep the chosen alternative and install its missing packages
 			for part in ${kept//+/ }; do
 				spared[${part}]=1
 				installed "${part}" || ! has_candidate "${part}" || install+=( "${part}" )
@@ -374,26 +379,27 @@ for group in "${groups[@]}"; do
 	esac
 done
 
-## Firefox and Thunderbird: the packages of Ubuntu install the snaps, the PPA has
-##  them as debs with the global menu of Unity (a lower version, g-unity7-apt-pin
-##  keeps the packages of Ubuntu until the deb is installed here, the deb then
-##  links its pin). With the deb chosen, the profiles of the snap are copied for
-##  every user who has no profile of the deb yet, then the snap is removed.
+## Firefox and Thunderbird: the Ubuntu packages install snaps, while the PPA
+##  provides regular packages with Unity's global menu. Their version is lower,
+##  so g-unity7-apt-pin keeps the Ubuntu packages until this script installs the
+##  PPA package, which then links its own pin. When the user chooses the PPA
+##  package, the snap profiles are copied for every user who has no profile
+##  yet, and the snap is removed.
 moz_install=() moz_snap_remove=() moz_copy=() moz_lines=()
 
-## The version of $1 in the G Unity⁷ PPA (also the staging PPA), empty if none.
+## Print the version of $1 in the G Unity⁷ PPA or the staging PPA, if any.
 ppa_version() {
 	LC_ALL=C apt-cache madison "$1" 2>/dev/null \
 		| awk -F'|' '$3 ~ /c4pp4\/g-unity7/ { gsub(/ /, "", $2); print $2; exit }'
 }
 
-## True if the snap $1 is installed.
+## Succeed if snap $1 is installed.
 snap_installed() {
 	command -v snap >/dev/null && snap list "$1" >/dev/null 2>&1
 }
 
-## The users (UID 1000 to 59999) with a profile of the snap ($1, relative to the
-##  home) and no profile of the deb ($2) yet, as "user:home".
+## Print "user:home" for each user (UID 1000 to 59999) who has a snap profile
+##  ($1, relative to the home directory) but no profile of the PPA package ($2).
 profiles_to_copy() {
 	local user uid home
 	while IFS=: read -r user _ uid _ _ home _; do
@@ -403,35 +409,74 @@ profiles_to_copy() {
 	return 0
 }
 
-## moz_choice <package> <profile of the snap> <profile of the deb> <name>
+## Make the default profile in the copied profile directory $2 the profile of
+##  the PPA package, as Firefox does on its first run. $3 is the install hash of
+##  the package directory in profiles.ini and installs.ini. Without this,
+##  Firefox creates a new profile, because the compatibility.ini of the copied
+##  profile points to the snap. User $1 owns installs.ini.
+moz_claim_profile() {
+	local user=$1 dir=$2 hash=$3 profile
+	[[ -n ${hash} && -f ${dir}/profiles.ini ]] || return 0
+	grep -qx "\[Install${hash}\]" "${dir}/profiles.ini" && return 0
+	## The snap's default profile: the one in its install section, or else the
+	##  profile with Default=1. The snap uses one profile for all installs.
+	profile=$(awk -F= '
+		/^\[/ { section = $0; next }
+		section ~ /^\[Install/ && $1 == "Default" && install == "" { install = $2 }
+		section ~ /^\[Profile/ && $1 == "Path" { path[section] = $2 }
+		section ~ /^\[Profile/ && $1 == "Default" && $2 == "1" { def = section }
+		END { if (install != "") print install; else if (def != "") print path[def] }
+	' "${dir}/profiles.ini")
+	[[ -n ${profile} ]] || return 0
+	printf '\n[Install%s]\nDefault=%s\nLocked=1\n' "${hash}" "${profile}" >> "${dir}/profiles.ini" \
+		|| die "cannot write ${dir}/profiles.ini"
+	printf '[%s]\nDefault=%s\nLocked=1\n\n' "${hash}" "${profile}" >> "${dir}/installs.ini" \
+		|| die "cannot write ${dir}/installs.ini"
+	chown "${user}:$(id -gn "${user}")" "${dir}/installs.ini"
+	echo "Set ${dir}/${profile} as the default profile"
+}
+
+## moz_choice <package> <snap profile> <package profile> <name> <install hash>
+##  The install hash belongs to the package directory (/usr/lib/<package>) in
+##  profiles.ini. Leave it empty if it is not known.
 moz_choice() {
-	local pkg=$1 snap_profile=$2 deb_profile=$3 app=$4
+	local pkg=$1 snap_profile=$2 deb_profile=$3 app=$4 hash=$5
 	local ppa status deb_installed= snap= users=() copy_text options=() actions=() default=1 i answer u
 	ppa=$(ppa_version "${pkg}")
 	[[ -n ${ppa} ]] || return 0
 	status=$(dpkg-query -W -f='${db:Status-Status} ${Version}' "${pkg}" 2>/dev/null) || true
 	[[ ${status} == "installed "*+gu7* ]] && deb_installed=1
 	snap_installed "${pkg}" && snap=1
-	## Nothing to choose without the snap
+	## Nothing to choose if the snap is not installed
 	[[ -n ${snap} ]] || return 0
 
 	mapfile -t users < <(profiles_to_copy "${snap_profile}" "${deb_profile}")
 	copy_text=
-	[[ ${#users[@]} -eq 0 ]] || copy_text=", copy the profiles of the snap of $(and_list "${users[@]%%:*}")"
+	if [[ ${#users[@]} -gt 1 ]]; then
+		copy_text="copy the snap profiles for $(and_list "${users[@]%%:*}")"
+	elif [[ ${#users[@]} -eq 1 ]]; then
+		copy_text="copy the snap profile for ${users[0]%%:*}"
+	fi
 	if [[ -n ${deb_installed} ]]; then
-		options=( "remove the snap${copy_text} (recommended)" "keep the snap too" )
+		if [[ -n ${copy_text} ]]; then
+			options=( "${copy_text^} and remove the snap (recommended)" )
+		else
+			options=( "Remove the snap (recommended)" )
+		fi
+		options+=( "Keep the snap as well" )
 		actions=( snap nothing )
 	else
-		options=( "install ${app} of G Unity⁷ with the global menu${copy_text}, remove the snap (recommended)"
-			"keep the snap of Ubuntu" )
+		options=( "Install the G Unity⁷ package${copy_text:+, ${copy_text}} and remove the snap (recommended)"
+			"Keep the Ubuntu snap" )
 		actions=( deb nothing )
 	fi
 
 	spinner_stop
 	if [[ -n ${deb_installed} ]]; then
-		echo "${app} of G Unity⁷ and the snap of ${app} are installed:"
+		echo "Both the G Unity⁷ ${app} package and the ${app} snap are installed:"
 	else
-		echo "${app} is the snap of Ubuntu, G Unity⁷ has it with the global menu of Unity:"
+		echo "${app} is installed as an Ubuntu snap."
+		echo "G Unity⁷ provides a ${app} package with Unity's global menu:"
 	fi
 	if [[ -n ${yes} ]]; then
 		answer=${default}
@@ -442,10 +487,10 @@ moz_choice() {
 		done
 		while :; do
 			read -r -p "Choice [${default}]: " answer \
-				|| die "no answer, use --yes to take the recommended choices"
+				|| die "no answer; use --yes to accept the recommended choices"
 			answer=${answer:-${default}}
 			[[ ${answer} =~ ^[1-9][0-9]*$ && ${answer} -le ${#actions[@]} ]] && break
-			echo "Give a number from 1 to ${#actions[@]}."
+			echo "Enter a number from 1 to ${#actions[@]}."
 		done
 	fi
 	echo
@@ -458,24 +503,27 @@ moz_choice() {
 			;;
 		deb)
 			moz_install+=( "${pkg}=${ppa}" )
-			moz_lines+=( "${app}: install ${pkg} ${ppa} of G Unity⁷" )
+			moz_lines+=( "${app}: install ${pkg} ${ppa} from G Unity⁷" )
 			;;
 	esac
-	## A running snap is not removed (the copy of an open profile is not consistent)
+	## Do not remove a running snap: a copy of an open profile may be inconsistent
 	if pgrep -f "/snap/${pkg}/" >/dev/null; then
-		moz_lines+=( "${app}: the snap is running, close ${app} and run g-unity7-cleanup again to remove it" )
+		moz_lines+=( "${app}: the snap is running; close ${app} and run g-unity7-cleanup again to remove it" )
 		return 0
 	fi
 	for u in "${users[@]}"; do
-		moz_copy+=( "${u%%:*}:${u#*:}/${snap_profile}:${u#*:}/${deb_profile}" )
+		moz_copy+=( "${u%%:*}:${u#*:}/${snap_profile}:${u#*:}/${deb_profile}:${hash}" )
 		moz_lines+=( "${app}: copy ${u#*:}/${snap_profile} to ${u#*:}/${deb_profile}" )
 	done
 	moz_snap_remove+=( "${pkg}" )
 	moz_lines+=( "${app}: remove the snap (snapd saves a snapshot of its data)" )
 }
 
-moz_choice firefox snap/firefox/common/.mozilla/firefox .mozilla/firefox Firefox
-moz_choice thunderbird snap/thunderbird/common/.thunderbird .thunderbird Thunderbird
+## The install hashes are CityHash64 (version 1.0.2) of the UTF-16 path of
+##  /usr/lib/firefox and /usr/lib/thunderbird. The Firefox hash is the one that
+##  the G Unity⁷ Firefox wrote.
+moz_choice firefox snap/firefox/common/.mozilla/firefox .mozilla/firefox Firefox 4F96D1932A9F858E
+moz_choice thunderbird snap/thunderbird/common/.thunderbird .thunderbird Thunderbird FDC34C9F024745EB
 
 mark=()
 add_mark() {
@@ -487,13 +535,14 @@ add_mark() {
 	done
 }
 
-## ubuntu-unity-desktop and the duplicates (the relations of the archive if it is removed already).
+## ubuntu-unity-desktop and the duplicates. If ubuntu-unity-desktop is already
+##  removed, its relations come from the archive.
 add_mark "${task}"
 mapfile -t duplicates < <(relations "${task}" "Depends Recommends" | tr ' ' '\n')
 add_mark "${duplicates[@]}"
 
-## The packages of the task the installed duplicates and the alternatives to
-##  remove depend on or recommend (not those of a package kept by a choice).
+## Task packages that the installed duplicates and the removed alternatives
+##  depend on or recommend, except those of packages kept by a choice.
 roots=( "${candidates_remove[@]}" )
 for name in "${duplicates[@]}"; do
 	[[ -z ${spared[${name}]:-} ]] && installed "${name}" && roots+=( "${name}" )
@@ -511,7 +560,8 @@ if [[ ${#roots[@]} -gt 0 ]]; then
 	add_mark "${closure_of_task[@]}"
 fi
 
-## The marks applied to a copy of the apt state, the packages autoremove removes then.
+## Apply the marks to a copy of the apt state and find what autoremove then
+##  removes.
 tmp=$(mktemp -d)
 states=${tmp}/extended_states
 cp /var/lib/apt/extended_states "${states}" 2>/dev/null || : > "${states}"
@@ -522,8 +572,8 @@ while read -r name; do
 done < <(apt-get -s -o Dir::State::extended_states="${states}" --purge autoremove 2>/dev/null \
 	| awk '/^Purg / { print $2 }')
 
-## The alternatives of the choices, without those other packages need (but
-##  the packages autoremove removes anyway, e.g. ubuntu-unity-desktop).
+## The alternatives to remove, except those that other packages need. Packages
+##  that autoremove removes anyway, such as ubuntu-unity-desktop, do not count.
 install_args=( "${install[@]/%/+}" )
 remove=() reasons=() needed_kept=()
 for name in "${candidates_remove[@]}"; do
@@ -540,10 +590,10 @@ for name in "${candidates_remove[@]}"; do
 	reasons+=( "${name} (${reason[${name}]})" )
 done
 
-## The duplicates autoremove keeps as an installed alternative of another
-##  relation (lightdm-gtk-greeter of lightdm-greeter, xfwm4 of x-window-manager),
-##  removed if no other package would be removed with them. The alternatives
-##  of g-unity7-desktop are left to the choices.
+## Duplicates that autoremove keeps as an installed alternative of another
+##  relation, such as lightdm-gtk-greeter for lightdm-greeter or xfwm4 for
+##  x-window-manager. They are removed if no other package would be removed
+##  with them. Alternatives of g-unity7-desktop are left to the choices above.
 declare -A of_meta=() in_remove=()
 while read -r name; do
 	of_meta[${name}]=1
@@ -563,7 +613,7 @@ for name in "${duplicates[@]}"; do
 	dup_remove+=( "${name}" )
 done
 
-## Preview with the marks applied to a copy of the apt state.
+## Preview the result with the marks applied to a copy of the apt state.
 if [[ ${#remove[@]} -gt 0 || ${#install[@]} -gt 0 ]]; then
 	apt_args=( --purge --autoremove remove "${remove[@]}" "${install_args[@]}" )
 else
@@ -573,15 +623,16 @@ simulation=$(apt-get -s -o Dir::State::extended_states="${states}" "${apt_args[@
 mapfile -t removed < <(awk '/^Purg / { print $2 }' <<< "${simulation}")
 mapfile -t installs < <(awk '/^Inst / { print $2 }' <<< "${simulation}")
 
-## Only the marked packages apt removes then. The other ones stay needed (by
-##  G Unity⁷ or by another desktop, e.g. ubuntu-desktop shares most of the
-##  task), marking them would only change their state. apt removes the same
-##  packages without them: a kept package and its dependencies stay needed.
+## Keep only the marked packages that apt then removes. The others are still
+##  needed by G Unity⁷ or by another desktop (ubuntu-desktop shares most of the
+##  task), so marking them would only change their state. apt removes the same
+##  packages without them, because a kept package and its dependencies are
+##  still needed.
 declare -A removed_set=()
 for name in "${removed[@]}"; do
 	removed_set[${name}]=1
 done
-## The duplicates removed directly are not marked.
+## Duplicates that are removed directly are not marked.
 for name in "${dup_remove[@]}"; do
 	removed_set[${name}]=
 done
@@ -594,16 +645,16 @@ mark=( "${marked[@]}" )
 if [[ ${#mark[@]} -eq 0 && ${#remove[@]} -eq 0 && ${#install[@]} -eq 0 \
 	&& ${#moz_install[@]} -eq 0 && ${#moz_snap_remove[@]} -eq 0 ]]; then
 	spinner_stop
-	echo "Nothing to do, no package of Ubuntu Unity replaced by G Unity⁷ is left."
+	echo "Nothing to do. No Ubuntu Unity packages replaced by G Unity⁷ are left."
 	[[ ${#unchanged[@]} -eq 0 ]] || printf 'Left unchanged by your choice: %s\n' "${unchanged[@]}"
-	[[ ${#needed_kept[@]} -eq 0 ]] || printf 'Kept alternative other packages need: %s\n' "${needed_kept[@]}"
+	[[ ${#needed_kept[@]} -eq 0 ]] || printf 'Kept because other packages need it: %s\n' "${needed_kept[@]}"
 	[[ ${#moz_lines[@]} -eq 0 ]] || printf '%s\n' "${moz_lines[@]}"
 	exit 0
 fi
 
 spinner_stop
 
-## A list of packages side by side as apt shows it, or one item per line.
+## Print a list of packages side by side as apt does, or one item per line.
 list_words() {
 	local title=$1 width
 	shift
@@ -628,17 +679,17 @@ list_lines() {
 
 list_words "Alternatives to install" "${install[@]}"
 list_lines "Alternatives to remove" "${reasons[@]}"
-list_words "Replaced by G Unity⁷, kept by apt as an alternative of another package, to remove" "${dup_remove[@]}"
-list_words "Leftovers not needed or replaced by G Unity⁷, to mark for autoremove" "${mark[@]}"
+list_words "Replaced by G Unity⁷ and kept by apt only as alternatives, to be removed" "${dup_remove[@]}"
+list_words "No longer needed or replaced by G Unity⁷, to be marked for autoremove" "${mark[@]}"
 list_lines "Left unchanged by your choice" "${unchanged[@]}"
-list_lines "Kept alternatives other packages need" "${needed_kept[@]}"
+list_lines "Alternatives kept because other packages need them" "${needed_kept[@]}"
 list_lines "Firefox and Thunderbird" "${moz_lines[@]}"
-list_words "Packages apt installs" "${installs[@]}"
-## Purged as by apt (with the configuration files), marked with * as apt does
+list_words "Packages apt will install" "${installs[@]}"
+## Purged with their configuration files and marked with * as apt does
 if [[ ${#removed[@]} -gt 0 ]]; then
-	list_words "Packages apt removes" "${removed[@]/%/*}"
+	list_words "Packages apt will remove" "${removed[@]/%/*}"
 else
-	echo "Packages apt removes: none"
+	echo "Packages apt will remove: none"
 	echo
 fi
 echo "To keep a package, mark it as manually installed first: sudo apt-mark manual <package>"
@@ -646,35 +697,48 @@ echo "To keep a package, mark it as manually installed first: sudo apt-mark manu
 [[ -z ${dry_run} ]] || exit 0
 
 if [[ -z ${yes} ]]; then
-	read -r -p "Continue? [y/N] " answer
-	[[ ${answer} == [yY]* ]] || { echo "Nothing changed."; exit 0; }
+	read -r -p "Do you want to continue? [y/N] " answer
+	[[ ${answer} == [yY]* ]] || { echo "No changes were made."; exit 0; }
 fi
 
 [[ ${#mark[@]} -eq 0 ]] || apt-mark auto "${mark[@]}" >/dev/null
 if [[ ${#mark[@]} -gt 0 || ${#remove[@]} -gt 0 || ${#install[@]} -gt 0 ]]; then
 	apt-get -y "${apt_args[@]}"
 fi
-## The installed first alternatives are needed by g-unity7-desktop only, the
-##  other ones are chosen by the user (as a package of @world).
+## Installed first alternatives are needed only by g-unity7-desktop. Other
+##  alternatives were chosen by the user and stay manual, like a package in
+##  @world.
 install_auto=()
 for name in "${install[@]}"; do
 	[[ -z ${keep[${name}]:-} ]] || install_auto+=( "${name}" )
 done
 [[ ${#install_auto[@]} -eq 0 ]] || apt-mark auto "${install_auto[@]}" >/dev/null
 
-## Firefox and Thunderbird of G Unity⁷ (a lower version than the packages of
-##  Ubuntu, their pin comes with them), the profiles of the snaps, the snaps.
+## The G Unity⁷ Firefox and Thunderbird packages (a lower version than the
+##  Ubuntu packages; their pin comes with them), then the snap profiles and the
+##  snaps.
 if [[ ${#moz_install[@]} -gt 0 ]]; then
 	apt-get -y --allow-downgrades install "${moz_install[@]}"
 fi
 for entry in "${moz_copy[@]}"; do
-	IFS=: read -r user src dst <<< "${entry}"
+	IFS=: read -r user src dst hash <<< "${entry}"
 	[[ -e ${dst} ]] && continue
 	mkdir -p "$(dirname "${dst}")"
-	cp -a "${src}" "${dst}" || die "copying ${src} failed"
-	chown "${user}": "$(dirname "${dst}")"
+	cp -a "${src}" "${dst}" || die "cannot copy ${src}"
+	chown "${user}:$(id -gn "${user}")" "$(dirname "${dst}")"
 	echo "Copied ${src} to ${dst}"
+	moz_claim_profile "${user}" "${dst}" "${hash}"
 done
+moz_failed=()
 for name in "${moz_snap_remove[@]}"; do
-	snap remove "${name}"
+	snap remove "${name}" || moz_failed+=( "${name}" )
 done
+if [[ ${#moz_failed[@]} -gt 0 ]]; then
+	if [[ ${#moz_failed[@]} -gt 1 ]]; then
+		echo "g-unity7-cleanup: cannot remove the $(and_list "${moz_failed[@]}") snaps; the profiles have been copied" >&2
+	else
+		echo "g-unity7-cleanup: cannot remove the ${moz_failed[0]} snap; the profiles have been copied" >&2
+	fi
+	echo "Run g-unity7-cleanup again, or remove the snap with: sudo snap remove ${moz_failed[*]}" >&2
+	exit 1
+fi

@@ -1,7 +1,7 @@
 #!/bin/bash
-## Build the G Unity⁷ source package of packages/<package> for one series:
-##  the newest Ubuntu source with the overlay patches, the edits of the ebuild
-##  as a patch and the debian/ changes, then check it and write a review.
+## Build the G Unity⁷ source package of a package for one series: the latest
+##  Ubuntu source with the overlay patches, the ebuild's edits as one more patch
+##  and the debian/ changes. Then check it and write a review.
 ##
 ## Usage: build-source.sh [--series <series>] [--force] <package>
 ##
@@ -12,7 +12,7 @@
 ##  BUILD_DIR    output directory (default: build/)
 ##
 ## Output in BUILD_DIR/<series>/<package>/:
-##  out/        the signed-to-be source package (.dsc, .changes, tarballs)
+##  out/        the source package to be signed (.dsc, .changes, tarballs)
 ##  review/     debdiff.diff, code.diff, summary.md
 ##  result.env  STATUS (built|uptodate), VERSION, FINGERPRINT, NEEDS_REVIEW, ...
 
@@ -38,7 +38,7 @@ series_version=${SERIES_VERSION[${series}]:-}
 
 OVERLAY_DIR=$(realpath "${OVERLAY_DIR:-${REPO_ROOT}/../gentoo-unity7}")
 grep -Fqsx "gentoo-unity7" "${OVERLAY_DIR}"/profiles/repo_name \
-	|| die "gentoo-unity7 overlay not found in ${OVERLAY_DIR}, set OVERLAY_DIR."
+	|| die "gentoo-unity7 overlay not found in ${OVERLAY_DIR}; set OVERLAY_DIR."
 
 load_package "${pkg}"
 
@@ -63,9 +63,17 @@ repo_commit=$(git_commit "${REPO_ROOT}" "${PKG_DIR#"${REPO_ROOT}"/}")
 [[ -n ${OVERLAY_REF[${series}]:-} ]] && einfo "Series ${series} is built from overlay ${OVERLAY_REF[${series}]}."
 tree="${work}/tree"
 
+## The unpacked trees (tree, check, orig-applied) are only needed while the
+##  package is built; a Mozilla source has three of about 5 GB. They are removed
+##  when the script succeeds and kept for inspection when it fails. The tarballs,
+##  out/ and review/ stay.
+remove_trees() {
+	rm -rf "${tree}" "${work}"/check "${work}"/orig-applied
+}
+
 if [[ -n ${LOCAL:-} ]]; then
-	## 1.-2. Own package: the source is local/<package> without package.sh,
-	##  its base version is the one of its debian/changelog.
+	## 1.-2. Own package: the source is local/<package> without package.sh, and
+	##  its base version comes from its debian/changelog.
 	mkdir -p "${tree}" "${work}"/debian.orig
 	(cd "${PKG_DIR}" && tar --exclude=./package.sh -cf - .) | (cd "${tree}" && tar -xf -)
 	sed -i "s/@MAINTAINER@/${DEBFULLNAME} <${DEBEMAIL}>/" "${tree}"/debian/control "${tree}"/debian/changelog
@@ -73,9 +81,9 @@ if [[ -n ${LOCAL:-} ]]; then
 	orig_dsc=
 	einfo "${SOURCE_NAME} ${ubuntu_version} (local/${pkg})"
 else
-	## 1. Newest Ubuntu version.
-	## UBUNTU_SERIES: a source removed from the series, taken from an older one.
-	## SOURCE_ARCHIVE: the source of a PPA (owner/name) instead of the Ubuntu archive.
+	## 1. Latest Ubuntu version.
+	## UBUNTU_SERIES: take a source that the series no longer has from an older one.
+	## SOURCE_ARCHIVE: take the source from a PPA (owner/name) instead of the Ubuntu archive.
 	read -r ubuntu_version ubuntu_pocket < <(python3 -I "${REPO_ROOT}"/scripts/lp.py \
 		ubuntu-version "${UBUNTU_SRC}" --series "${UBUNTU_SERIES:-${series}}" \
 		${SOURCE_ARCHIVE:+--archive "${SOURCE_ARCHIVE}"})
@@ -98,7 +106,7 @@ else
 	cp -a "${tree}"/debian "${work}"/debian.orig
 
 	## Derived source package (SOURCE_NAME): the Ubuntu source under another
-	##  name, its orig tarball copied under that name.
+	##  name, with its orig tarball copied under that name.
 	if [[ ${SOURCE_NAME} != "${UBUNTU_SRC}" ]]; then
 		upstream=${ubuntu_version#*:}
 		upstream=${upstream%-*}
@@ -119,7 +127,7 @@ if [[ -z ${PATCH_MODE:-} ]]; then
 			PATCH_MODE=direct
 			if has_patches "${tree}"; then
 				grep -q quilt "${tree}"/debian/rules "${tree}"/debian/control \
-					|| die "Format 1.0 with debian/patches/series not applied by quilt, set PATCH_MODE."
+					|| die "Format 1.0 with a debian/patches/series that quilt does not apply; set PATCH_MODE."
 				PATCH_MODE=quilt
 			fi
 			;;
@@ -130,8 +138,8 @@ einfo "Source format ${format}, patch mode ${PATCH_MODE}."
 
 cd "${tree}"
 
-## 3. debian/ changes, before the Ubuntu patchset is applied, as they may
-##  change it (debian/patches/series).
+## 3. debian/ changes, made before the Ubuntu patches are applied, because they
+##  may change them (debian/patches/series).
 if [[ -z ${LOCAL:-} && -d ${PKG_DIR}/debian ]]; then
 	cp -a "${PKG_DIR}"/debian/. debian/
 fi
@@ -142,12 +150,12 @@ if declare -F debian_edit >/dev/null; then
 	debian_edit || die "debian_edit failed."
 fi
 
-## Apply the Ubuntu patchset first, the overlay patches go on top of it.
+## Apply the Ubuntu patches first; the overlay patches go on top of them.
 if [[ ${PATCH_MODE} == quilt ]] && has_patches .; then
-	quilt push -a -q --fuzz=0 >/dev/null || die "The Ubuntu patchset does not apply."
+	quilt push -a -q --fuzz=0 >/dev/null || die "The Ubuntu patches do not apply."
 fi
 
-## Patch lines of the changelog ("name hash"), the fingerprint is made of them.
+## Patch lines for the changelog ("name hash"). The fingerprint is made from them.
 patch_lines=()
 patch_names=()
 dep3_dir="${work}/patches"
@@ -182,7 +190,7 @@ for name in "${PATCHES[@]}"; do
 	einfo "Applied ${name}"
 done
 
-## 5. Edits of the ebuild (src_edit) as one more patch.
+## 5. The ebuild's edits (src_edit) as one more patch.
 if declare -F src_edit >/dev/null; then
 	git_tree=( git -c safe.directory='*' -c core.excludesFile=/dev/null -c core.attributesFile=/dev/null
 		-c user.name=g-unity7 -c user.email=g-unity7@localhost )
@@ -203,9 +211,9 @@ if declare -F src_edit >/dev/null; then
 	fi
 	rm -rf .git
 	{
-		echo "Description: Edits of the gentoo-unity7 ebuild"
-		echo " Changes made by sed and other commands in src_prepare of"
-		echo " ${OVERLAY_PKG}, ported in packages/${pkg}/package.sh."
+		echo "Description: Edits from the gentoo-unity7 ebuild"
+		echo " Changes that the ${OVERLAY_PKG} ebuild makes with sed and other"
+		echo " commands in src_prepare, ported in packages/${pkg}/package.sh."
 		echo "Author: ${DEBFULLNAME} <${DEBEMAIL}>"
 		echo "Origin: vendor, ${G_UNITY7_URL}/blob/${repo_commit%-dirty}/packages/${pkg}/package.sh"
 		echo "Forwarded: not-needed"
@@ -218,16 +226,16 @@ if declare -F src_edit >/dev/null; then
 	einfo "Applied ebuild-edits.patch"
 fi
 
-## 6. Leave the patches unapplied, dpkg-source and debian/rules apply them.
+## 6. Leave the patches unapplied; dpkg-source and debian/rules apply them.
 if [[ ${PATCH_MODE} == quilt ]]; then
 	quilt pop -a -q >/dev/null 2>&1 || true
 	rm -rf .pc
 fi
 
-## Hash of the debian/ changes, without the changelog and the overlay patches
-##  (they have their own patch lines) and their lines in the series file. The
-##  patches of Ubuntu and the series lines changed by debian_edit count
-##  (pre_populator.patch of zeitgeist, the Debian PCRE2 patch of nux).
+## Hash of the debian/ changes, without the changelog, the overlay patches and
+##  their lines in the series file, which have their own patch lines. Ubuntu
+##  patches and series lines changed by debian_edit count, such as zeitgeist's
+##  pre_populator.patch or nux's Debian PCRE2 patch.
 debian_diff="${work}/debian.diff"
 (cd "${work}" && diff -Nura -x changelog debian.orig tree/debian || true) \
 	| awk '/^diff / { skip = ($NF ~ /\/debian\/patches\/g-unity7\//); series = ($NF ~ /\/debian\/patches\/series$/) }
@@ -237,11 +245,11 @@ if [[ -n ${LOCAL:-} ]]; then
 	patch_lines+=( "source $(find . -type f ! -path ./debian/changelog -print0 | sort -z \
 		| xargs -0 sha256sum | short_hash)" )
 elif [[ -n $(changed_lines < "${debian_diff}") ]]; then
-	## Only changed lines count (a series file with only the overlay patches
-	##  added leaves its header in the diff)
+	## Only changed lines count, because a series file with only the overlay
+	##  patches added still leaves its header in the diff
 	patch_lines+=( "debian $(changed_lines < "${debian_diff}" | short_hash)" )
 fi
-[[ ${#patch_lines[@]} -gt 0 ]] || die "Nothing is changed in ${pkg}."
+[[ ${#patch_lines[@]} -gt 0 ]] || die "Nothing changes in ${pkg}."
 
 input=$(input_hash "${OVERLAY_DIR}")
 fingerprint=$( { echo "format ${FORMAT_VERSION}"; printf '%s\n' "${patch_lines[@]}"; } | sha256sum | cut -c1-32)
@@ -274,6 +282,7 @@ if [[ ${staging_version} =~ ${suffix_re} ]]; then
 				FINGERPRINT=${fingerprint}
 				INPUT=${input}
 			EOF
+			remove_trees
 			exit 0
 		fi
 		n=$(( staging_n + 1 ))
@@ -281,7 +290,7 @@ if [[ ${staging_version} =~ ${suffix_re} ]]; then
 fi
 version="${ubuntu_version}+${VERSION_TAG}.${n}~${series_version}"
 
-## "Changes since" against the version users have in the main PPA.
+## "Changes since" compares with the version that users have from the main PPA.
 changes_since=()
 main_version=$(json_get "${main_json}" version)
 if [[ -n ${main_version} ]]; then
@@ -317,6 +326,13 @@ entry="${work}/changelog.entry"
 	else
 		echo "  * G Unity⁷ package from c4pp4/g-unity7@${repo_commit:0:12}."
 	fi
+	## A PPA source: show that only our changes were added. Launchpad cannot
+	##  diff Firefox and Thunderbird, not even in the Mozilla Team PPA.
+	if [[ -n ${SOURCE_ARCHIVE:-} ]]; then
+		echo "  * Based on ${ubuntu_version} from ppa:${SOURCE_ARCHIVE},"
+		echo "    with only the G Unity⁷ patches below and the debian/ changes from"
+		echo "    packages/${pkg}/package.sh."
+	fi
 	if [[ ${#changes_since[@]} -gt 0 ]]; then
 		echo "  * Changes since ${main_version} (ppa:${PPA_MAIN}):"
 		printf '    - %s\n' "${changes_since[@]}"
@@ -333,22 +349,22 @@ entry="${work}/changelog.entry"
 } > "${entry}"
 cat "${entry}" debian/changelog > "${work}"/changelog.new
 mv "${work}"/changelog.new debian/changelog
-dpkg-parsechangelog -S Version >/dev/null || die "Generated changelog is not valid."
+dpkg-parsechangelog -S Version >/dev/null || die "The generated changelog is not valid."
 einfo "Version ${version}"
 
 ## 9. Source package. The orig tarball is left out of the upload if Launchpad
-##  has it in the staging PPA: a version of the same upstream version is there,
-##  or the base version of a source of a PPA (SOURCE_ARCHIVE) is copied there
-##  before the upload (upload.sh). The orig tarball of Firefox has 785 MiB.
+##  already has it in the staging PPA: either a version with the same upstream
+##  version is there, or upload.sh copies the base version of a PPA source
+##  (SOURCE_ARCHIVE) there before the upload. Firefox's orig tarball is 785 MiB.
 orig_opt=-sa
 upstream_of() { local v=${1#*:}; echo "${v%-*}"; }
 if [[ -n ${SOURCE_ARCHIVE:-} ]]; then
 	orig_opt=-sd
-	einfo "Orig tarball comes with the copy of ${UBUNTU_SRC} ${ubuntu_version} from ppa:${SOURCE_ARCHIVE}."
+	einfo "The orig tarball comes with the copy of ${UBUNTU_SRC} ${ubuntu_version} from ppa:${SOURCE_ARCHIVE}."
 elif [[ -n ${staging_version} && $(upstream_of "${staging_version}") == "$(upstream_of "${version}")" ]] \
 	&& compgen -G "${work}/${SOURCE_NAME}_$(upstream_of "${version}").orig*" >/dev/null; then
 	orig_opt=-sd
-	einfo "Orig tarball of $(upstream_of "${version}") is in ${PPA_STAGING}, not uploaded again."
+	einfo "The orig tarball of $(upstream_of "${version}") is already in ${PPA_STAGING} and is not uploaded again."
 fi
 dpkg-buildpackage -S "${orig_opt}" -d -nc -us -uc >"${work}"/dpkg-buildpackage.log 2>&1 \
 	|| { tail -n 30 "${work}"/dpkg-buildpackage.log >&2; die "dpkg-buildpackage failed."; }
@@ -361,7 +377,7 @@ cp "${work}"/dpkg-buildpackage.log "${base_dir}"/out/
 check="${work}/check"
 dpkg-source --no-check -x --skip-patches "${dsc}" "${check}" >/dev/null || die "Unpacking ${dsc##*/} failed."
 if [[ ${PATCH_MODE} == quilt ]]; then
-	(cd "${check}" && quilt push -a -q --fuzz=0 >/dev/null) || die "Patches of ${dsc##*/} do not apply without fuzz."
+	(cd "${check}" && quilt push -a -q --fuzz=0 >/dev/null) || die "The patches of ${dsc##*/} do not apply without fuzz."
 fi
 einfo "Patches apply without fuzz."
 
@@ -386,4 +402,5 @@ cat > "${base_dir}"/result.env <<-EOF
 	SOURCE_ARCHIVE=${SOURCE_ARCHIVE:-}
 	BASE_VERSION=${ubuntu_version}
 EOF
+remove_trees
 einfo "Done: ${base_dir}/out/${changes##*/}$([[ -n ${needs_review} ]] && echo ", review needed")"

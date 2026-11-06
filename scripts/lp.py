@@ -15,22 +15,22 @@ import urllib.request
 
 API = "https://api.launchpad.net/devel"
 
-## Pockets of a stable series the base version is taken from.
+## Pockets of a stable series that the base version is taken from.
 UBUNTU_POCKETS = ("Release", "Updates", "Security")
 
 
-## The Launchpad proxy caches anonymous responses for minutes, the state
-##  right after an upload or a build would be missed without no-cache.
+## The Launchpad proxy caches anonymous responses for minutes. Without
+##  no-cache, the state right after an upload or a build would be missed.
 HEADERS = {"Accept": "application/json", "Cache-Control": "no-cache"}
 
 
-## Launchpad answers 503 or times out now and then, a request is tried again
-##  after these pauses (s). A 4xx error is final.
+## Launchpad sometimes answers 503 or times out, so a request is tried again
+##  after these pauses (in seconds). A 4xx error is final.
 RETRY_PAUSES = (10, 30, 60)
 
 
 def fetch(request):
-    """Return the body of a request, try again after a temporary error."""
+    """Return the body of a request, trying again after a temporary error."""
     for pause in (*RETRY_PAUSES, None):
         try:
             with urllib.request.urlopen(request, timeout=60) as response:
@@ -120,7 +120,7 @@ def cmd_ubuntu_version(args):
 
 
 def ppa_latest(source, ppa, series):
-    """Return the newest version in a PPA with its G Unity⁷ data, {} if none."""
+    """Return the latest version in a PPA with its G Unity⁷ data, or {} if none."""
     owner, name = ppa.split("/")
     archive = f"{API}/~{owner}/+archive/ubuntu/{name}"
     try:
@@ -146,8 +146,8 @@ def ppa_latest(source, ppa, series):
 
 
 def ubuntu_version(source, series, archive=None):
-    """Return (version, pocket) of the newest version in an Ubuntu series, or
-    in the PPA archive (owner/name, e.g. mozillateam/ppa) if given."""
+    """Return (version, pocket) of the latest version in an Ubuntu series, or
+    in the given PPA archive (owner/name, such as mozillateam/ppa)."""
     if archive:
         owner, name = archive.split("/")
         url = f"{API}/~{owner}/+archive/ubuntu/{name}"
@@ -165,7 +165,7 @@ def cmd_ppa_latest(args):
     print(json.dumps(ppa_latest(args.source, args.ppa, args.series)))
 
 
-## Build states of Launchpad.
+## Launchpad build states.
 BUILDING = ("Needs building", "Currently building", "Uploading build", "Gathering build output")
 FAILED = ("Failed to build", "Chroot problem", "Failed to upload", "Cancelled build",
           "Build for superseded Source", "Cancelling build")
@@ -173,8 +173,8 @@ DEPWAIT_LIMIT = datetime.timedelta(hours=24)
 
 
 def build_state(source_name, version, ppa, series):
-    """Return the state of the builds of a version in a PPA: ok (built and
-    the binaries published), building, failed or missing."""
+    """Return the build state of a version in a PPA: ok (built, with the
+    binaries published), building, failed or missing."""
     owner, name = ppa.split("/")
     archive = f"{API}/~{owner}/+archive/ubuntu/{name}"
     entries = [e for e in published_sources(archive, source_name, series, ["Pending", "Published"])
@@ -216,19 +216,19 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(required=True)
 
-    p = sub.add_parser("ubuntu-version", help="newest version in a stable Ubuntu series")
+    p = sub.add_parser("ubuntu-version", help="latest version in a stable Ubuntu series")
     p.add_argument("source")
     p.add_argument("--series", required=True)
     p.add_argument("--archive", help="a PPA (owner/name) instead of the Ubuntu archive")
     p.set_defaults(func=cmd_ubuntu_version)
 
-    p = sub.add_parser("ppa-latest", help="newest version in a PPA with its fingerprint")
+    p = sub.add_parser("ppa-latest", help="latest version in a PPA with its fingerprint")
     p.add_argument("source")
     p.add_argument("--ppa", required=True)
     p.add_argument("--series", required=True)
     p.set_defaults(func=cmd_ppa_latest)
 
-    p = sub.add_parser("build-state", help="state of the builds of a version in a PPA")
+    p = sub.add_parser("build-state", help="build state of a version in a PPA")
     p.add_argument("source")
     p.add_argument("version")
     p.add_argument("--ppa", required=True)

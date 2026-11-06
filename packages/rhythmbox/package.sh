@@ -2,8 +2,8 @@ OVERLAY_PKG="ehooks/media-sound/rhythmbox"
 UBUNTU_SRC="rhythmbox"
 GROUP="desktop"
 
-## files/series selects the patches of the Ubuntu patchset for Gentoo, the whole
-##  patchset is kept.
+## files/series selects Ubuntu patches for Gentoo. Here, all Ubuntu patches
+##  are kept.
 PATCHES=(
 	unity-mediakeys-plugin.patch
 )

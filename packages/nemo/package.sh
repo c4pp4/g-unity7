@@ -21,7 +21,7 @@ debian_edit() {
 	sed -i -e "s/^ nemo-fileroller (>= 5.2~),$/ nemo-engrampa | nemo-fileroller (>= 5.2~),/" debian/control || return 1
 	grep -Fqx " nemo-engrampa | nemo-fileroller (>= 5.2~)," debian/control || return 1
 
-	# Hold Nemo running seamlessly in Unity (nemo-persist.patch) #
+	# Keep Nemo running seamlessly in Unity (nemo-persist.patch) #
 	install -d debian/g-unity7 || return 1
 	install -m 644 "${FILESDIR}"/nemo-autostart.desktop.in debian/g-unity7/unity-nemo.desktop || return 1
 	echo "debian/g-unity7/unity-nemo.desktop etc/xdg/autostart/" >> debian/nemo.install || return 1

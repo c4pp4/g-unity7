@@ -1,8 +1,8 @@
 #!/bin/sh
 set -e
 
-# G Unity⁷: the default greeter of the lightdm-greeter alternative (used by
-# greeter-session=lightdm-greeter), above lightdm-gtk-greeter (60)
+# G Unity⁷: make this the default greeter of the lightdm-greeter alternative,
+# which greeter-session=lightdm-greeter uses, above lightdm-gtk-greeter (60)
 if [ "$1" = "configure" ]; then
 	update-alternatives --install /usr/share/xgreeters/lightdm-greeter.desktop \
 		lightdm-greeter /usr/share/xgreeters/unity-greeter.desktop 90

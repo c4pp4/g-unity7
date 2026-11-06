@@ -4,7 +4,7 @@ UBUNTU_SRC="unity-scope-chromiumbookmarks"
 UBUNTU_SERIES="bionic"
 GROUP="desktop"
 
-## snap-profiles.patch of packages/unity-scope-chromiumbookmarks/patches is an own patch for Ubuntu.
+## snap-profiles.patch in packages/unity-scope-chromiumbookmarks/patches is our own patch for Ubuntu.
 PATCHES=(
 	chromiumbookmarks.patch
 	snap-profiles.patch

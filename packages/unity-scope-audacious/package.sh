@@ -1,6 +1,6 @@
 OVERLAY_PKG="unity-lens/unity-scope-extras"
 UBUNTU_SRC="unity-scope-audacious"
-## Removed from Ubuntu after xenial, the source of xenial is used.
+## Removed from Ubuntu after xenial, so the xenial source is used.
 UBUNTU_SERIES="xenial"
 GROUP="desktop"
 
@@ -9,7 +9,7 @@ PATCHES=(
 )
 
 debian_edit() {
-	# GObject introspection data of libunity 7 #
+	# GObject introspection data for libunity 7 #
 	sed -i -e "s/gir1.2-unity-5.0/gir1.2-unity-7.0/" debian/control || return 1
 	! grep -Fq "gir1.2-unity-5.0" debian/control || return 1
 

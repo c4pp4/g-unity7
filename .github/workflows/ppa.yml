@@ -1,5 +1,5 @@
-## Build the source packages whose Ubuntu version or input changed, upload
-##  those with unchanged patches to the staging PPA and put the others in the
+## Build the source packages whose Ubuntu version or input changed. Upload
+##  those with unchanged patches to the staging PPA, and add the others to the
 ##  approval issue for review (/upload).
 name: PPA
 
@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       packages:
-        description: Packages separated by spaces (empty means all changed ones)
+        description: Packages separated by spaces (empty for all changed packages)
         required: false
         default: ''
       force:
@@ -113,7 +113,7 @@ jobs:
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
           LP_CREDENTIALS: ${{ secrets.LP_CREDENTIALS }}
         run: |
-          # upload.sh copies the base version of a source of another PPA (Firefox)
+          # upload.sh copies the base version of a source from another PPA (Firefox)
           export LP_CREDENTIALS_FILE=$(mktemp)
           trap 'rm -f "$LP_CREDENTIALS_FILE"' EXIT
           printf '%s\n' "$LP_CREDENTIALS" > "$LP_CREDENTIALS_FILE"
@@ -129,7 +129,7 @@ jobs:
               review+=( build/"$SERIES"/"$pkg" )
             else
               scripts/upload.sh "$pkg" || failed=1
-              # Launchpad refuses uploads following each other closely
+              # Launchpad refuses uploads that follow each other closely
               sleep 60
             fi
           done

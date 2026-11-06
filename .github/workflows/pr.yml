@@ -1,5 +1,5 @@
-## Check that the patches of all packages still apply and the source packages
-##  can be built, without uploading anything.
+## Check that the patches of all packages still apply and that the source
+##  packages can be built, without uploading anything.
 name: Check
 
 on:

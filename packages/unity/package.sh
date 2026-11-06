@@ -2,9 +2,9 @@ OVERLAY_PKG="unity-base/unity"
 UBUNTU_SRC="unity"
 GROUP="desktop"
 
-## The default USE flags of the ebuild: -classic-dash -classic-panel +hud
-##  -systray -bfb2013 -bfb2023 +uwidgets. set-desktop-name.patch is the
-##  variant of packages/unity/patches (G Unity⁷ Desktop).
+## The ebuild's default USE flags: -classic-dash -classic-panel +hud -systray
+##  -bfb2013 -bfb2023 +uwidgets. set-desktop-name.patch in packages/unity/patches
+##  is a variant that names the desktop G Unity⁷ Desktop.
 PATCHES=(
 	add-nemo-support.patch
 	add-unity-version-xml.patch
@@ -22,21 +22,21 @@ PATCHES=(
 debian_edit() {
 	local f
 
-	# compiz-dev of Ubuntu was built with CMake 4.2 and installs FindCompiz.cmake #
-	#  into /usr/share/cmake-4.2/Modules, CMake 4.3 does not find it there #
+	# Ubuntu's compiz-dev was built with CMake 4.2 and installs FindCompiz.cmake #
+	#  into /usr/share/cmake-4.2/Modules, where CMake 4.3 does not find it #
 	sed -i \
 		-e "s/^\( *\)compiz-dev (>= [^)]*),$/\1compiz-dev (>= 1:0.9.14.2+25.10.20250930-0ubuntu3+gu7),/" \
 		debian/control || return 1
 	grep -q "^ *compiz-dev (>= 1:0.9.14.2+25.10.20250930-0ubuntu3+gu7),$" debian/control || return 1
 
-	# Release shown in the Details panel of unity-control-center (add-unity-version-xml.patch) #
+	# The release shown in unity-control-center's Details panel (add-unity-version-xml.patch) #
 	sed -i \
 		-e "s/^cmake_options += -DENABLE_UNIT_TESTS=OFF$/&\ncmake_options += -DUNITY_RELEASE=\"${series_version} ${series^}\"/" \
 		debian/rules || return 1
 	grep -Fqx "cmake_options += -DUNITY_RELEASE=\"${series_version} ${series^}\"" debian/rules || return 1
 	echo "usr/share/unity/unity-version.xml" >> debian/unity.install || return 1
 
-	# Hidden logo of the lock-screen and the Dash and Hud border #
+	# Hide the lock screen logo, and the Dash and HUD border #
 	install -d debian/g-unity7 || return 1
 	install -m 644 "${FILESDIR}"/branding/empty_cof.png debian/g-unity7/lockscreen_cof.png || return 1
 	for f in "${FILESDIR}"/resources/dash_*.png; do
@@ -56,8 +56,8 @@ src_edit() {
 		unity-shared/PreviewStyle.cpp || return 1
 	grep -Fq "const RawPixel preview_width = 700_em;" unity-shared/PreviewStyle.cpp || return 1
 
-	# Setup Unity side launcher default applications (GNOME Software, which #
-	#  g-unity7-desktop recommends, and the installer of a live ISO stay) #
+	# Set up the default applications of the Unity launcher. GNOME Software, #
+	#  which g-unity7-desktop recommends, and the live ISO installer stay #
 	sed -i \
 		-e "s/org.gnome.Nautilus/nemo/" \
 		-e "/firefox/r ${PKG_DIR}/www-clients" \

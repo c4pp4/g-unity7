@@ -1,9 +1,13 @@
-## Own package: g-unity7-desktop, the dependencies of unity-base/unity-meta,
-##  unity-indicators/unity-indicators-meta and unity-lens/unity-lens-meta with
-##  the default USE flags of the overlay (Recommends) and the rest (Suggests).
-##  The ported packages are required in their G Unity⁷ version (>= ...+gu7).
-##  Breaks (<< ...+gu7) of the ported packages in Recommends and Suggests: the
-##  solver of apt 3 does not upgrade an installed package for a Recommends, it
-##  skips the relation or takes another alternative (audacious for rhythmbox).
+## Own package: g-unity7-desktop, with the dependencies of unity-base/unity-meta,
+##  unity-indicators/unity-indicators-meta and unity-lens/unity-lens-meta. The
+##  overlay's default USE flags go to Recommends, the rest to Suggests. The
+##  gnome USE flag counts as a default one, because the desktop/gnome parent
+##  profile enables it. Recommends also has
+##  compizconfig-settings-manager, which the overlay installs with
+##  unity-base/compiz. debian/control groups the relations with comments. Ported
+##  packages are required in their G Unity⁷ version (>= ...+gu7). Ported packages
+##  in Recommends and Suggests also get Breaks (<< ...+gu7), because the apt 3
+##  solver does not upgrade an installed package for a Recommends. It skips the
+##  relation or picks another alternative instead (audacious for rhythmbox).
 OVERLAY_PKG="unity-base/unity-meta"
 GROUP="desktop"

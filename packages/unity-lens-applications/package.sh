@@ -7,8 +7,8 @@ PATCHES=(
 )
 
 src_edit() {
-	# Remove failed test #
-	# (Environment.get_home_dir() returns HOME, which is not the passwd home directory in the build) #
+	# Remove a failing test. Environment.get_home_dir() returns HOME, which #
+	# differs from the passwd home directory in the build #
 	sed -i \
 		-e "/test ~username expansion/,+4 d" \
 		tests/unit/test-utils.vala || return 1

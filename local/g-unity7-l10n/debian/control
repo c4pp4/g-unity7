@@ -11,9 +11,9 @@ Homepage: https://github.com/c4pp4/g-unity7
 Package: g-unity7-l10n
 Architecture: all
 Depends: ${misc:Depends}
-Description: translations of the G Unity⁷ desktop missing in Ubuntu
- Translations of the gentoo-unity7 overlay that no package and no language
- pack of Ubuntu installs: Activity Log Manager, Startup Applications
+Description: G Unity⁷ desktop translations missing from Ubuntu
+ Translations from the gentoo-unity7 overlay that no Ubuntu package or
+ language pack installs: Activity Log Manager, Startup Applications
  (unity-session-properties), the appearance and notifications indicators,
- the quicklist of MATE Screenshot, the session shortcuts of the Dash and the
- Unity Help launcher.
+ the MATE Screenshot quicklist, the Dash session shortcuts and the Unity Help
+ launcher.

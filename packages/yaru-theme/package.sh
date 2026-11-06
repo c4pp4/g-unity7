@@ -2,7 +2,7 @@ OVERLAY_PKG="x11-themes/yaru-theme"
 GROUP="desktop"
 UBUNTU_SRC="yaru-theme"
 
-## The default USE flags of the ebuild: +unity.
+## The ebuild's default USE flags: +unity.
 PATCHES=(
 	Remove-light-edges-in-menu-corners.patch
 )

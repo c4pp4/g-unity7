@@ -1,9 +1,9 @@
 #!/bin/sh
 set -e
 
-# G Unity⁷: the panel directories of the accent themes of Yaru are symlinks to
-# those of Yaru and Yaru-dark, dh_icons updates only the caches of these two
-# (a stale cache makes GTK take the icon of Yaru for Yaru-purple-dark)
+# G Unity⁷: the panel directories of the Yaru accent themes are symlinks to the
+# Yaru and Yaru-dark ones, but dh_icons updates only the caches of these two. A
+# stale cache makes GTK use the Yaru icon for Yaru-purple-dark
 if [ "$1" = "configure" ] && command -v update-icon-caches >/dev/null; then
 	update-icon-caches /usr/share/icons/Yaru-*
 fi

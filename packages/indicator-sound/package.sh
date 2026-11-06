@@ -14,7 +14,7 @@ PATCHES=(
 )
 
 src_edit() {
-	# Do not delay the logout for 90 s if the service hangs on termination #
+	# Do not delay logout by 90 s if the service hangs on termination #
 	sed -i "/^Restart=/a TimeoutStopSec=10" data/indicator-sound.service.in || return 1
 	grep -qx "TimeoutStopSec=10" data/indicator-sound.service.in || return 1
 }

@@ -2,9 +2,9 @@ OVERLAY_PKG="unity-lens/unity-lens-photos"
 UBUNTU_SRC="unity-lens-photos"
 GROUP="desktop"
 
-## remove-goa-scopes.diff stops installing the Facebook, Flickr and Picasa scopes,
-##  their files are not deleted as in the ebuild (the 1.0 source format can't
-##  represent the deletion).
+## remove-goa-scopes.diff stops installing the Facebook, Flickr and Picasa
+##  scopes. Their files are not deleted as in the ebuild, because the 1.0
+##  source format cannot represent the deletion.
 PATCHES=(
 	Fix-timestamp-NoneType-error.patch
 	remove-goa-scopes.diff
@@ -33,8 +33,8 @@ src_edit() {
 		src/unity_shotwell_daemon.py || return 1
 	grep -Fq "org.gnome.Shotwell.desktop" src/unity_shotwell_daemon.py || return 1
 
-	# Don't install the scope daemon as a top-level Python module #
-	# (setuptools discovers the daemons in src, the removed scopes as well) #
+	# Don't install the scope daemon as a top-level Python module. setuptools #
+	# finds the daemons in src, including the removed scopes #
 	sed -i \
 		-e 's/setup(name="unity-lens-photos",/setup(name="unity-lens-photos", py_modules=[],/' \
 		setup.py || return 1

@@ -83,7 +83,7 @@ def main():
     parser.add_argument("--name", required=True, help="patch file name")
     parser.add_argument("--origin", required=True, help="Origin URL of the patch")
     parser.add_argument("--author", required=True, help="author when the patch has none")
-    parser.add_argument("--email", required=True, help="e-mail added to an author without one")
+    parser.add_argument("--email", required=True, help="email address added to an author without one")
     parser.add_argument("--description", help="description of a patch without a header")
     args = parser.parse_args()
 

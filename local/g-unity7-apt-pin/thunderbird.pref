@@ -1,6 +1,6 @@
-# G Unity⁷: thunderbird of ppa:c4pp4/g-unity7 instead of the package of Ubuntu that
-# installs the snap. Linked as /etc/apt/preferences.d/g-unity7-thunderbird.pref by the
-# thunderbird package of the PPA.
+# G Unity⁷: prefer Thunderbird from ppa:c4pp4/g-unity7 to the Ubuntu package that
+# installs the snap. The PPA's thunderbird package links this file as
+# /etc/apt/preferences.d/g-unity7-thunderbird.pref.
 Package: thunderbird
 Pin: release o=LP-PPA-c4pp4-g-unity7
 Pin-Priority: 1001

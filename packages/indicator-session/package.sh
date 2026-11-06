@@ -2,19 +2,19 @@ OVERLAY_PKG="unity-indicators/indicator-session"
 UBUNTU_SRC="indicator-session"
 GROUP="desktop"
 
-## The help of Unity (USE help of the ebuild) and the CMake version, the other
-##  changes of the ebuild concern Gentoo (sandbox, whoopsie, elogind).
+## The Unity help (the ebuild's help USE flag) and the CMake version. The
+##  ebuild's other changes only concern Gentoo (sandbox, whoopsie, elogind).
 
 debian_edit() {
-	# The help of Unity (help:ubuntu-help) is in unity-docs #
+	# The Unity help (help:ubuntu-help) is in unity-docs #
 	sed -i -e "s/^\( *\)yelp,$/&\n\1unity-docs,/" debian/control || return 1
 	grep -q "^ *unity-docs,$" debian/control || return 1
 
 	# Unity Help in the Dash, as the ebuild installs it #
 	install -d debian/g-unity7 || return 1
 	install -m 644 "${FILESDIR}"/unity-yelp.desktop debian/g-unity7/ || return 1
-	# The translations are in g-unity7-l10n (unity-help), the language packs of Ubuntu #
-	#  install indicator-session without them and take precedence #
+	# The translations are in g-unity7-l10n (unity-help). Ubuntu's language packs #
+	#  install indicator-session translations without them and take precedence #
 	sed -i -e "s/^X-GNOME-Gettext-Domain=indicator-session$/X-GNOME-Gettext-Domain=unity-help/" \
 		debian/g-unity7/unity-yelp.desktop || return 1
 	grep -qx "X-GNOME-Gettext-Domain=unity-help" debian/g-unity7/unity-yelp.desktop || return 1
@@ -26,7 +26,7 @@ src_edit() {
 	sed -i "/cmake_minimum_required/{s/2\.8\.9/3.10/}" CMakeLists.txt || return 1
 	grep -q "cmake_minimum_required.*3\.10" CMakeLists.txt || return 1
 
-	# Unity Help… in the menu, opening the help of Unity instead of gnome-help #
+	# Unity Help… in the menu opens the Unity help instead of gnome-help #
 	sed -i \
 		-e 's:distro_name = g_strdup(value):distro_name = g_strdup("Unity"):' \
 		src/service.c || return 1

@@ -13,7 +13,7 @@ debian_edit() {
 }
 
 src_edit() {
-	# The icon of the installed calculator is shown (calculator.patch) #
+	# Show the installed calculator's icon (calculator.patch) #
 	sed -i \
 		-e "s/\['gnome-calculator', 'gnome-calculator-symbolic'\]/[self.scope_module.CALCULATOR_ICON, self.scope_module.CALCULATOR_ICON + '-symbolic']/" \
 		tests/test_calculator.py || return 1

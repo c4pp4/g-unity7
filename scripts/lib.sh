@@ -23,20 +23,20 @@ die() {
 
 source "${REPO_ROOT}"/config.sh
 
-## Print the first 12 hex digits of the sha256 of stdin.
+## Print the first 12 hex digits of the SHA-256 hash of stdin.
 short_hash() {
 	sha256sum | cut -c1-12
 }
 
-## True if the source tree $1 has a patch in debian/patches/series (a series
-##  file with only an empty line or comments has none, quilt fails on it).
+## Succeed if the source tree $1 has a patch in debian/patches/series. A series
+##  file with only an empty line or comments has none, and quilt fails on it.
 has_patches() {
 	grep -q '^[^#[:space:]]' "$1"/debian/patches/series 2>/dev/null
 }
 
-## For src_edit: merge the po files of a tarball ($1, po/*.po) into the po files
-##  of the source in the current directory as "msgcat --use-first" of the ehooks
-##  does, but only append the messages the source does not have, so that the
+## For src_edit: merge the po files from tarball $1 (po/*.po) into the po files
+##  of the source in the current directory, like "msgcat --use-first" in the
+##  ehooks, but only append the messages that the source lacks, so that the
 ##  files are not reformatted.
 merge_translations() {
 	local tmp po target body
@@ -47,12 +47,12 @@ merge_translations() {
 		[[ -f ${target} ]] || continue
 		rm -f "${tmp}"/unique.po "${tmp}"/add.po
 		msgattrib --no-obsolete -o "${tmp}"/new.po "${po}" || return 1
-		# Every message of the source counts as a definition, also a fuzzy, #
-		#  an untranslated (msgcat does not count them) and an obsolete one #
-		#  (msgfmt of gettext 1.0 rejects an active duplicate of it) #
+		# Every message in the source counts as defined, including fuzzy and #
+		#  untranslated ones, which msgcat ignores, and obsolete ones, because #
+		#  msgfmt from gettext 1.0 rejects an active duplicate of them #
 		msgattrib --clear-obsolete --clear-fuzzy -o "${tmp}"/all.po "${target}" || return 1
 		msgen -o "${tmp}"/old.po "${tmp}"/all.po || return 1
-		# The messages defined only once, of them the ones of the tarball #
+		# Messages defined only once, and of those, the ones from the tarball #
 		msgcat --less-than=2 -o "${tmp}"/unique.po "${tmp}"/new.po "${tmp}"/old.po || return 1
 		[[ -f ${tmp}/unique.po ]] || continue
 		msgcomm --more-than=1 -o "${tmp}"/add.po "${tmp}"/unique.po "${tmp}"/new.po || return 1
@@ -70,8 +70,8 @@ changed_lines() {
 	grep -a '^[+-]' | grep -av '^\(+++\|---\) ' || true
 }
 
-## Print the git commit of a repository ($1), with -dirty for uncommitted
-##  changes in the paths $2... (all paths without them).
+## Print the git commit of repository $1, with -dirty if the paths $2... (or
+##  any path, if none are given) have uncommitted changes.
 git_commit() {
 	local repo=$1 commit
 	shift
@@ -80,9 +80,9 @@ git_commit() {
 	echo "${commit}"
 }
 
-## Print the input hash of a loaded package ($1: overlay directory): what its
-##  build is made from besides the Ubuntu source. A package whose input hash
-##  and Ubuntu version are those of the staging PPA is not built again.
+## Print the input hash of a loaded package ($1: the overlay directory). It
+##  covers everything the build uses besides the Ubuntu source. A package whose
+##  input hash and Ubuntu version match the staging PPA is not built again.
 input_hash() {
 	local overlay=$1
 	{
@@ -110,8 +110,9 @@ list_packages() {
 	done
 }
 
-## Load the port packages/$1/package.sh, or the own package local/$1/package.sh
-##  (LOCAL=1, its source is the rest of local/$1), into the current shell.
+## Load the port packages/$1/package.sh or the own package local/$1/package.sh
+##  into the current shell. For an own package, LOCAL=1 is set, and its source
+##  is the rest of local/$1.
 load_package() {
 	local pkg=$1 file
 

@@ -1,15 +1,15 @@
-# G Unity⁷: keep the packages of ppa:c4pp4/g-unity7 even if Ubuntu has a newer
-# version of them. The newer Ubuntu version is installed once its G Unity⁷
-# version is released in the PPA.
+# G Unity⁷: keep the packages from ppa:c4pp4/g-unity7 even when Ubuntu has a
+# newer version. The newer version is installed once the PPA releases the
+# matching G Unity⁷ version.
 Package: *
 Pin: release o=LP-PPA-c4pp4-g-unity7
 Pin-Priority: 1001
 
-# Firefox and Thunderbird of the PPA have a lower version than the packages of
-# Ubuntu that install the snaps. They are installed only by the choice of
-# g-unity7-cleanup, their packages then link firefox.pref or thunderbird.pref
-# of /usr/share/g-unity7-apt-pin as g-unity7-firefox.pref or
-# g-unity7-thunderbird.pref, which come before this file.
+# The PPA's Firefox and Thunderbird packages have a lower version than the
+# Ubuntu packages that install the snaps. They are installed only when the user
+# chooses them in g-unity7-cleanup. Each package then links firefox.pref or
+# thunderbird.pref from /usr/share/g-unity7-apt-pin as g-unity7-firefox.pref or
+# g-unity7-thunderbird.pref, which apt reads before this file.
 Package: firefox thunderbird
 Pin: release o=LP-PPA-c4pp4-g-unity7
 Pin-Priority: 100

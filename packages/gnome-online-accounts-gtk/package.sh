@@ -2,7 +2,7 @@ OVERLAY_PKG="gnome-extra/gnome-online-accounts-gtk"
 UBUNTU_SRC="gnome-online-accounts-gtk"
 GROUP="desktop"
 
-## The unity-online-accounts icon is installed by the G Unity⁷ unity-control-center.
+## The G Unity⁷ unity-control-center installs the unity-online-accounts icon.
 
 src_edit() {
 	# Make gnome-online-accounts-gtk appear in unity-control-center #

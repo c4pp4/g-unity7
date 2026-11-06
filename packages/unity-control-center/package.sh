@@ -2,9 +2,9 @@ OVERLAY_PKG="unity-base/unity-control-center"
 UBUNTU_SRC="unity-control-center"
 GROUP="desktop"
 
-## The default USE flags of the ebuild (+cups: printers-fix_launcher.patch).
+## The ebuild's default USE flags (+cups: printers-fix_launcher.patch).
 ##  01-langselector.patch and 02-optional-bt-colord-kerberos-wacom.patch only
-##  replace Ubuntu tools Gentoo lacks and make dependencies optional.
+##  replace Ubuntu tools that Gentoo lacks and make dependencies optional.
 PATCHES=(
 	appearance-ignore_screenshots_from_mate_screenshot.patch
 	appearance-process_filename_dark_files.patch
@@ -16,7 +16,7 @@ PATCHES=(
 )
 
 debian_edit() {
-	# The metadata are installed to usr/share/metainfo (Fix metadata path) #
+	# The metadata is installed to usr/share/metainfo (Fix metadata path) #
 	sed -i -e "s:usr/share/appdata:usr/share/metainfo:" debian/unity-control-center.install || return 1
 	grep -Fq "usr/share/metainfo" debian/unity-control-center.install || return 1
 }
@@ -59,8 +59,8 @@ src_edit() {
 		panels/sharing/unity-sharing-panel.desktop.in.in || return 1
 	grep -qx "_Name=Sharing" panels/sharing/unity-sharing-panel.desktop.in.in || return 1
 
-	# Install only online-accounts icons (the panel of gnome-online-accounts-gtk), #
-	#  the online-accounts panel is disabled by debian/rules #
+	# Install only the online-accounts icons for the gnome-online-accounts-gtk #
+	#  launcher. debian/rules disables the online-accounts panel #
 	sed -i \
 		-e "/^if BUILD_ONLINE_ACCOUNTS$/i SUBDIRS += online-accounts/icons\n" \
 		panels/Makefile.am || return 1

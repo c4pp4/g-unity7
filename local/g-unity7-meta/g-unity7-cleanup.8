@@ -1,95 +1,98 @@
 .TH G-UNITY7-CLEANUP 8 "November 2026" "g-unity7-desktop" "G Unity7"
 .SH NAME
-g-unity7-cleanup \- remove the packages of Ubuntu Unity that G Unity7 replaces
+g-unity7-cleanup \- remove the Ubuntu Unity packages that G Unity7 replaces
 .SH SYNOPSIS
 .B g-unity7-cleanup
 .RB [ \-n | \-\-dry\-run ]
 .RB [ \-y | \-\-yes ]
 .SH DESCRIPTION
 .B g-unity7-cleanup
-removes the duplicate applications of Ubuntu Unity and the other installed
-alternatives of the applications of
-.BR g-unity7-desktop ,
-as
-.B emerge \-\-depclean
-of Gentoo does.
+removes duplicate Ubuntu Unity applications and other installed alternatives
+of the
+.B g-unity7-desktop
+applications, like Gentoo's
+.BR "emerge \-\-depclean" .
 .PP
-The installer of Ubuntu Unity installs the
+The Ubuntu Unity installer installs the
 .B ubuntu-unity-desktop
-task and apt marks its packages as manually installed, so
+task, and apt marks its packages as manually installed, so
 .B apt autoremove
 never removes them. apt also keeps every installed alternative of a relation
 such as
 .BR "vlc | showtime" .
 .PP
-Of each relation of
+For each
 .B g-unity7-desktop
-with more installed alternatives, such as
+relation that has several installed alternatives, such as
 .BR "atril | papers | evince" ,
-or with another alternative installed instead of the first one (apt does not
+the script asks which package to keep. It also asks when a different
+alternative is installed instead of the first one, because apt does not
 install
 .B eog
-of
+from
 .B "eog | eom | loupe"
-if
+when
 .B eom
-is installed), it asks which package to keep: the first alternative
-(recommended) or another one, an alternative that is not installed is
-installed with the choice, or to change nothing if more alternatives are
-installed. The installed first alternative is marked as automatically
-installed, another one stays manually installed. The other installed alternatives are removed, also those the
-user installed, except an alternative other packages need.
+is installed. You can keep the first alternative (recommended) or another one,
+which is installed if needed. When several alternatives are installed, you can
+also leave them all unchanged. A kept first alternative is marked as
+automatically installed, and any other kept alternative stays manually
+installed. The other installed alternatives are removed, including those you
+installed yourself, unless other packages need them.
 .PP
 The script then marks
 .BR ubuntu-unity-desktop ,
 the packages it depends on or recommends that
 .B g-unity7-desktop
-does not use and the dependencies of the task of these packages and of the
-alternatives to remove (e.g.
+does not use, and the task packages that these packages and the removed
+alternatives depend on (such as
 .B file-roller
-of
+for
 .BR nemo-fileroller )
-as automatically installed, except the packages kept by a choice, and removes
-them with autoremove. It marks only the packages autoremove removes then, the
-packages still needed (e.g. by
+as automatically installed, and removes them with autoremove. Packages kept by
+a choice are not marked. Only packages that autoremove actually removes are
+marked. Packages that are still needed, for example by
 .B ubuntu-desktop
-on Ubuntu, which shares most of the task) are left as they are.
-It removes directly the packages
+on Ubuntu, which shares most of the task, are left as they are.
+Packages that
 .B ubuntu-unity-desktop
-depends on or recommends that apt keeps only as an installed alternative of
-another relation (e.g.
+depends on or recommends and that apt keeps only as an installed alternative
+of another relation, such as
 .B lightdm-gtk-greeter
-of
-.BR lightdm-greeter ),
-if no other package is removed with them.
+for
+.BR lightdm-greeter ,
+are removed directly if no other package is removed with them.
 .PP
-Firefox and Thunderbird of Ubuntu are packages that install their snaps. The
-G Unity⁷ PPA has them as debs with the global menu of Unity, with a lower
-version, so
+The Ubuntu Firefox and Thunderbird packages install snaps. The G Unity⁷ PPA
+provides them as regular packages with Unity's global menu. Their version is
+lower, so
 .B g-unity7-apt-pin
-keeps the packages of Ubuntu until the script installs the debs. If a snap is
-installed, the script asks whether to install the deb instead. It then copies
-the profile of the snap
+keeps the Ubuntu packages until the script installs the G Unity⁷ packages. If
+a snap is installed, the script asks whether to install the G Unity⁷ package
+instead. It then copies the snap profile
 .RI ( ~/snap/firefox/common/.mozilla/firefox ,
 .IR ~/snap/thunderbird/common/.thunderbird )
-of every user without a profile of the deb
+for every user who does not have a profile yet
 .RI ( ~/.mozilla/firefox ,
-.IR ~/.thunderbird )
-and removes the snap (snapd saves a snapshot of its data). A running snap is
-not removed, close the application and run the script again.
+.IR ~/.thunderbird ),
+makes the snap's default profile the default profile of the new package, and
+removes the snap. snapd saves a snapshot of the snap data. A running snap is
+not removed. Close the application and run the script again. Run it again
+also if removing the snap fails.
 .PP
-It shows all packages and asks for confirmation. To keep one of them, mark it
-as manually installed first:
+The script shows all changes and asks for confirmation. To keep a package,
+mark it as manually installed first:
 .BI "sudo apt-mark manual " package
 .SH OPTIONS
 .TP
 .BR \-n ", " \-\-dry\-run
-Only show the packages, change nothing. It asks about the alternatives as
-well, so that the list shows the result of the answers. It does not need root.
+Show the changes without making them. The script still asks about the
+alternatives, so that the list shows the result of your answers. Root is not
+needed.
 .TP
 .BR \-y ", " \-\-yes
-Do not ask: keep or install the recommended alternative of each relation and
-do not ask for confirmation.
+Do not ask. Keep or install the recommended alternative of each relation and
+make the changes without confirmation.
 .SH SEE ALSO
 .BR apt (8),
 .BR apt-mark (8)

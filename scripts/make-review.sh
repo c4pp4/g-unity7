@@ -1,7 +1,7 @@
 #!/bin/bash
 ## Write the review of a source package built by build-source.sh:
-##  debdiff.diff  the whole change of the source package against Ubuntu
-##  code.diff     the change of the code with all patches applied
+##  debdiff.diff  the whole difference between the source package and Ubuntu
+##  code.diff     the code changes with all patches applied
 ##  summary.md    patches, ebuild edits, debian/ changes and the changelog entry
 
 set -euo pipefail
@@ -25,8 +25,8 @@ done
 patch_names=( "$@" )
 load_package "${pkg}"
 
-## The Ubuntu source with its own patchset applied, compared with ours.
-##  An own package (no --orig) is compared with nothing, debian/ included.
+## Compare our source with the Ubuntu source with its own patches applied.
+##  An own package (no --orig) is compared with nothing, including debian/.
 orig_tree="${work}/orig-applied"
 exclude=( -x .pc )
 if [[ -n ${orig_dsc} ]]; then
@@ -51,7 +51,7 @@ description() {
 	echo
 	if [[ -n ${orig_dsc} ]]; then
 		if [[ -n ${SOURCE_ARCHIVE:-} ]]; then
-			echo "- Source: \`${orig_dsc##*/}\` of ppa:${SOURCE_ARCHIVE}"
+			echo "- Source: \`${orig_dsc##*/}\` from ppa:${SOURCE_ARCHIVE}"
 		else
 			echo "- Ubuntu source: \`${orig_dsc##*/}\`"
 		fi
@@ -94,7 +94,7 @@ description() {
 		cat "${work}"/debian.diff
 		echo '```'
 	else
-		echo "None besides the patches and the changelog."
+		echo "None, apart from the patches and the changelog."
 	fi
 	echo
 	echo "## Changelog entry"

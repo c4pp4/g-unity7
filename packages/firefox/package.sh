@@ -1,27 +1,28 @@
-## Firefox of the Mozilla team PPA (Ubuntu has only the transitional package of
-##  the snap) with the Unity global menu of the ehooks.
+## Firefox from the Mozilla Team PPA with the Unity global menu from the
+##  ehooks. Ubuntu only has a transitional package that installs the snap.
 OVERLAY_PKG="ehooks/www-client/firefox:rapid"
 UBUNTU_SRC="firefox"
 SOURCE_ARCHIVE="mozillateam/ppa"
 GROUP="mozilla"
 
 PATCHES=(
-	CUSTOM-unity-menubar.patch
+	unity-menubar.patch
 )
 
 debian_edit() {
 	local f
 
-	# The pin of g-unity7-apt-pin that keeps this package instead of the package of #
-	#  Ubuntu that installs the snap (installed by the choice of g-unity7-cleanup), #
-	#  a link and not a conffile: it goes with the package #
+	# Link the g-unity7-apt-pin pin that keeps this package instead of the Ubuntu #
+	#  package that installs the snap. g-unity7-cleanup installs this package when #
+	#  the user chooses it. A link is not a conffile, so it goes with the package #
 	echo "usr/share/g-unity7-apt-pin/firefox.pref etc/apt/preferences.d/g-unity7-firefox.pref" \
 		>> debian/firefox.links.in || return 1
 	grep -qx "usr/share/g-unity7-apt-pin/firefox.pref etc/apt/preferences.d/g-unity7-firefox.pref" \
 		debian/firefox.links.in || return 1
 	for f in debian/control.in debian/control; do
-		# and GTK with populate-firefox-thunderbird-global-submenus.patch (the #
-		#  submenus of the global menu stay empty without it) #
+		# Require g-unity7-apt-pin with the pin file, and GTK with #
+		#  populate-firefox-thunderbird-global-submenus.patch. Without it, the #
+		#  global menu's submenus stay empty #
 		sed -i -e "/^Package: \(@MOZ_PKG_NAME@\|firefox\)$/,/^$/{s/^\(\t\)\${shlibs:Depends}$/&,\n\1g-unity7-apt-pin (>= 1+gu7.2~),\n\1libgtk-3-0t64 (>= 3.24.52-0ubuntu1+gu7)/}" \
 			"${f}" || return 1
 		grep -q "^	g-unity7-apt-pin (>= 1+gu7.2~),$" "${f}" || return 1

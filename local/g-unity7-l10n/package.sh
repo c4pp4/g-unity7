@@ -1,16 +1,16 @@
-## Own package: the translations of unity-base/unity-language-pack that no
-##  package and no language pack of Ubuntu installs, for the ported packages
-##  (/usr/share/locale, a language pack would take precedence). The other
-##  translations of the ebuild are in the language packs of Ubuntu, except the
-##  legacy ones of unity and unity-control-center (shadowed by the language
-##  packs) and those of the languages Ubuntu has no language pack for any more.
+## Own package: translations from unity-base/unity-language-pack that no Ubuntu
+##  package or language pack installs, for the ported packages. They go to
+##  /usr/share/locale, where a language pack would take precedence. The other
+##  translations of the ebuild are in the Ubuntu language packs, except the
+##  legacy translations of unity and unity-control-center, which the language
+##  packs shadow, and the languages that no longer have an Ubuntu language pack.
 OVERLAY_PKG="unity-base/unity-language-pack"
 GROUP="desktop"
 
 local_prepare() {
 	local tarball domain
 
-	## <tarball of the ebuild> <gettext domain>
+	## <ebuild tarball> <gettext domain>
 	while read -r tarball domain; do
 		mkdir -p po/"${domain}" || return 1
 		tar -xJf "${FILESDIR}"/"${tarball}".tar.xz --strip-components=1 \
