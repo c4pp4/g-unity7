@@ -117,9 +117,18 @@ jobs:
           export LP_CREDENTIALS_FILE=$(mktemp)
           trap 'rm -f "$LP_CREDENTIALS_FILE"' EXIT
           printf '%s\n' "$LP_CREDENTIALS" > "$LP_CREDENTIALS_FILE"
+          # A single artifact is extracted into artifacts/ itself, not into
+          #  artifacts/source-<package>/
+          if [ -f artifacts/result.env ]; then
+            pkg=$(sed -n 's/^PACKAGE=//p' artifacts/result.env)
+            [ -n "$pkg" ] || { echo "artifacts/result.env has no PACKAGE" >&2; exit 1; }
+            mkdir artifacts/source-"$pkg"
+            find artifacts -mindepth 1 -maxdepth 1 ! -name source-"$pkg" -exec mv -t artifacts/source-"$pkg" {} +
+          fi
           review=()
           failed=
           for dir in artifacts/source-*; do
+            [ -d "$dir" ] || continue
             pkg=${dir#artifacts/source-}
             mkdir -p build/"$SERIES"
             mv "$dir" build/"$SERIES"/"$pkg"

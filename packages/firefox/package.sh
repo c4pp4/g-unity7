@@ -4,6 +4,8 @@ OVERLAY_PKG="ehooks/www-client/firefox:rapid"
 UBUNTU_SRC="firefox"
 SOURCE_ARCHIVE="mozillateam/ppa"
 GROUP="mozilla"
+## Remove when the overlay patch applies to Firefox 160 (dom/xul/moz.build).
+HOLD="unity-menubar.patch does not apply to Firefox 160 yet"
 
 PATCHES=(
 	unity-menubar.patch

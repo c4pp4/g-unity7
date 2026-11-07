@@ -112,6 +112,9 @@ The functions can use `FILESDIR` (the overlay's `files/` directory) and
   part of its input hash.
 - `SOURCE_NAME` builds a source package derived from `UBUNTU_SRC` under another
   name, such as nemo-engrampa from nemo-fileroller.
+- `HOLD` stops building the package and keeps its latest version in the
+  staging PPA. Its value says why, such as an overlay patch that does not
+  apply to a new version yet.
 - `UBUNTU_SERIES` takes the source from an older Ubuntu release when Ubuntu
   has removed it.
 - `SOURCE_ARCHIVE` takes the source from another PPA (`owner/name`) instead of

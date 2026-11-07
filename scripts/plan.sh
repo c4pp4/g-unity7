@@ -46,6 +46,12 @@ state_json=
 selected=()
 for pkg in "${packages[@]}"; do
 	load_package "${pkg}"
+	## HOLD in package.sh keeps the latest version in the staging PPA, even with
+	##  --force, for example until an overlay patch applies to a new version.
+	if [[ -n ${HOLD:-} ]]; then
+		einfo "${pkg}: held (${HOLD})"
+		continue
+	fi
 	if [[ -n ${force} ]]; then
 		selected+=( "${pkg}" )
 		continue

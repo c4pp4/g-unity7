@@ -14,7 +14,7 @@
 ## Output in BUILD_DIR/<series>/<package>/:
 ##  out/        the source package to be signed (.dsc, .changes, tarballs)
 ##  review/     debdiff.diff, code.diff, summary.md
-##  result.env  STATUS (built|uptodate), VERSION, FINGERPRINT, NEEDS_REVIEW, ...
+##  result.env  STATUS (built|uptodate), PACKAGE, VERSION, FINGERPRINT, NEEDS_REVIEW, ...
 
 set -euo pipefail
 source "$(dirname "$0")"/lib.sh
@@ -277,6 +277,7 @@ if [[ ${staging_version} =~ ${suffix_re} ]]; then
 			einfo "${SOURCE_NAME} ${staging_version} in ${PPA_STAGING} is up to date."
 			cat > "${base_dir}"/result.env <<-EOF
 				STATUS=uptodate
+				PACKAGE=${pkg}
 				SOURCE=${SOURCE_NAME}
 				VERSION=${staging_version}
 				FINGERPRINT=${fingerprint}
@@ -390,6 +391,7 @@ einfo "Patches apply without fuzz."
 printf '%s\n' "${patch_lines[@]}" > "${base_dir}"/patches.txt
 cat > "${base_dir}"/result.env <<-EOF
 	STATUS=built
+	PACKAGE=${pkg}
 	SOURCE=${SOURCE_NAME}
 	VERSION=${version}
 	FINGERPRINT=${fingerprint}
