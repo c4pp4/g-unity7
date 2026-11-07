@@ -80,6 +80,60 @@ git_commit() {
 	echo "${commit}"
 }
 
+## Versioned ehooks directories, as the overlay looks them up (docs/ehooks.md):
+##  for OVERLAY_PKG="ehooks/www-client/firefox:rapid", the overlay uses
+##  firefox-160:rapid (or firefox-160.0:rapid, firefox-160) for Firefox 160 and
+##  firefox:rapid for the other versions. An OVERLAY_PKG that already names a
+##  version (ehooks/mail-client/thunderbird-153) is used as it is.
+
+## Print the name and the slot (":rapid" or nothing) of the OVERLAY_PKG that the
+##  loaded package declares, or fail if it cannot have versioned directories.
+ehooks_name_slot() {
+	local declared=${OVERLAY_PKG_DECLARED:-${OVERLAY_PKG:-}} name slot=
+	name=${declared%%:*}
+	[[ ${declared} == *:* ]] && slot=":${declared#*:}"
+	[[ ${declared} == ehooks/* && ! ${name##*/} =~ -[0-9][0-9.]*$ ]] || return 1
+	echo "${name} ${slot}"
+}
+
+## Print the versioned ehooks directories of the loaded package ($1: the
+##  overlay directory), relative to it and sorted.
+versioned_ehooks_dirs() {
+	local overlay=$1 name slot dir
+	read -r name slot < <(ehooks_name_slot) || return 0
+	for dir in "${overlay}/${name}"-[0-9]*; do
+		[[ -d ${dir} ]] || continue
+		dir=${dir#"${overlay}"/}
+		[[ ${dir#"${name}"} =~ ^-[0-9][0-9.]*(${slot})?$ ]] && echo "${dir}"
+	done | LC_ALL=C sort
+}
+
+## Set OVERLAY_PKG of the loaded package to the most specific ehooks directory
+##  for the upstream part of version $2 ($1: the overlay directory), in the
+##  order of the overlay: firefox-160.0.1:rapid, firefox-160.0.1, ...,
+##  firefox-160:rapid, firefox-160, then the declared OVERLAY_PKG. The declared
+##  one stays in OVERLAY_PKG_DECLARED for the input hash.
+resolve_overlay_pkg() {
+	local overlay=$1 version=${2#*:} name slot candidate
+	OVERLAY_PKG_DECLARED=${OVERLAY_PKG_DECLARED:-${OVERLAY_PKG}}
+	read -r name slot < <(ehooks_name_slot) || return 0
+	[[ ${version} =~ ^[0-9]+(\.[0-9]+)* ]] || return 0
+	version=${BASH_REMATCH[0]}
+	while [[ -n ${version} ]]; do
+		for candidate in "${name}-${version}${slot}" "${name}-${version}"; do
+			if [[ -d ${overlay}/${candidate} ]]; then
+				OVERLAY_PKG=${candidate}
+				return 0
+			fi
+		done
+		if [[ ${version} == *.* ]]; then
+			version=${version%.*}
+		else
+			version=
+		fi
+	done
+}
+
 ## Print the input hash of a loaded package ($1: the overlay directory). It
 ##  covers everything the build uses besides the Ubuntu source. A package whose
 ##  input hash and Ubuntu version match the staging PPA is not built again.
@@ -88,9 +142,18 @@ input_hash() {
 	{
 		echo "format ${FORMAT_VERSION}"
 		(cd "${PKG_DIR}" && find . -type f -print0 | sort -z | xargs -0 sha256sum)
-		if [[ -n ${OVERLAY_PKG:-} && -d ${overlay}/${OVERLAY_PKG}/files ]]; then
-			(cd "${overlay}/${OVERLAY_PKG}"/files && find . -type f -print0 | sort -z | xargs -0 sha256sum)
+		local declared=${OVERLAY_PKG_DECLARED:-${OVERLAY_PKG:-}} dir
+		if [[ -n ${declared} && -d ${overlay}/${declared}/files ]]; then
+			(cd "${overlay}/${declared}"/files && find . -type f -print0 | sort -z | xargs -0 sha256sum)
 		fi
+		## The versioned ehooks directories that resolve_overlay_pkg may pick. No
+		##  port has one yet, so their input hashes stay the same.
+		while read -r dir; do
+			echo "${dir}"
+			if [[ -d ${overlay}/${dir}/files ]]; then
+				(cd "${overlay}/${dir}"/files && find . -type f -print0 | sort -z | xargs -0 sha256sum)
+			fi
+		done < <(versioned_ehooks_dirs "${overlay}")
 		if [[ ${#OVERLAY_FILES[@]} -gt 0 ]]; then
 			(cd "${overlay}" && sha256sum "${OVERLAY_FILES[@]}")
 		fi
@@ -116,7 +179,7 @@ list_packages() {
 load_package() {
 	local pkg=$1 file
 
-	unset OVERLAY_PKG UBUNTU_SRC UBUNTU_SERIES SOURCE_ARCHIVE SOURCE_NAME GROUP PATCH_MODE LOCAL HOLD
+	unset OVERLAY_PKG OVERLAY_PKG_DECLARED UBUNTU_SRC UBUNTU_SERIES DEBIAN_SUITE SOURCE_NAME GROUP PATCH_MODE LOCAL HOLD
 	PATCHES=()
 	OVERLAY_FILES=()
 	unset -f debian_edit src_edit local_prepare

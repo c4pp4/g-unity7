@@ -111,12 +111,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
-          LP_CREDENTIALS: ${{ secrets.LP_CREDENTIALS }}
         run: |
-          # upload.sh copies the base version of a source from another PPA (Firefox)
-          export LP_CREDENTIALS_FILE=$(mktemp)
-          trap 'rm -f "$LP_CREDENTIALS_FILE"' EXIT
-          printf '%s\n' "$LP_CREDENTIALS" > "$LP_CREDENTIALS_FILE"
           # A single artifact is extracted into artifacts/ itself, not into
           #  artifacts/source-<package>/
           if [ -f artifacts/result.env ]; then

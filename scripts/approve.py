@@ -12,8 +12,7 @@ Commands (in comments by the repository owner):
                            retry the failed builds of a version in staging
 
 Environment: GITHUB_TOKEN, GITHUB_REPOSITORY, OVERLAY_DIR, LP_CREDENTIALS_FILE
-(for /promote, /retry and deleting the base copies of ports from another PPA
-on every update), and the GPG variables of upload.sh (for /upload).
+(for /promote and /retry), and the GPG variables of upload.sh (for /upload).
 """
 
 import argparse
@@ -41,8 +40,9 @@ TITLE = "G Unity⁷ approvals"
 STATE_RE = re.compile(r"<!-- g-unity7-state\n(.*?)\n-->", re.S)
 ## Pause between uploads (seconds).
 UPLOAD_PAUSE = 60
-## upload.sh tries dput four times with pauses (at most 4 × 10 min + 9 min).
-UPLOAD_TIMEOUT = 60 * 60
+## upload.sh tries dput four times with pauses. One try takes up to 10 min, plus
+##  1 s per MB for the orig tarballs of Firefox and Thunderbird.
+UPLOAD_TIMEOUT = 3 * 60 * 60
 ## Launchpad counts as down after this many packages in a row without a state.
 ##  The remaining packages also keep their rows from the last update.
 LP_FAILURES_MAX = 3
@@ -305,34 +305,8 @@ def notify_new(issue, state):
         comment(issue, "New versions:\n" + "\n".join(new))
 
 
-def prune_bases(issue, pkgs):
-    """Delete the base copies of ports from another PPA (copy-base) in the
-    staging PPA once the ports are published there (lp_write.py prune-base),
-    and say so in the issue."""
-    credentials = os.environ.get("LP_CREDENTIALS_FILE")
-    if not credentials:
-        return
-    deleted = []
-    for pkg in pkgs.values():
-        if not pkg.get("source_archive"):
-            continue
-        proc = subprocess.run([f"{SCRIPTS}/lp_write.py", "--credentials", credentials, "prune-base",
-                               pkg["source"], "--ppa", CONFIG["staging"], "--series", CONFIG["series"],
-                               "--tag", CONFIG["tag"]], capture_output=True, text=True)
-        if proc.returncode:
-            print(f"::warning::Cannot delete the base copies of {pkg['source']}: "
-                  f"{proc.stderr.strip()[-500:]}")
-            continue
-        deleted += [f"- `{pkg['source']}` `{v}` from `ppa:{pkg['source_archive']}`"
-                    for v in proc.stdout.split()]
-    if deleted and issue:
-        comment(issue, "Deleted base copies that the published ports no longer need "
-                       "(the ports keep the orig tarball):\n" + "\n".join(deleted))
-
-
 def refresh(issue, state, pkgs=None):
     pkgs = pkgs or packages()
-    prune_bases(issue, pkgs)
     state["promote"], state["stale"] = promote_rows(pkgs, state["promote"])
     if state["stale"]:
         print(f"::warning::Launchpad gave no state for {len(state['stale'])} packages. "

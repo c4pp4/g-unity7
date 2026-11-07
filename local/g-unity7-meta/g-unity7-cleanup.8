@@ -64,12 +64,14 @@ for
 are removed directly if no other package is removed with them.
 .PP
 The Ubuntu Firefox and Thunderbird packages install snaps. The G Unity⁷ PPA
-provides them as regular packages with Unity's global menu. Their version is
-lower, so
+provides them as regular packages with Unity's global menu, built from the
+Debian sources. Their version is lower, so
 .B g-unity7-apt-pin
 keeps the Ubuntu packages until the script installs the G Unity⁷ packages. If
 a snap is installed, the script asks whether to install the G Unity⁷ package
-instead. It then copies the snap profile
+instead, together with its language packages for the locales of the system
+.RB ( "locale -a" ).
+It then copies the snap profile
 .RI ( ~/snap/firefox/common/.mozilla/firefox ,
 .IR ~/snap/thunderbird/common/.thunderbird )
 for every user who does not have a profile yet
@@ -78,7 +80,9 @@ for every user who does not have a profile yet
 makes the snap's default profile the default profile of the new package, and
 removes the snap. snapd saves a snapshot of the snap data. A running snap is
 not removed. Close the application and run the script again. Run it again
-also if removing the snap fails.
+also if removing the snap fails. A G Unity⁷ package older than the snap is
+not offered, because Firefox and Thunderbird do not open a profile that a newer
+version used. Run the script again after the package is updated.
 .PP
 The script shows all changes and asks for confirmation. To keep a package,
 mark it as manually installed first:

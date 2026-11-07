@@ -17,6 +17,7 @@ while [[ $# -gt 0 ]]; do
 		--mode) mode=$2; shift 2 ;;
 		--out) out=$2; shift 2 ;;
 		--package) pkg=$2; shift 2 ;;
+		--overlay-pkg) overlay_pkg=$2; shift 2 ;;
 		--overlay-commit) overlay_commit=$2; shift 2 ;;
 		--) shift; break ;;
 		*) die "Unknown option: $1" ;;
@@ -24,6 +25,8 @@ while [[ $# -gt 0 ]]; do
 done
 patch_names=( "$@" )
 load_package "${pkg}"
+## The ehooks directory that build-source.sh picked for the base version.
+[[ -n ${overlay_pkg:-} ]] && OVERLAY_PKG=${overlay_pkg}
 
 ## Compare our source with the Ubuntu source with its own patches applied.
 ##  An own package (no --orig) is compared with nothing, including debian/.
@@ -50,8 +53,8 @@ description() {
 	echo "# ${SOURCE_NAME} $(dpkg-parsechangelog -l "${checked}"/debian/changelog -S Version)"
 	echo
 	if [[ -n ${orig_dsc} ]]; then
-		if [[ -n ${SOURCE_ARCHIVE:-} ]]; then
-			echo "- Source: \`${orig_dsc##*/}\` from ppa:${SOURCE_ARCHIVE}"
+		if [[ -n ${DEBIAN_SUITE:-} ]]; then
+			echo "- Debian source: \`${orig_dsc##*/}\` (${DEBIAN_SUITE})"
 		else
 			echo "- Ubuntu source: \`${orig_dsc##*/}\`"
 		fi

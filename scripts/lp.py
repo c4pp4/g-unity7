@@ -1,5 +1,6 @@
 #!/usr/bin/python3 -I
-"""Read-only Launchpad queries for the G Unity⁷ scripts (anonymous web API)."""
+"""Read-only Launchpad and Debian archive queries for the G Unity⁷ scripts
+(anonymous web APIs)."""
 
 import argparse
 import datetime
@@ -113,7 +114,7 @@ def parse_changelog(text):
 
 
 def cmd_ubuntu_version(args):
-    version, pocket = ubuntu_version(args.source, args.series, args.archive)
+    version, pocket = ubuntu_version(args.source, args.series)
     if not version:
         sys.exit(f"lp.py: {args.source} is not published in {args.series}")
     print(version, pocket)
@@ -145,20 +146,42 @@ def ppa_latest(source, ppa, series):
     return result
 
 
-def ubuntu_version(source, series, archive=None):
-    """Return (version, pocket) of the latest version in an Ubuntu series, or
-    in the given PPA archive (owner/name, such as mozillateam/ppa)."""
-    if archive:
-        owner, name = archive.split("/")
-        url = f"{API}/~{owner}/+archive/ubuntu/{name}"
-    else:
-        url = f"{API}/ubuntu/+archive/primary"
+def ubuntu_version(source, series):
+    """Return (version, pocket) of the latest version in an Ubuntu series."""
+    url = f"{API}/ubuntu/+archive/primary"
     entries = [e for e in published_sources(url, source, series, ["Published"])
                if e["pocket"] in UBUNTU_POCKETS]
     if not entries:
         return None, None
     entry = newest(entries)
     return entry["source_package_version"], entry["pocket"]
+
+
+## Debian archive (ftp-master's madison), for ports with DEBIAN_SUITE.
+MADISON = "https://api.ftp-master.debian.org/madison"
+DEBIAN_SUITES = {"sid": "unstable", "unstable": "unstable", "experimental": "experimental"}
+
+
+def debian_version(source, suites):
+    """Return (version, suite) of the newest version of a source in the given
+    Debian suites (sid, experimental), or (None, None)."""
+    data = get(MADISON, {"package": source, "s": ",".join(DEBIAN_SUITES[s] for s in suites),
+                         "a": "source", "f": "json"})
+    found = []
+    for item in data:
+        for suite, versions in item.get(source, {}).items():
+            found += [{"source_package_version": v, "suite": suite} for v in versions]
+    if not found:
+        return None, None
+    entry = newest(found)
+    return entry["source_package_version"], entry["suite"]
+
+
+def cmd_debian_version(args):
+    version, suite = debian_version(args.source, args.suite.split())
+    if not version:
+        sys.exit(f"lp.py: {args.source} is not in Debian {args.suite}")
+    print(version, suite)
 
 
 def cmd_ppa_latest(args):
@@ -219,8 +242,12 @@ def main():
     p = sub.add_parser("ubuntu-version", help="latest version in a stable Ubuntu series")
     p.add_argument("source")
     p.add_argument("--series", required=True)
-    p.add_argument("--archive", help="a PPA (owner/name) instead of the Ubuntu archive")
     p.set_defaults(func=cmd_ubuntu_version)
+
+    p = sub.add_parser("debian-version", help="newest version in Debian suites")
+    p.add_argument("source")
+    p.add_argument("--suite", required=True, help="sid, experimental, or both separated by a space")
+    p.set_defaults(func=cmd_debian_version)
 
     p = sub.add_parser("ppa-latest", help="latest version in a PPA with its fingerprint")
     p.add_argument("source")

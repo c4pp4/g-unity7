@@ -1,4 +1,6 @@
 ca-certificates
+debian-archive-keyring
+debian-keyring
 devscripts
 diffstat
 dpkg-dev

@@ -380,11 +380,14 @@ for group in "${groups[@]}"; do
 done
 
 ## Firefox and Thunderbird: the Ubuntu packages install snaps, while the PPA
-##  provides regular packages with Unity's global menu. Their version is lower,
-##  so g-unity7-apt-pin keeps the Ubuntu packages until this script installs the
-##  PPA package, which then links its own pin. When the user chooses the PPA
-##  package, the snap profiles are copied for every user who has no profile
-##  yet, and the snap is removed.
+##  provides regular packages with Unity's global menu, built from the Debian
+##  sources. Their version is lower, so g-unity7-apt-pin keeps the Ubuntu
+##  packages until this script installs the PPA package, which then links its
+##  own pin. When the user chooses the PPA package, its language packages for
+##  the system's locales are installed, the snap profiles are copied for every
+##  user who has no profile yet, and the snap is removed. A PPA package older
+##  than the snap is not offered: Firefox and Thunderbird do not open a profile
+##  that a newer version used.
 moz_install=() moz_snap_remove=() moz_copy=() moz_lines=()
 
 ## Print the version of $1 in the G Unity⁷ PPA or the staging PPA, if any.
@@ -406,6 +409,26 @@ profiles_to_copy() {
 		[[ ${uid} -ge 1000 && ${uid} -lt 60000 && -d ${home} ]] || continue
 		[[ -d ${home}/$1 && ! -e ${home}/$2 ]] && echo "${user}:${home}"
 	done < <(getent passwd)
+	return 0
+}
+
+## Print the language packages of PPA package $1 (version $2) that are not
+##  installed, for the locales of the system (locale -a), as language-selector
+##  does for LibreOffice: <package>-l10n-<language>-<country> if the PPA has it,
+##  or else <package>-l10n-<language>.
+moz_l10n() {
+	local pkg=$1 version=$2 locale name
+	local -A seen=()
+	while read -r locale; do
+		[[ ${locale} =~ ^([a-z]{2,3})_([A-Z]{2}) ]] || continue
+		for name in "${pkg}-l10n-${BASH_REMATCH[1]}-${BASH_REMATCH[2],,}" "${pkg}-l10n-${BASH_REMATCH[1]}"; do
+			[[ -n ${seen[${name}]:-} ]] && break
+			[[ $(ppa_version "${name}") == "${version}" ]] || continue
+			seen[${name}]=1
+			installed "${name}" || echo "${name}"
+			break
+		done
+	done < <(locale -a 2>/dev/null)
 	return 0
 }
 
@@ -441,7 +464,8 @@ moz_claim_profile() {
 ##  profiles.ini. Leave it empty if it is not known.
 moz_choice() {
 	local pkg=$1 snap_profile=$2 deb_profile=$3 app=$4 hash=$5
-	local ppa status deb_installed= snap= users=() copy_text options=() actions=() default=1 i answer u
+	local ppa status deb_installed= snap= snap_version upstream users=() copy_text options=() actions=()
+	local default=1 i answer u name
 	ppa=$(ppa_version "${pkg}")
 	[[ -n ${ppa} ]] || return 0
 	status=$(dpkg-query -W -f='${db:Status-Status} ${Version}' "${pkg}" 2>/dev/null) || true
@@ -449,6 +473,15 @@ moz_choice() {
 	snap_installed "${pkg}" && snap=1
 	## Nothing to choose if the snap is not installed
 	[[ -n ${snap} ]] || return 0
+
+	## A profile that a newer version used does not open in an older one
+	snap_version=$(snap list "${pkg}" 2>/dev/null | awk 'NR == 2 { print $2 }')
+	upstream=${ppa#*:}
+	upstream=${upstream%-*}
+	if [[ -n ${snap_version} ]] && dpkg --compare-versions "${snap_version%-*}" gt "${upstream}"; then
+		moz_lines+=( "${app}: unchanged; the snap ${snap_version} is newer than the G Unity⁷ package ${ppa}, which could not open its profile. Run g-unity7-cleanup again after the package is updated." )
+		return 0
+	fi
 
 	mapfile -t users < <(profiles_to_copy "${snap_profile}" "${deb_profile}")
 	copy_text=
@@ -506,6 +539,10 @@ moz_choice() {
 			moz_lines+=( "${app}: install ${pkg} ${ppa} from G Unity⁷" )
 			;;
 	esac
+	while read -r name; do
+		moz_install+=( "${name}=${ppa}" )
+		moz_lines+=( "${app}: install ${name} ${ppa} from G Unity⁷" )
+	done < <(moz_l10n "${pkg}" "${ppa}")
 	## Do not remove a running snap: a copy of an open profile may be inconsistent
 	if pgrep -f "/snap/${pkg}/" >/dev/null; then
 		moz_lines+=( "${app}: the snap is running; close ${app} and run g-unity7-cleanup again to remove it" )

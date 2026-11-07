@@ -42,8 +42,8 @@ grep -Fqsx "gentoo-unity7" "${OVERLAY_DIR}"/profiles/repo_name \
 
 load_package "${pkg}"
 
-## For debian_edit and src_edit, as in the ebuild.
-FILESDIR="${OVERLAY_DIR}/${OVERLAY_PKG:-}/files"
+## For debian_edit and src_edit, as in the ebuild (FILESDIR is set once the
+##  base version has picked the ehooks directory).
 BRANDING_DIR="${REPO_ROOT}/branding"
 
 export QUILT_PATCHES=debian/patches
@@ -57,9 +57,7 @@ work="${base_dir}/work"
 rm -rf "${base_dir}"
 mkdir -p "${work}" "${base_dir}"/out "${base_dir}"/review
 
-overlay_commit=$(git_commit "${OVERLAY_DIR}" ${OVERLAY_PKG:+"${OVERLAY_PKG}"})
 repo_commit=$(git_commit "${REPO_ROOT}" "${PKG_DIR#"${REPO_ROOT}"/}")
-[[ -n ${OVERLAY_PKG:-} && ${overlay_commit} == *-dirty ]] && ewarn "${OVERLAY_PKG} has uncommitted changes in the overlay."
 [[ -n ${OVERLAY_REF[${series}]:-} ]] && einfo "Series ${series} is built from overlay ${OVERLAY_REF[${series}]}."
 tree="${work}/tree"
 
@@ -69,6 +67,42 @@ tree="${work}/tree"
 ##  out/ and review/ stay.
 remove_trees() {
 	rm -rf "${tree}" "${work}"/check "${work}"/orig-applied
+}
+
+## Download source $1 version $2 with apt from the archive $3 (signed with
+##  keyring $4) and its suites and components (the rest). The archive key signs
+##  InRelease, which has the checksums of Sources, which has those of the .dsc
+##  and its tarballs, so apt fails on any file that the archive did not publish.
+apt_download() {
+	local source=$1 version=$2 url=$3 keyring=$4 apt_dir="${work}/apt" suite
+	local -a apt_opts suites=( "${@:5}" )
+	mkdir -p "${apt_dir}"/lists/partial "${apt_dir}"/cache/archives/partial
+	for suite in "${suites[@]}"; do
+		echo "deb-src [signed-by=${keyring}] ${url} ${suite}"
+	done > "${apt_dir}"/sources.list
+	apt_opts=(
+		-o Dir::Etc::SourceList="${apt_dir}"/sources.list -o Dir::Etc::SourceParts=/dev/null
+		-o Dir::State::Lists="${apt_dir}"/lists -o Dir::Cache="${apt_dir}"/cache
+		-o Debug::NoLocking=true -o APT::Sandbox::User=root
+	)
+	apt-get "${apt_opts[@]}" -qq update >&2 || die "apt-get update of ${url} failed."
+	(cd "${work}" && apt-get "${apt_opts[@]}" -qq source --download-only "${source}=${version}" >&2) \
+		|| die "Download of ${source} ${version} from ${url} failed."
+	rm -rf "${apt_dir}"
+	dsc_sha256=$(sha256sum "${work}/${source}_${version#*:}.dsc" | cut -d" " -f1)
+}
+
+## Check the signature of a Debian .dsc against the keys of the Debian
+##  developers and keep its SHA256 and signer for the changelog.
+debian_verify() {
+	local dsc=$1 home
+	home=$(mktemp -d)
+	dsc_signer=$(gpg --homedir "${home}" --batch --no-default-keyring \
+		--keyring /usr/share/keyrings/debian-keyring.gpg --status-fd 1 --verify "${dsc}" 2>/dev/null \
+		| awk '$2 == "VALIDSIG" { print $3 }') || true
+	rm -rf "${home}"
+	[[ -n ${dsc_signer} ]] || die "${dsc##*/} has no valid signature of a Debian developer."
+	einfo "${dsc##*/} is signed by ${dsc_signer} (Debian keyring)."
 }
 
 if [[ -n ${LOCAL:-} ]]; then
@@ -81,26 +115,49 @@ if [[ -n ${LOCAL:-} ]]; then
 	orig_dsc=
 	einfo "${SOURCE_NAME} ${ubuntu_version} (local/${pkg})"
 else
-	## 1. Latest Ubuntu version.
+	## 1. Latest Ubuntu version, the base version (ubuntu_version).
 	## UBUNTU_SERIES: take a source that the series no longer has from an older one.
-	## SOURCE_ARCHIVE: take the source from a PPA (owner/name) instead of the Ubuntu archive.
-	read -r ubuntu_version ubuntu_pocket < <(python3 -I "${REPO_ROOT}"/scripts/lp.py \
-		ubuntu-version "${UBUNTU_SRC}" --series "${UBUNTU_SERIES:-${series}}" \
-		${SOURCE_ARCHIVE:+--archive "${SOURCE_ARCHIVE}"})
-	[[ -n ${ubuntu_version} && ${ubuntu_version} != None ]] \
-		|| die "${UBUNTU_SRC} is not published in ${SOURCE_ARCHIVE:+ppa:${SOURCE_ARCHIVE} }${UBUNTU_SERIES:-${series}}."
-	einfo "${UBUNTU_SRC} ${ubuntu_version} (${SOURCE_ARCHIVE:+ppa:${SOURCE_ARCHIVE} }${UBUNTU_SERIES:-${series}} ${ubuntu_pocket})"
+	## DEBIAN_SUITE: take the source from Debian (sid, experimental) instead.
+	if [[ -n ${DEBIAN_SUITE:-} ]]; then
+		read -r ubuntu_version debian_suite < <(python3 -I "${REPO_ROOT}"/scripts/lp.py \
+			debian-version "${UBUNTU_SRC}" --suite "${DEBIAN_SUITE}")
+		[[ -n ${ubuntu_version} ]] || die "${UBUNTU_SRC} is not in Debian ${DEBIAN_SUITE}."
+		einfo "${UBUNTU_SRC} ${ubuntu_version} (Debian ${debian_suite})"
+	else
+		read -r ubuntu_version ubuntu_pocket < <(python3 -I "${REPO_ROOT}"/scripts/lp.py \
+			ubuntu-version "${UBUNTU_SRC}" --series "${UBUNTU_SERIES:-${series}}")
+		[[ -n ${ubuntu_version} && ${ubuntu_version} != None ]] \
+			|| die "${UBUNTU_SRC} is not published in ${UBUNTU_SERIES:-${series}}."
+		einfo "${UBUNTU_SRC} ${ubuntu_version} (${UBUNTU_SERIES:-${series}} ${ubuntu_pocket})"
+	fi
 
 	## 2. Download and unpack without patches.
-	if [[ -n ${SOURCE_ARCHIVE:-} ]]; then
-		(cd "${work}" && pull-ppa-source --ppa "${SOURCE_ARCHIVE}" --download-only \
-			"${UBUNTU_SRC}" "${ubuntu_version}" >&2) \
-			|| die "Download of ${UBUNTU_SRC} ${ubuntu_version} from ppa:${SOURCE_ARCHIVE} failed."
-	else
+	if [[ -n ${DEBIAN_SUITE:-} ]]; then
+		debian_suites=()
+		for suite in ${DEBIAN_SUITE}; do
+			debian_suites+=( "${suite} main" )
+		done
+		apt_download "${UBUNTU_SRC}" "${ubuntu_version}" https://deb.debian.org/debian \
+			/usr/share/keyrings/debian-archive-keyring.gpg "${debian_suites[@]}"
+	elif [[ -n ${UBUNTU_SERIES:-} ]]; then
+		## Older series are signed only with the 2012 archive keys, whose
+		##  bindings use SHA-1, which apt rejects since 2026. Their sources do not
+		##  change, so take them from Launchpad over HTTPS.
+		ubuntu_suite="${UBUNTU_SERIES} (Launchpad)"
 		(cd "${work}" && pull-lp-source --download-only "${UBUNTU_SRC}" "${ubuntu_version}" >&2) \
 			|| die "Download of ${UBUNTU_SRC} ${ubuntu_version} failed."
+		dsc_sha256=$(sha256sum "${work}/${UBUNTU_SRC}_${ubuntu_version#*:}.dsc" | cut -d" " -f1)
+	else
+		ubuntu_suite=${series}
+		case ${ubuntu_pocket} in
+			Updates) ubuntu_suite+=-updates ;;
+			Security) ubuntu_suite+=-security ;;
+		esac
+		apt_download "${UBUNTU_SRC}" "${ubuntu_version}" http://archive.ubuntu.com/ubuntu \
+			/usr/share/keyrings/ubuntu-archive-keyring.gpg "${ubuntu_suite} main restricted universe multiverse"
 	fi
 	orig_dsc="${work}/${UBUNTU_SRC}_${ubuntu_version#*:}.dsc"
+	[[ -n ${DEBIAN_SUITE:-} ]] && debian_verify "${orig_dsc}"
 	dpkg-source --no-check -x --skip-patches "${orig_dsc}" "${tree}" >/dev/null \
 		|| die "Unpacking ${orig_dsc##*/} failed."
 	cp -a "${tree}"/debian "${work}"/debian.orig
@@ -135,6 +192,15 @@ if [[ -z ${PATCH_MODE:-} ]]; then
 	esac
 fi
 einfo "Source format ${format}, patch mode ${PATCH_MODE}."
+
+## The ehooks directory for this base version, as the overlay picks it
+##  (firefox-160:rapid for Firefox 160, firefox:rapid otherwise).
+resolve_overlay_pkg "${OVERLAY_DIR}" "${ubuntu_version}"
+[[ ${OVERLAY_PKG:-} != "${OVERLAY_PKG_DECLARED:-${OVERLAY_PKG:-}}" ]] \
+	&& einfo "Overlay ${OVERLAY_PKG} for ${ubuntu_version} (instead of ${OVERLAY_PKG_DECLARED})."
+FILESDIR="${OVERLAY_DIR}/${OVERLAY_PKG:-}/files"
+overlay_commit=$(git_commit "${OVERLAY_DIR}" ${OVERLAY_PKG:+"${OVERLAY_PKG}"})
+[[ -n ${OVERLAY_PKG:-} && ${overlay_commit} == *-dirty ]] && ewarn "${OVERLAY_PKG} has uncommitted changes in the overlay."
 
 cd "${tree}"
 
@@ -323,16 +389,24 @@ entry="${work}/changelog.entry"
 	echo "${SOURCE_NAME} (${version}) ${series}; urgency=medium"
 	echo
 	if [[ -n ${OVERLAY_PKG:-} ]]; then
-		echo "  * G Unity⁷ patches from c4pp4/gentoo-unity7@${overlay_commit:0:12}."
+		echo "  * G Unity⁷ patches from c4pp4/gentoo-unity7@${overlay_commit:0:12},"
+		echo "    built from c4pp4/g-unity7@${repo_commit:0:12}."
 	else
 		echo "  * G Unity⁷ package from c4pp4/g-unity7@${repo_commit:0:12}."
 	fi
-	## A PPA source: show that only our changes were added. Launchpad cannot
-	##  diff Firefox and Thunderbird, not even in the Mozilla Team PPA.
-	if [[ -n ${SOURCE_ARCHIVE:-} ]]; then
-		echo "  * Based on ${ubuntu_version} from ppa:${SOURCE_ARCHIVE},"
-		echo "    with only the G Unity⁷ patches below and the debian/ changes from"
+	## A Debian source: show where it comes from and that only our changes were
+	##  added. Launchpad cannot diff Firefox and Thunderbird.
+	if [[ -n ${DEBIAN_SUITE:-} ]]; then
+		echo "  * Based on ${ubuntu_version} from Debian ${debian_suite}, with only the"
+		echo "    G Unity⁷ patches below and the debian/ changes from"
 		echo "    packages/${pkg}/package.sh."
+		echo "  * ${orig_dsc##*/} signed by"
+		echo "    ${dsc_signer},"
+		echo "    SHA256 ${dsc_sha256}."
+	elif [[ -z ${LOCAL:-} ]]; then
+		echo "  * Based on ${ubuntu_version} from Ubuntu ${ubuntu_suite}:"
+		echo "    ${orig_dsc##*/}"
+		echo "    SHA256 ${dsc_sha256}."
 	fi
 	if [[ ${#changes_since[@]} -gt 0 ]]; then
 		echo "  * Changes since ${main_version} (ppa:${PPA_MAIN}):"
@@ -353,16 +427,12 @@ mv "${work}"/changelog.new debian/changelog
 dpkg-parsechangelog -S Version >/dev/null || die "The generated changelog is not valid."
 einfo "Version ${version}"
 
-## 9. Source package. The orig tarball is left out of the upload if Launchpad
-##  already has it in the staging PPA: either a version with the same upstream
-##  version is there, or upload.sh copies the base version of a PPA source
-##  (SOURCE_ARCHIVE) there before the upload. Firefox's orig tarball is 785 MiB.
+## 9. Source package. The orig tarballs are left out of the upload if the
+##  staging PPA already has a version with the same upstream version. Those of
+##  Firefox and Thunderbird have more than 800 MB.
 orig_opt=-sa
 upstream_of() { local v=${1#*:}; echo "${v%-*}"; }
-if [[ -n ${SOURCE_ARCHIVE:-} ]]; then
-	orig_opt=-sd
-	einfo "The orig tarball comes with the copy of ${UBUNTU_SRC} ${ubuntu_version} from ppa:${SOURCE_ARCHIVE}."
-elif [[ -n ${staging_version} && $(upstream_of "${staging_version}") == "$(upstream_of "${version}")" ]] \
+if [[ -n ${staging_version} && $(upstream_of "${staging_version}") == "$(upstream_of "${version}")" ]] \
 	&& compgen -G "${work}/${SOURCE_NAME}_$(upstream_of "${version}").orig*" >/dev/null; then
 	orig_opt=-sd
 	einfo "The orig tarball of $(upstream_of "${version}") is already in ${PPA_STAGING} and is not uploaded again."
@@ -386,7 +456,7 @@ einfo "Patches apply without fuzz."
 "${REPO_ROOT}"/scripts/make-review.sh \
 	--orig "${orig_dsc}" --new "${dsc}" --checked "${check}" --work "${work}" \
 	--entry "${entry}" --mode "${PATCH_MODE}" --out "${base_dir}"/review \
-	--package "${pkg}" --overlay-commit "${overlay_commit}" -- "${patch_names[@]}"
+	--package "${pkg}" --overlay-pkg "${OVERLAY_PKG:-}" --overlay-commit "${overlay_commit}" -- "${patch_names[@]}"
 
 printf '%s\n' "${patch_lines[@]}" > "${base_dir}"/patches.txt
 cat > "${base_dir}"/result.env <<-EOF
@@ -401,8 +471,6 @@ cat > "${base_dir}"/result.env <<-EOF
 	CHANGES=out/${changes##*/}
 	STAGING_VERSION=${staging_version}
 	MAIN_VERSION=${main_version}
-	SOURCE_ARCHIVE=${SOURCE_ARCHIVE:-}
-	BASE_VERSION=${ubuntu_version}
 EOF
 remove_trees
 einfo "Done: ${base_dir}/out/${changes##*/}$([[ -n ${needs_review} ]] && echo ", review needed")"

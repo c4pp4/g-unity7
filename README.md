@@ -50,8 +50,11 @@ GNOME, are not removed. `g-unity7-cleanup` shows all changes and asks before
 making them. `g-unity7-cleanup --dry-run` only shows them.
 
 Ubuntu installs Firefox and Thunderbird as snaps. `g-unity7-cleanup` offers the
-PPA packages with Unity's global menu instead. It copies the snap profiles for
-users who have no profile yet and removes the snaps. If you keep the snaps,
+PPA packages with Unity's global menu instead, built from the Debian sources. It
+copies the snap profiles for users who have no profile yet, installs the
+language packages of the system's languages and removes the snaps. It does not
+offer a package older than the snap, because Firefox and Thunderbird do not
+open a profile that a newer version used. If you keep the snaps,
 `g-unity7-apt-pin` keeps them too.
 
 ## Layout
@@ -103,7 +106,14 @@ src_edit() {
 ```
 
 The functions can use `FILESDIR` (the overlay's `files/` directory) and
-`BRANDING_DIR`. Optional settings:
+`BRANDING_DIR`.
+
+For `ehooks/<cat>/<pkg>[:<slot>]`, the build picks the ehooks directory for the
+base version the way the overlay does: `firefox-160:rapid` or `firefox-160`
+for Firefox 160 if it exists, `firefox:rapid` otherwise. The versioned
+directories are part of the input hash.
+
+Optional settings:
 
 - `PATCH_MODE=quilt|direct` overrides the mode chosen from
   `debian/source/format`.
@@ -117,13 +127,16 @@ The functions can use `FILESDIR` (the overlay's `files/` directory) and
   apply to a new version yet.
 - `UBUNTU_SERIES` takes the source from an older Ubuntu release when Ubuntu
   has removed it.
-- `SOURCE_ARCHIVE` takes the source from another PPA (`owner/name`) instead of
-  the Ubuntu archive, such as Firefox from `mozillateam/ppa`. Before the
-  first upload of a new base version, `upload.sh` copies it with its binaries
-  to the staging PPA, so the port is uploaded without the orig tarball. Once
-  the port is published, the hourly issue update deletes the copy. The port
-  keeps the orig tarball, and the copy's binaries for other architectures would
-  otherwise stay forever.
+- `DEBIAN_SUITE` takes the source from Debian (`sid`, `experimental`, or both
+  separated by a space) instead of the Ubuntu archive, such as Firefox from sid
+  and Thunderbird from experimental. The `.dsc` must also have a valid
+  signature of a Debian developer.
+
+apt downloads the sources from the Ubuntu or Debian archive with its archive
+key, which signs the checksums of every file. The older series of
+`UBUNTU_SERIES` are signed only with keys that apt no longer accepts, so their
+sources come from Launchpad over HTTPS. The changelog records where the source
+comes from, the SHA256 of its `.dsc` and, for Debian, the signer.
 
 Own packages can set `local_prepare()` to create their source from overlay
 files.

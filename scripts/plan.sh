@@ -58,9 +58,10 @@ for pkg in "${packages[@]}"; do
 	fi
 	if [[ -n ${LOCAL:-} ]]; then
 		base=$(sed -n '1s/^[^ ]* (\([^)]*\)).*/\1/p' "${PKG_DIR}"/debian/changelog)
+	elif [[ -n ${DEBIAN_SUITE:-} ]]; then
+		read -r base _ < <(python3 -I "${REPO_ROOT}"/scripts/lp.py debian-version "${UBUNTU_SRC}" --suite "${DEBIAN_SUITE}")
 	else
-		read -r base _ < <(python3 -I "${REPO_ROOT}"/scripts/lp.py ubuntu-version "${UBUNTU_SRC}" --series "${UBUNTU_SERIES:-${series}}" \
-			${SOURCE_ARCHIVE:+--archive "${SOURCE_ARCHIVE}"})
+		read -r base _ < <(python3 -I "${REPO_ROOT}"/scripts/lp.py ubuntu-version "${UBUNTU_SRC}" --series "${UBUNTU_SERIES:-${series}}")
 	fi
 	input=$(input_hash "${OVERLAY_DIR}")
 	staging=$(python3 -I "${REPO_ROOT}"/scripts/lp.py ppa-latest "${SOURCE_NAME}" \
@@ -86,7 +87,7 @@ for pkg in "${packages[@]}"; do
 		einfo "${pkg}: up to date (${staging_version}, the same fingerprint with this input)"
 		continue
 	fi
-	einfo "${pkg}: build (Ubuntu ${base}, staging ${staging_version:-none})"
+	einfo "${pkg}: build (base ${base}, staging ${staging_version:-none})"
 	selected+=( "${pkg}" )
 done
 
