@@ -33,6 +33,20 @@ debian_edit() {
 	grep -qx "usr/share/g-unity7-apt-pin/thunderbird.pref etc/apt/preferences.d/g-unity7-thunderbird.pref" \
 		debian/thunderbird.links.in || return 1
 
+	# Build with rustc 1.95 of Ubuntu 26.10. The Mozilla Team PPA builds the ESR #
+	#  only in noble with rustc 1.85 and copies the binaries to the newer series. #
+	#  Debian unstable built Thunderbird 140.14 with rustc 1.95 and clang 21 #
+	sed -i -e "s/^RUSTC_VERSIONS = 1\.85 /RUSTC_VERSIONS = 1.95 1.85 /" debian/build/rules.mk || return 1
+	grep -qx "RUSTC_VERSIONS = 1.95 1.85 1.84 1.82" debian/build/rules.mk || return 1
+	for f in debian/control.in debian/control; do
+		sed -i \
+			-e "s/^\(\t\)cargo-1\.85 | /\1cargo-1.95 | cargo-1.85 | /" \
+			-e "s/^\(\t\)rustc-1\.85 | /\1rustc-1.95 | rustc-1.85 | /" \
+			"${f}" || return 1
+		grep -qx "	cargo-1.95 | cargo-1.85 | cargo-1.84 | cargo-1.82," "${f}" || return 1
+		grep -qx "	rustc-1.95 | rustc-1.85 | rustc-1.84 | rustc-1.82," "${f}" || return 1
+	done
+
 	for f in debian/control.in debian/control; do
 		# Require g-unity7-apt-pin with the pin file, and GTK with #
 		#  populate-firefox-thunderbird-global-submenus.patch. Without it, the #
