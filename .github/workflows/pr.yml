@@ -24,7 +24,16 @@ jobs:
       - id: list
         run: |
           source scripts/lib.sh
-          echo "packages=$(list_packages | python3 -c 'import json, sys; print(json.dumps(sys.stdin.read().split()))')" >> "$GITHUB_OUTPUT"
+          # Packages with HOLD in package.sh are not checked
+          for pkg in $(list_packages); do
+            load_package "$pkg"
+            if [ -n "${HOLD:-}" ]; then
+              echo "::notice::$pkg is held: $HOLD" >&2
+              continue
+            fi
+            echo "$pkg"
+          done > packages.txt
+          echo "packages=$(python3 -c 'import json, sys; print(json.dumps(sys.stdin.read().split()))' < packages.txt)" >> "$GITHUB_OUTPUT"
 
   check:
     needs: list
