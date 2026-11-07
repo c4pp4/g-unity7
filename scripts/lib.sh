@@ -115,7 +115,7 @@ versioned_ehooks_dirs() {
 ##  one stays in OVERLAY_PKG_DECLARED for the input hash.
 resolve_overlay_pkg() {
 	local overlay=$1 version=${2#*:} name slot candidate
-	OVERLAY_PKG_DECLARED=${OVERLAY_PKG_DECLARED:-${OVERLAY_PKG}}
+	OVERLAY_PKG_DECLARED=${OVERLAY_PKG_DECLARED:-${OVERLAY_PKG:-}}
 	read -r name slot < <(ehooks_name_slot) || return 0
 	[[ ${version} =~ ^[0-9]+(\.[0-9]+)* ]] || return 0
 	version=${BASH_REMATCH[0]}
