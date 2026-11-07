@@ -123,7 +123,13 @@ jobs:
             pkg=${dir#artifacts/source-}
             mkdir -p build/"$SERIES"
             mv "$dir" build/"$SERIES"/"$pkg"
+            NEEDS_REVIEW=
             source build/"$SERIES"/"$pkg"/result.env
+            # Remember an up-to-date result, so that plan.sh does not build it again
+            if [ "$STATUS" = uptodate ]; then
+              review+=( build/"$SERIES"/"$pkg" )
+              continue
+            fi
             [ "$STATUS" = built ] || continue
             if [ -n "$NEEDS_REVIEW" ]; then
               review+=( build/"$SERIES"/"$pkg" )

@@ -2,7 +2,8 @@
 ## Print the packages to build as a JSON list: those whose Ubuntu version or
 ##  input hash differs from their latest version in the staging PPA. A package
 ##  that waits for review or was rejected with the same Ubuntu version and
-##  input hash is not built again.
+##  input hash is not built again, nor one whose last build found the staging
+##  version up to date with the same input hash.
 ##
 ## Usage: plan.sh [--series <series>] [--force] [--state <file>] [<package>...]
 ##
@@ -72,6 +73,13 @@ for pkg in "${packages[@]}"; do
 			continue 2
 		fi
 	done
+	## The last build found the staging version up to date with this input:
+	##  the same fingerprint, only the input hash changed (approve.py add-review).
+	if [[ -n ${staging_version} && $(json_get "${state_json}" uptodate "${pkg}" version) == "${staging_version}" \
+		&& $(json_get "${state_json}" uptodate "${pkg}" input) == "${input}" ]]; then
+		einfo "${pkg}: up to date (${staging_version}, the same fingerprint with this input)"
+		continue
+	fi
 	einfo "${pkg}: build (Ubuntu ${base}, staging ${staging_version:-none})"
 	selected+=( "${pkg}" )
 done

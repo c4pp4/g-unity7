@@ -96,7 +96,7 @@ def load_state(issue):
         match = STATE_RE.search(issue["body"])
         if match:
             state = json.loads(match.group(1))
-    for key in ("review", "rejected", "promote", "seen"):
+    for key in ("review", "rejected", "uptodate", "promote", "seen"):
         state.setdefault(key, {})
     state.setdefault("stale", [])
     return state
@@ -354,12 +354,23 @@ def read_result(path):
 
 
 def cmd_add_review(args):
-    """Add the built versions that need review (build directories) to the issue."""
+    """Add the built versions that need review (build directories) to the issue.
+    A build that found the staging version up to date (the same fingerprint, but
+    another input hash, such as after a comment change in package.sh) is only
+    remembered, so that plan.sh does not build it again every day."""
     issue = find_issue()
     state = load_state(issue)
     for directory in args.dirs:
         name = os.path.basename(directory.rstrip("/"))
         result = read_result(os.path.join(directory, "result.env"))
+        if result.get("STATUS") == "uptodate":
+            state["uptodate"][name] = {
+                "version": result["VERSION"],
+                "base": base_of(result["VERSION"]),
+                "input": result["INPUT"],
+            }
+            continue
+        state["uptodate"].pop(name, None)
         with open(os.path.join(directory, "patches.txt")) as f:
             new = dict(line.split(" ", 1) for line in f.read().split("\n") if line)
         staging = lp.ppa_latest(result["SOURCE"], CONFIG["staging"], CONFIG["series"])
@@ -556,7 +567,8 @@ def main():
     p = sub.add_parser("state", help="print the state JSON of the issue")
     p.set_defaults(func=cmd_state)
 
-    p = sub.add_parser("add-review", help="put built versions in the issue for review")
+    p = sub.add_parser("add-review", help="put built versions in the issue for review, "
+                                          "and remember the up-to-date ones")
     p.add_argument("--run-id", required=True)
     p.add_argument("--artifact-prefix", default="source-")
     p.add_argument("dirs", nargs="+", help="build directories (build/<series>/<package>)")
