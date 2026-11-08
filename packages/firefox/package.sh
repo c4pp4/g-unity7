@@ -5,8 +5,11 @@ UBUNTU_SRC="firefox"
 DEBIAN_SUITE="sid"
 GROUP="mozilla"
 
+# no-exceptions.patch is in patches/, from the Firefox snap: the libc++ of #
+#  Ubuntu for wasm32 breaks the RLBox sandboxes #
 PATCHES=(
 	unity-menubar.patch
+	no-exceptions.patch
 )
 
 debian_edit() {

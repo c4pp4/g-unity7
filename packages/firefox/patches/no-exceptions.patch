@@ -1,0 +1,30 @@
+From: Daniel Richard G. <skunk@iskunk.org>
+Subject: Fix WASI libc++ link errors
+
+Bug-Ubuntu: https://bugs.launchpad.net/bugs/2033572
+
+The libc++ of Ubuntu for wasm32 is built with C++ exceptions, but its
+libc++abi does not define them, so the RLBox sandboxes fail to link.
+
+From patches/no-exceptions.patch of the Firefox snap
+(https://github.com/canonical/firefox-snap, branch stable).
+
+G Unity⁷: also define __cxa_begin_catch, which the libc++ of LLVM 22 in
+Ubuntu 26.10 needs. Hunk offset refreshed for Firefox 159.
+---
+--- a/memory/mozalloc/mozalloc.cpp
++++ b/memory/mozalloc/mozalloc.cpp
+@@ -153,3 +153,13 @@
+   return 0;
+ #endif
+ }
++
++#if defined(__wasm32__)
++extern "C"
++{
++  void *__cxa_allocate_exception(size_t)    { abort(); }
++  void  __cxa_throw(void *, void *, void *) { abort(); }
++  void  __cxa_rethrow()                     { abort(); }
++  void *__cxa_begin_catch(void *)           { abort(); }
++}
++#endif

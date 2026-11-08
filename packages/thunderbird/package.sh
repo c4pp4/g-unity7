@@ -14,6 +14,15 @@ PATCHES=(
 debian_edit() {
 	local class
 
+	# Build with the NSS of the Thunderbird source, as the Firefox port does: #
+	#  Thunderbird needs a newer system NSS than Ubuntu has. debian/thunderbird.install #
+	#  installs the bundled libraries with usr/lib/thunderbird/lib* #
+	sed -i -e "s/^ac_add_options --with-system-nss$/ac_add_options --without-system-nss/" \
+		debian/mozconfig.default || return 1
+	grep -qx "ac_add_options --without-system-nss" debian/mozconfig.default || return 1
+	sed -i -e "/^ *libnss3-dev (>= 2:[0-9.]*~),$/d" debian/control || return 1
+	! grep -q "libnss3" debian/control || return 1
+
 	# Use the window manager's title bar instead of drawing the tabs in it, as #
 	#  the ehooks do in gentoo-prefs.js. vendor.js holds the package defaults, #
 	#  thunderbird.js in /etc/thunderbird/pref is left to the administrator #
