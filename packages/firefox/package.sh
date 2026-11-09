@@ -13,6 +13,12 @@ PATCHES=(
 )
 
 debian_edit() {
+	# Build without the -flto=auto that dpkg-buildflags of Ubuntu adds on amd64, #
+	#  as Debian does. With it, the link of libxul.so runs an LTO of all the C++ #
+	#  code and Launchpad kills the build for inactivity #
+	sed -i -e "1a export DEB_BUILD_MAINT_OPTIONS += optimize=-lto" debian/rules || return 1
+	grep -qx "export DEB_BUILD_MAINT_OPTIONS += optimize=-lto" debian/rules || return 1
+
 	# Build with the NSS of the Firefox source, as the Mozilla Team PPA and #
 	#  Debian for trixie do: Debian sid needs a newer system NSS than Ubuntu has #
 	sed -i -e "s/^SYSTEM_LIBS += nss$/# &/" debian/rules || return 1

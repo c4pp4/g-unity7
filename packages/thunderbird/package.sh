@@ -14,6 +14,12 @@ PATCHES=(
 debian_edit() {
 	local class
 
+	# Build without the -flto=auto that dpkg-buildflags of Ubuntu adds on amd64, #
+	#  as Debian does. With it, the link of libxul.so runs an LTO of all the C++ #
+	#  code and Launchpad kills the build for inactivity #
+	sed -i -e "1a export DEB_BUILD_MAINT_OPTIONS += optimize=-lto" debian/rules || return 1
+	grep -qx "export DEB_BUILD_MAINT_OPTIONS += optimize=-lto" debian/rules || return 1
+
 	# Build with the NSS of the Thunderbird source, as the Firefox port does: #
 	#  Thunderbird needs a newer system NSS than Ubuntu has. debian/thunderbird.install #
 	#  installs the bundled libraries with usr/lib/thunderbird/lib* #
