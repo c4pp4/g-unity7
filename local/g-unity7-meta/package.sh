@@ -9,5 +9,7 @@
 ##  in Recommends and Suggests also get Breaks (<< ...+gu7), because the apt 3
 ##  solver does not upgrade an installed package for a Recommends. It skips the
 ##  relation or picks another alternative instead (audacious for rhythmbox).
+##  system-config-printer-common gets Breaks too: Ubuntu installs it with
+##  gnome-control-center, and system-config-printer needs the same version.
 OVERLAY_PKG="unity-base/unity-meta"
 GROUP="desktop"
