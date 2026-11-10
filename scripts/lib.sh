@@ -146,8 +146,8 @@ input_hash() {
 		if [[ -n ${declared} && -d ${overlay}/${declared}/files ]]; then
 			(cd "${overlay}/${declared}"/files && find . -type f -print0 | sort -z | xargs -0 sha256sum)
 		fi
-		## The versioned ehooks directories that resolve_overlay_pkg may pick. No
-		##  port has one yet, so their input hashes stay the same.
+		## The versioned ehooks directories that resolve_overlay_pkg may pick. A new
+		##  or changed one changes the input hash, so the package is built again.
 		while read -r dir; do
 			echo "${dir}"
 			if [[ -d ${overlay}/${dir}/files ]]; then
