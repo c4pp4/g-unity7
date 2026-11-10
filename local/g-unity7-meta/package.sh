@@ -11,5 +11,7 @@
 ##  relation or picks another alternative instead (audacious for rhythmbox).
 ##  system-config-printer-common gets Breaks too: Ubuntu installs it with
 ##  gnome-control-center, and system-config-printer needs the same version.
+##  The overlay's gnuchess is left out. Ubuntu's gnome-chess depends on the
+##  hoichess engine, which is enough for playing against the computer.
 OVERLAY_PKG="unity-base/unity-meta"
 GROUP="desktop"
