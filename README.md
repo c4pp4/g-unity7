@@ -23,10 +23,13 @@ On Ubuntu 26.10 (Ubuntu Unity or any other flavor):
 ```
 sudo add-apt-repository ppa:c4pp4/g-unity7
 sudo apt install g-unity7-desktop
+sudo apt full-upgrade
 ```
 
 `g-unity7-desktop` installs `g-unity7-apt-pin`, which makes apt prefer the PPA
-packages to the Ubuntu ones.
+packages to the Ubuntu ones. `apt install` only upgrades the packages that
+`g-unity7-desktop` needs. `apt full-upgrade` upgrades the other installed
+packages that G Unity⁷ changes, such as Compiz and GTK 3.
 
 Then run:
 
