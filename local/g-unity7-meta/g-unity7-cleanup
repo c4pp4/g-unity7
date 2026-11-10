@@ -240,6 +240,10 @@ decided() {
 ##  (spared[]) are not marked, installed packages of the other alternatives are
 ##  removed (reason[]). With "change nothing", no package is marked or removed.
 declare -A spared=() reason=()
+## What the G Unity⁷ package adds to an alternative that Ubuntu also has, shown
+##  after its name in the choice. The Breaks of g-unity7-desktop keep the installed package at
+##  the G Unity⁷ version.
+declare -A adds=( [eog]="with Unity's global menu" )
 candidates_remove=() install=() unchanged=() asked=
 for group in "${groups[@]}"; do
 	read -ra names <<< "${group}"
@@ -267,6 +271,7 @@ for group in "${groups[@]}"; do
 	for name in "${names[@]}"; do
 		[[ ${name} == "${first_name}" || -z ${keep[${name}]:-} ]] || continue
 		mapfile -t missing < <(missing_of "${name}")
+		about="${name}${adds[${name}]:+ ${adds[${name}]}}"
 		if [[ " ${present[*]} " == *" ${name} "* ]]; then
 			if [[ ${name} == *+* ]]; then
 				## A set: install its missing packages too
@@ -274,7 +279,7 @@ for group in "${groups[@]}"; do
 				label="Keep $(and_list "${parts[@]}")"
 				[[ ${#missing[@]} -eq 0 ]] || label+=", and install $(and_list "${missing[@]}")"
 			else
-				label="Keep ${name}: $(summary "${name}")"
+				label="Keep ${about}: $(summary "${name}")"
 			fi
 			actions+=( "keep ${name}" )
 		else
@@ -282,7 +287,7 @@ for group in "${groups[@]}"; do
 			if [[ ${name} == *+* ]]; then
 				label="Install $(and_list "${missing[@]}")"
 			else
-				label="Install ${name}: $(summary "${name}")"
+				label="Install ${about}: $(summary "${name}")"
 			fi
 			actions+=( "install ${name}" )
 		fi
@@ -384,7 +389,7 @@ done
 ##  sources. Their version is lower, so g-unity7-apt-pin keeps the Ubuntu
 ##  packages until this script installs the PPA package, which then links its
 ##  own pin. When the user chooses the PPA package, its language packages for
-##  the system's locales are installed, the snap profiles are copied for every
+##  the languages in use are installed, the snap profiles are copied for every
 ##  user who has no profile yet, and the snap is removed. A PPA package older
 ##  than the snap is not offered: Firefox and Thunderbird do not open a profile
 ##  that a newer version used.
@@ -412,23 +417,39 @@ profiles_to_copy() {
 	return 0
 }
 
+## Print the languages in use: LANG and LANGUAGE in /etc/default/locale and the
+##  language that each user chose (AccountsService). Not locale -a: the Ubuntu
+##  installer keeps the language packs of the ISO's languages, which generate
+##  their locales.
+used_locales() {
+	local file
+	sed -n -e 's/^LANG=//p' -e 's/^LANGUAGE=//p' /etc/default/locale 2>/dev/null \
+		| tr -d '"' | tr ':' '\n'
+	for file in /var/lib/AccountsService/users/*; do
+		[[ -f ${file} ]] && sed -n 's/^Language=//p' "${file}"
+	done
+	return 0
+}
+
 ## Print the language packages of PPA package $1 (version $2) that are not
-##  installed, for the locales of the system (locale -a), as language-selector
-##  does for LibreOffice: <package>-l10n-<language>-<country> if the PPA has it,
-##  or else <package>-l10n-<language>.
+##  installed, for the languages in use: <package>-l10n-<language>-<country> if
+##  the PPA has it, or else <package>-l10n-<language>.
 moz_l10n() {
-	local pkg=$1 version=$2 locale name
+	local pkg=$1 version=$2 locale name names
 	local -A seen=()
 	while read -r locale; do
-		[[ ${locale} =~ ^([a-z]{2,3})_([A-Z]{2}) ]] || continue
-		for name in "${pkg}-l10n-${BASH_REMATCH[1]}-${BASH_REMATCH[2],,}" "${pkg}-l10n-${BASH_REMATCH[1]}"; do
+		[[ ${locale} =~ ^([a-z]{2,3})(_([A-Z]{2}))? ]] || continue
+		names=( "${pkg}-l10n-${BASH_REMATCH[1]}" )
+		[[ -z ${BASH_REMATCH[3]} ]] \
+			|| names=( "${pkg}-l10n-${BASH_REMATCH[1]}-${BASH_REMATCH[3],,}" "${names[@]}" )
+		for name in "${names[@]}"; do
 			[[ -n ${seen[${name}]:-} ]] && break
 			[[ $(ppa_version "${name}") == "${version}" ]] || continue
 			seen[${name}]=1
 			installed "${name}" || echo "${name}"
 			break
 		done
-	done < <(locale -a 2>/dev/null)
+	done < <(used_locales)
 	return 0
 }
 
@@ -669,8 +690,8 @@ declare -A removed_set=()
 for name in "${removed[@]}"; do
 	removed_set[${name}]=1
 done
-## Duplicates that are removed directly are not marked.
-for name in "${dup_remove[@]}"; do
+## Packages that are removed directly are not marked.
+for name in "${remove[@]}"; do
 	removed_set[${name}]=
 done
 marked=()

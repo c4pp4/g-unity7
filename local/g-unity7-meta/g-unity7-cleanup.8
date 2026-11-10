@@ -69,8 +69,13 @@ Debian sources. Their version is lower, so
 .B g-unity7-apt-pin
 keeps the Ubuntu packages until the script installs the G Unity⁷ packages. If
 a snap is installed, the script asks whether to install the G Unity⁷ package
-instead, together with its language packages for the locales of the system
-.RB ( "locale -a" ).
+instead, together with its language packages for the languages in use
+.RB ( LANG
+and
+.B LANGUAGE
+in
+.IR /etc/default/locale ,
+and the language that each user chose).
 It then copies the snap profile
 .RI ( ~/snap/firefox/common/.mozilla/firefox ,
 .IR ~/snap/thunderbird/common/.thunderbird )
