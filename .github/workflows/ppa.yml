@@ -51,7 +51,9 @@ jobs:
           FORCE: ${{ inputs.force && '--force' || '' }}
         run: |
           scripts/approve.py state > state.json
-          echo "packages=$(scripts/plan.sh $FORCE --state state.json $PACKAGES)" >> "$GITHUB_OUTPUT"
+          # An assignment fails the step when plan.sh fails, an echo argument does not
+          packages=$(scripts/plan.sh $FORCE --state state.json $PACKAGES)
+          echo "packages=$packages" >> "$GITHUB_OUTPUT"
 
   build:
     needs: plan

@@ -65,7 +65,7 @@ for pkg in "${packages[@]}"; do
 	fi
 	input=$(input_hash "${OVERLAY_DIR}")
 	staging=$(python3 -I "${REPO_ROOT}"/scripts/lp.py ppa-latest "${SOURCE_NAME}" \
-		--ppa "${PPA_STAGING}" --series "${series}" 2>/dev/null)
+		--ppa "${PPA_STAGING}" --series "${series}")
 	staging_version=$(json_get "${staging}" version)
 	staging_base=${staging_version%+"${VERSION_TAG}".*}
 
