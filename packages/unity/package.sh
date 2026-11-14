@@ -9,6 +9,7 @@ PATCHES=(
 	add-nemo-support.patch
 	add-unity-version-xml.patch
 	fix-dash-preview-thumbnails.patch
+	fix-invalid-escape-sequences.patch
 	fix-recently-used-tracking-for-DBusActivatable-apps.patch
 	prevent-compiz-segfault-by-guarding-pthread_join.patch
 	prevent-duplicate-reboot-shutdown-dialog.patch
