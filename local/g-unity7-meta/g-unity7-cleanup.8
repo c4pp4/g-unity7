@@ -76,18 +76,36 @@ and
 in
 .IR /etc/default/locale ,
 and the language that each user chose).
-It then copies the snap profile
+It then copies the snap profiles
 .RI ( ~/snap/firefox/common/.mozilla/firefox ,
 .IR ~/snap/thunderbird/common/.thunderbird )
-for every user who does not have a profile yet
+of every user to the profile directory of the package
 .RI ( ~/.mozilla/firefox ,
-.IR ~/.thunderbird ),
-makes the snap's default profile the default profile of the new package, and
-removes the snap. snapd saves a snapshot of the snap data. A running snap is
-not removed. Close the application and run the script again. Run it again
-also if removing the snap fails. A G Unity⁷ package older than the snap is
-not offered, because Firefox and Thunderbird do not open a profile that a newer
-version used. Run the script again after the package is updated.
+.IR ~/.thunderbird ).
+If the user already has profiles there, for example from the Ubuntu package
+used before the snap, the snap profiles are added to them with
+.B (snap)
+after their names, and no profile is replaced. The snap's default profile
+becomes the default profile of the package, unless the package was installed
+before; then its default profile stays, and the snap profiles can be opened
+from
+.BR about:profiles .
+Finally, the script removes the snap. snapd saves a snapshot of the snap
+data, but when the removal fails, it drops the snapshot after it has already
+deleted the data; the copied profiles stay. While the snap is running, the
+script offers nothing for it. Close the application and run the script again.
+Run it again also if removing the snap fails. A G Unity⁷ package older than
+the snap is not offered, because Firefox and Thunderbird do not open a profile
+that a newer version used. Run the script again after the package is updated.
+If the snap is not installed, the script also offers the G Unity⁷ package
+with its language packages, and recommends it. It mentions Evolution if it is
+installed instead of Thunderbird; the choice between them is part of this
+offer, not of the alternatives above. Evolution is not removed.
+.PP
+The script also removes the desktop files of snaps that are not installed from
+.IR /var/lib/snapd/desktop/applications .
+The Ubuntu image leaves those of the snaps that the installer does not
+install, such as Thunderbird, and the Dash shows them with a missing icon.
 .PP
 The script shows all changes and asks for confirmation. To keep a package,
 mark it as manually installed first:

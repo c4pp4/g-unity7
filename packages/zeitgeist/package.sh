@@ -20,11 +20,13 @@ debian_edit() {
 		-e '/Totem/a +    arr.add (event_for_desktop_file ("vlc.desktop", ++ts));' \
 		-e "/thunderbird/r ${PKG_DIR}/mail-clients" \
 		-e "s/rhythmbox/org.gnome.Rhythmbox3/" \
+		-e 's/"yelp\.desktop"/"unity-yelp.desktop"/' \
 		"${p}" || return 1
 	grep -Fq '"mate-calc.desktop"' "${p}" || return 1
 	grep -Fq '"org.gnome.Showtime.desktop"' "${p}" || return 1
 	grep -Fq '"org.gnome.Rhythmbox3.desktop"' "${p}" || return 1
 	grep -Fq '"thunderbird_thunderbird.desktop"' "${p}" || return 1
+	grep -Fq '"unity-yelp.desktop"' "${p}" || return 1
 
 	# The new file of the patch has as many lines as its hunk adds #
 	n=$(awk '/^@@ -0,0 \+1,/ {h = 1; next} h && /^\+/ {n++; next} h {exit} END {print n}' "${p}")

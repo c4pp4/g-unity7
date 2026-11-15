@@ -28,8 +28,12 @@
 ##    with them
 ##  - runs autoremove
 ##  - offers the G Unity⁷ Firefox and Thunderbird packages, which have Unity's
-##    global menu, instead of the Ubuntu snaps, copies the snap profiles for
-##    users who have no profile yet, and removes the snaps
+##    global menu, instead of the Ubuntu snaps, copies the snap profiles
+##    without replacing any existing profile, and removes the snaps. Without
+##    the snap, it offers the package too. The choice between Thunderbird and
+##    Evolution is part of this offer, not of the alternatives above.
+##  - removes the desktop files of snaps that are not installed, which the
+##    Ubuntu image leaves behind
 
 set -euo pipefail
 
@@ -249,6 +253,9 @@ for group in "${groups[@]}"; do
 	read -ra names <<< "${group}"
 	[[ ${#names[@]} -gt 1 ]] || continue
 	first_name=${names[0]}
+	## The Thunderbird offer below handles "thunderbird | evolution": installing
+	##  thunderbird here would install the Ubuntu package with the snap
+	[[ ${first_name} != thunderbird ]] || continue
 	## Alternatives with an installed package that is not decided yet. The first
 	##  alternative of another relation does not count.
 	present=()
@@ -390,9 +397,10 @@ done
 ##  packages until this script installs the PPA package, which then links its
 ##  own pin. When the user chooses the PPA package, its language packages for
 ##  the languages in use are installed, the snap profiles are copied for every
-##  user who has no profile yet, and the snap is removed. A PPA package older
+##  user (added to the existing profiles, if any), and the snap is removed. A PPA package older
 ##  than the snap is not offered: Firefox and Thunderbird do not open a profile
-##  that a newer version used.
+##  that a newer version used. Without the snap, the PPA package is offered
+##  as well; Evolution is mentioned if it is installed instead of Thunderbird.
 moz_install=() moz_snap_remove=() moz_copy=() moz_lines=()
 
 ## Print the version of $1 in the G Unity⁷ PPA or the staging PPA, if any.
@@ -406,13 +414,26 @@ snap_installed() {
 	command -v snap >/dev/null && snap list "$1" >/dev/null 2>&1
 }
 
+## Remove the empty revision directories in /var/snap/$1 that snapd does not
+##  know. The Ubuntu image leaves the directories of the snap revisions it was
+##  built with, and snapd then cannot remove /var/snap/$1 (directory not empty).
+snap_orphans_remove() {
+	local dir revs
+	revs=" $(LC_ALL=C snap list --all "$1" 2>/dev/null | awk 'NR > 1 { printf "%s ", $3 }')" || true
+	[[ ${revs} == *[0-9]* ]] || return 0
+	for dir in /var/snap/"$1"/[0-9]*/; do
+		[[ -d ${dir} && ${revs} != *" $(basename "${dir}") "* ]] || continue
+		rmdir "${dir}" 2>/dev/null || true
+	done
+}
+
 ## Print "user:home" for each user (UID 1000 to 59999) who has a snap profile
-##  ($1, relative to the home directory) but no profile of the PPA package ($2).
+##  directory ($1, relative to the home directory).
 profiles_to_copy() {
 	local user uid home
 	while IFS=: read -r user _ uid _ _ home _; do
 		[[ ${uid} -ge 1000 && ${uid} -lt 60000 && -d ${home} ]] || continue
-		[[ -d ${home}/$1 && ! -e ${home}/$2 ]] && echo "${user}:${home}"
+		[[ -f ${home}/$1/profiles.ini ]] && echo "${user}:${home}"
 	done < <(getent passwd)
 	return 0
 }
@@ -453,38 +474,96 @@ moz_l10n() {
 	return 0
 }
 
-## Make the default profile in the copied profile directory $2 the profile of
-##  the PPA package, as Firefox does on its first run. $3 is the install hash of
-##  the package directory in profiles.ini and installs.ini. Without this,
-##  Firefox creates a new profile, because the compatibility.ini of the copied
-##  profile points to the snap. User $1 owns installs.ini.
-moz_claim_profile() {
-	local user=$1 dir=$2 hash=$3 profile
-	[[ -n ${hash} && -f ${dir}/profiles.ini ]] || return 0
-	grep -qx "\[Install${hash}\]" "${dir}/profiles.ini" && return 0
-	## The snap's default profile: the one in its install section, or else the
-	##  profile with Default=1. The snap uses one profile for all installs.
-	profile=$(awk -F= '
+## Print the path of the default profile in profiles.ini $1: the one in its
+##  install section, or else the profile with Default=1. The snap uses one
+##  profile for all installs.
+moz_default_profile() {
+	awk -F= '
 		/^\[/ { section = $0; next }
 		section ~ /^\[Install/ && $1 == "Default" && install == "" { install = $2 }
 		section ~ /^\[Profile/ && $1 == "Path" { path[section] = $2 }
 		section ~ /^\[Profile/ && $1 == "Default" && $2 == "1" { def = section }
 		END { if (install != "") print install; else if (def != "") print path[def] }
-	' "${dir}/profiles.ini")
-	[[ -n ${profile} ]] || return 0
-	printf '\n[Install%s]\nDefault=%s\nLocked=1\n' "${hash}" "${profile}" >> "${dir}/profiles.ini" \
-		|| die "cannot write ${dir}/profiles.ini"
-	printf '[%s]\nDefault=%s\nLocked=1\n\n' "${hash}" "${profile}" >> "${dir}/installs.ini" \
-		|| die "cannot write ${dir}/installs.ini"
+	' "$1" 2>/dev/null || true
+}
+
+## Set Default=$3 in section [$2] of ini file $1, or add the section. The file
+##  keeps its owner and mode.
+ini_set_default() {
+	local file=$1 section=$2 value=$3 content
+	if [[ -f ${file} ]] && grep -qxF "[${section}]" "${file}"; then
+		content=$(awk -v s="[${section}]" -v v="${value}" '
+			/^\[/ { in_s = ($0 == s); print; if (in_s) print "Default=" v; next }
+			in_s && /^Default=/ { next }
+			{ print }' "${file}") || die "cannot read ${file}"
+		printf '%s\n' "${content}" > "${file}" || die "cannot write ${file}"
+	else
+		printf '\n[%s]\nDefault=%s\nLocked=1\n' "${section}" "${value}" >> "${file}" \
+			|| die "cannot write ${file}"
+	fi
+}
+
+## Make profile $4 (a path relative to the profile directory $2) the profile of
+##  the PPA package, as Firefox does on its first run. $3 is the install hash of
+##  the package directory in profiles.ini and installs.ini. Without this,
+##  Firefox creates a new profile, because the compatibility.ini of a copied
+##  profile points to the snap. User $1 owns installs.ini.
+moz_claim_profile() {
+	local user=$1 dir=$2 hash=$3 profile=$4
+	[[ -n ${hash} && -n ${profile} ]] || return 0
+	ini_set_default "${dir}/profiles.ini" "Install${hash}" "${profile}"
+	ini_set_default "${dir}/installs.ini" "${hash}" "${profile}"
 	chown "${user}:$(id -gn "${user}")" "${dir}/installs.ini"
 	echo "Set ${dir}/${profile} as the default profile"
 }
 
-## moz_choice <package> <snap profile> <package profile> <name> <install hash>
+## Add the profiles in the snap profile directory $2 to the profile directory
+##  $3 of user $1, which has its own profiles.ini: copy each profile directory
+##  (with "-snap" added if the name is taken; the snap copied the old profiles
+##  of the Ubuntu package under the same names) and add it to profiles.ini with
+##  "(snap)" after its name. No profile is replaced. With $5, the snap's
+##  default profile becomes the default profile of the package (install hash
+##  $4); otherwise the default stays. Profiles with an absolute path are not
+##  copied.
+moz_merge_profiles() {
+	local user=$1 src=$2 dst=$3 hash=$4 adopt=$5
+	local def def_new= n name path rel new i
+	def=$(moz_default_profile "${src}/profiles.ini")
+	n=$(sed -n 's/^\[Profile\([0-9]*\)\]$/\1/p' "${dst}/profiles.ini" | sort -n | tail -n 1) || true
+	n=$(( ${n:--1} + 1 ))
+	## Fields separated by \x1f, which keeps an empty name as a field
+	while IFS=$'\x1f' read -r name path rel; do
+		[[ ${rel} == 1 && -d ${src}/${path} ]] || continue
+		new=${path}
+		[[ ! -e ${dst}/${new} ]] || new=${path}-snap
+		i=2
+		while [[ -e ${dst}/${new} ]]; do
+			new=${path}-snap${i}
+			i=$(( i + 1 ))
+		done
+		cp -a "${src}/${path}" "${dst}/${new}" || die "cannot copy ${src}/${path}"
+		printf '\n[Profile%s]\nName=%s (snap)\nIsRelative=1\nPath=%s\n' "${n}" "${name}" "${new}" \
+			>> "${dst}/profiles.ini" || die "cannot write ${dst}/profiles.ini"
+		echo "Copied ${src}/${path} to ${dst}/${new}"
+		n=$(( n + 1 ))
+		[[ ${path} != "${def}" ]] || def_new=${new}
+	done < <(awk '
+		function out() { if (sec ~ /^\[Profile[0-9]+\]$/ && path != "") printf "%s\037%s\037%s\n", name, path, rel }
+		/^\[/ { out(); sec = $0; name = path = rel = ""; next }
+		{ k = $0; sub(/=.*/, "", k); v = $0; sub(/^[^=]*=/, "", v) }
+		k == "Name" { name = v }
+		k == "Path" { path = v }
+		k == "IsRelative" { rel = v }
+		END { out() }' "${src}/profiles.ini")
+	[[ -z ${adopt} ]] || moz_claim_profile "${user}" "${dst}" "${hash}" "${def_new}"
+}
+
+## moz_choice <package> <snap profile> <package profile> <name> <install hash> [<alternative>]
 ##  The install hash belongs to the package directory (/usr/lib/<package>) in
-##  profiles.ini. Leave it empty if it is not known.
+##  profiles.ini. Leave it empty if it is not known. The alternative is the
+##  other package of the g-unity7-desktop relation, mentioned if installed.
 moz_choice() {
-	local pkg=$1 snap_profile=$2 deb_profile=$3 app=$4 hash=$5
+	local pkg=$1 snap_profile=$2 deb_profile=$3 app=$4 hash=$5 alt=${6:-}
 	local ppa status deb_installed= snap= snap_version upstream users=() copy_text options=() actions=()
 	local default=1 i answer u name
 	ppa=$(ppa_version "${pkg}")
@@ -492,26 +571,38 @@ moz_choice() {
 	status=$(dpkg-query -W -f='${db:Status-Status} ${Version}' "${pkg}" 2>/dev/null) || true
 	[[ ${status} == "installed "*+gu7* ]] && deb_installed=1
 	snap_installed "${pkg}" && snap=1
-	## Nothing to choose if the snap is not installed
-	[[ -n ${snap} ]] || return 0
+	## Nothing to choose if the G Unity⁷ package is installed and the snap is not
+	[[ -n ${snap} || -z ${deb_installed} ]] || return 0
 
 	## A profile that a newer version used does not open in an older one
-	snap_version=$(snap list "${pkg}" 2>/dev/null | awk 'NR == 2 { print $2 }')
-	upstream=${ppa#*:}
-	upstream=${upstream%-*}
-	if [[ -n ${snap_version} ]] && dpkg --compare-versions "${snap_version%-*}" gt "${upstream}"; then
-		moz_lines+=( "${app}: unchanged; the snap ${snap_version} is newer than the G Unity⁷ package ${ppa}, which could not open its profile. Run g-unity7-cleanup again after the package is updated." )
-		return 0
+	if [[ -n ${snap} ]]; then
+		snap_version=$(snap list "${pkg}" 2>/dev/null | awk 'NR == 2 { print $2 }')
+		upstream=${ppa#*:}
+		upstream=${upstream%-*}
+		if [[ -n ${snap_version} ]] && dpkg --compare-versions "${snap_version%-*}" gt "${upstream}"; then
+			moz_lines+=( "${app}: unchanged; the snap ${snap_version} is newer than the G Unity⁷ package ${ppa}, which could not open its profile. Run g-unity7-cleanup again after the package is updated." )
+			return 0
+		fi
+		## Do not touch a running snap: a copy of an open profile may be
+		##  inconsistent, and a profile that the package creates in the meantime
+		##  would stop the copy
+		if pgrep -f "/snap/${pkg}/" >/dev/null; then
+			moz_lines+=( "${app}: the snap is running; close ${app} and run g-unity7-cleanup again" )
+			return 0
+		fi
+		mapfile -t users < <(profiles_to_copy "${snap_profile}")
 	fi
 
-	mapfile -t users < <(profiles_to_copy "${snap_profile}" "${deb_profile}")
 	copy_text=
 	if [[ ${#users[@]} -gt 1 ]]; then
 		copy_text="copy the snap profiles for $(and_list "${users[@]%%:*}")"
 	elif [[ ${#users[@]} -eq 1 ]]; then
 		copy_text="copy the snap profile for ${users[0]%%:*}"
 	fi
-	if [[ -n ${deb_installed} ]]; then
+	if [[ -z ${snap} ]]; then
+		options=( "Install the G Unity⁷ package (recommended)" "Do not install it" )
+		actions=( deb nothing )
+	elif [[ -n ${deb_installed} ]]; then
 		if [[ -n ${copy_text} ]]; then
 			options=( "${copy_text^} and remove the snap (recommended)" )
 		else
@@ -526,7 +617,14 @@ moz_choice() {
 	fi
 
 	spinner_stop
-	if [[ -n ${deb_installed} ]]; then
+	if [[ -z ${snap} ]]; then
+		if [[ -n ${alt} ]] && installed "${alt}"; then
+			echo "${alt^} is installed instead of ${app}."
+		else
+			echo "${app} is not installed."
+		fi
+		echo "G Unity⁷ provides a ${app} package with Unity's global menu:"
+	elif [[ -n ${deb_installed} ]]; then
 		echo "Both the G Unity⁷ ${app} package and the ${app} snap are installed:"
 	else
 		echo "${app} is installed as an Ubuntu snap."
@@ -552,7 +650,11 @@ moz_choice() {
 
 	case ${actions[answer - 1]} in
 		nothing)
-			moz_lines+=( "${app}: unchanged" )
+			if [[ -n ${snap} ]]; then
+				moz_lines+=( "${app}: unchanged" )
+			else
+				moz_lines+=( "${app}: not installed" )
+			fi
 			return 0
 			;;
 		deb)
@@ -564,14 +666,18 @@ moz_choice() {
 		moz_install+=( "${name}=${ppa}" )
 		moz_lines+=( "${app}: install ${name} ${ppa} from G Unity⁷" )
 	done < <(moz_l10n "${pkg}" "${ppa}")
-	## Do not remove a running snap: a copy of an open profile may be inconsistent
-	if pgrep -f "/snap/${pkg}/" >/dev/null; then
-		moz_lines+=( "${app}: the snap is running; close ${app} and run g-unity7-cleanup again to remove it" )
-		return 0
-	fi
+	[[ -n ${snap} ]] || return 0
+	## The snap's default profile becomes the default, unless the package was
+	##  already installed and has its own default profile
 	for u in "${users[@]}"; do
-		moz_copy+=( "${u%%:*}:${u#*:}/${snap_profile}:${u#*:}/${deb_profile}:${hash}" )
-		moz_lines+=( "${app}: copy ${u#*:}/${snap_profile} to ${u#*:}/${deb_profile}" )
+		moz_copy+=( "${u%%:*}:${u#*:}/${snap_profile}:${u#*:}/${deb_profile}:${hash}:${deb_installed:-adopt}" )
+		if [[ ! -f ${u#*:}/${deb_profile}/profiles.ini ]]; then
+			moz_lines+=( "${app}: copy ${u#*:}/${snap_profile} to ${u#*:}/${deb_profile}" )
+		elif [[ -n ${deb_installed} ]]; then
+			moz_lines+=( "${app}: add the profiles in ${u#*:}/${snap_profile} to ${u#*:}/${deb_profile}; the default profile stays" )
+		else
+			moz_lines+=( "${app}: add the profiles in ${u#*:}/${snap_profile} to ${u#*:}/${deb_profile} and make the snap's default profile the default" )
+		fi
 	done
 	moz_snap_remove+=( "${pkg}" )
 	moz_lines+=( "${app}: remove the snap (snapd saves a snapshot of its data)" )
@@ -581,7 +687,25 @@ moz_choice() {
 ##  /usr/lib/firefox and /usr/lib/thunderbird. The Firefox hash is the one that
 ##  the G Unity⁷ Firefox wrote.
 moz_choice firefox snap/firefox/common/.mozilla/firefox .mozilla/firefox Firefox 4F96D1932A9F858E
-moz_choice thunderbird snap/thunderbird/common/.thunderbird .thunderbird Thunderbird FDC34C9F024745EB
+moz_choice thunderbird snap/thunderbird/common/.thunderbird .thunderbird Thunderbird FDC34C9F024745EB evolution
+
+## Desktop files of snaps that are not installed. The Ubuntu image leaves those
+##  of the snaps that the installer does not install, such as Thunderbird, and
+##  the Dash shows them with a missing icon. snapd writes them only for
+##  installed snaps. Nothing is removed if snap list fails.
+snap_desktop_dir=/var/lib/snapd/desktop/applications
+snap_desktop_remove=()
+if command -v snap >/dev/null && snaps=$(LC_ALL=C snap list --all 2>/dev/null); then
+	for file in "${snap_desktop_dir}"/*_*.desktop; do
+		[[ -f ${file} ]] || continue
+		## <snap>_<app>.desktop, or <snap>+<key>_<app>.desktop for an instance
+		name=${file##*/}
+		name=${name%%_*}
+		name=${name/+/_}
+		awk -v n="${name}" 'NR > 1 && $1 == n { found = 1 } END { exit !found }' <<< "${snaps}" \
+			|| snap_desktop_remove+=( "${file}" )
+	done
+fi
 
 mark=()
 add_mark() {
@@ -701,7 +825,8 @@ done
 mark=( "${marked[@]}" )
 
 if [[ ${#mark[@]} -eq 0 && ${#remove[@]} -eq 0 && ${#install[@]} -eq 0 \
-	&& ${#moz_install[@]} -eq 0 && ${#moz_snap_remove[@]} -eq 0 ]]; then
+	&& ${#moz_install[@]} -eq 0 && ${#moz_snap_remove[@]} -eq 0 \
+	&& ${#snap_desktop_remove[@]} -eq 0 ]]; then
 	spinner_stop
 	echo "Nothing to do. No Ubuntu Unity packages replaced by G Unity⁷ are left."
 	[[ ${#unchanged[@]} -eq 0 ]] || printf 'Left unchanged by your choice: %s\n' "${unchanged[@]}"
@@ -742,6 +867,7 @@ list_words "No longer needed or replaced by G Unity⁷, to be marked for autorem
 list_lines "Left unchanged by your choice" "${unchanged[@]}"
 list_lines "Alternatives kept because other packages need them" "${needed_kept[@]}"
 list_lines "Firefox and Thunderbird" "${moz_lines[@]}"
+list_lines "Desktop files of snaps that are not installed, to be removed" "${snap_desktop_remove[@]}"
 list_words "Packages apt will install" "${installs[@]}"
 ## Purged with their configuration files and marked with * as apt does
 if [[ ${#removed[@]} -gt 0 ]]; then
@@ -772,6 +898,11 @@ for name in "${install[@]}"; do
 done
 [[ ${#install_auto[@]} -eq 0 ]] || apt-mark auto "${install_auto[@]}" >/dev/null
 
+if [[ ${#snap_desktop_remove[@]} -gt 0 ]]; then
+	rm -f "${snap_desktop_remove[@]}"
+	! command -v update-desktop-database >/dev/null \
+		|| update-desktop-database "${snap_desktop_dir}" || true
+fi
 ## The G Unity⁷ Firefox and Thunderbird packages (a lower version than the
 ##  Ubuntu packages; their pin comes with them), then the snap profiles and the
 ##  snaps.
@@ -779,16 +910,25 @@ if [[ ${#moz_install[@]} -gt 0 ]]; then
 	apt-get -y --allow-downgrades install "${moz_install[@]}"
 fi
 for entry in "${moz_copy[@]}"; do
-	IFS=: read -r user src dst hash <<< "${entry}"
-	[[ -e ${dst} ]] && continue
-	mkdir -p "$(dirname "${dst}")"
-	cp -a "${src}" "${dst}" || die "cannot copy ${src}"
-	chown "${user}:$(id -gn "${user}")" "$(dirname "${dst}")"
+	IFS=: read -r user src dst hash adopt <<< "${entry}"
+	if [[ -f ${dst}/profiles.ini ]]; then
+		[[ ${adopt} == adopt ]] || adopt=
+		moz_merge_profiles "${user}" "${src}" "${dst}" "${hash}" "${adopt}"
+		continue
+	fi
+	if [[ -d ${dst} ]]; then
+		cp -a "${src}/." "${dst}/" || die "cannot copy ${src}"
+	else
+		mkdir -p "$(dirname "${dst}")"
+		cp -a "${src}" "${dst}" || die "cannot copy ${src}"
+		chown "${user}:$(id -gn "${user}")" "$(dirname "${dst}")"
+	fi
 	echo "Copied ${src} to ${dst}"
-	moz_claim_profile "${user}" "${dst}" "${hash}"
+	moz_claim_profile "${user}" "${dst}" "${hash}" "$(moz_default_profile "${dst}/profiles.ini")"
 done
 moz_failed=()
 for name in "${moz_snap_remove[@]}"; do
+	snap_orphans_remove "${name}"
 	snap remove "${name}" || moz_failed+=( "${name}" )
 done
 if [[ ${#moz_failed[@]} -gt 0 ]]; then

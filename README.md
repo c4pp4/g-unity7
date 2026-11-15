@@ -54,11 +54,22 @@ making them. `g-unity7-cleanup --dry-run` only shows them.
 
 Ubuntu installs Firefox and Thunderbird as snaps. `g-unity7-cleanup` offers the
 PPA packages with Unity's global menu instead, built from the Debian sources. It
-copies the snap profiles for users who have no profile yet, installs the
+copies the snap profiles without replacing existing ones, installs the
 language packages of the system's languages and removes the snaps. It does not
 offer a package older than the snap, because Firefox and Thunderbird do not
 open a profile that a newer version used. If you keep the snaps,
-`g-unity7-apt-pin` keeps them too.
+`g-unity7-apt-pin` keeps them too. If the snap is not installed,
+`g-unity7-cleanup` offers the PPA package as well.
+
+Finally, restart the computer:
+
+```
+sudo reboot
+```
+
+The running session still uses the old versions of Unity, Compiz and GTK 3.
+The login screen and services such as PipeWire, which replaces PulseAudio on
+Ubuntu Unity, start with the new packages only after a restart.
 
 ## Layout
 
