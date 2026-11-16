@@ -1,0 +1,370 @@
+From ac95eeae3e9b6c050d64574d2605ab0d78784e63 Mon Sep 17 00:00:00 2001
+From: c4pp4
+Date: Mon, 16 Nov 2026 23:30:57 +0100
+Subject: [PATCH 1/1] Support SSH socket activation in the sharing panel
+
+Ubuntu starts the SSH server by socket activation: ssh.socket is
+enabled, ssh.service is not, and sshd.service is only its alias.
+GetUnitFileState returns "alias" for sshd.service, so the panel left
+the remote login switch insensitive, and with SSHD_SERVICE set to
+ssh.service it would show the switch off while the socket accepts
+connections.
+
+When SSHD_SOCKET is defined, do as GNOME Settings does: show the switch
+on if the service or the socket is enabled, enable the socket instead of
+the service, and disable both. The helper stops the service before it
+starts the socket, so that the service does not hold the port, and
+stops the socket before the service, so that the socket does not start
+it again.
+
+Signed-off-by: c4pp4
+---
+ panels/sharing/cc-remote-login-helper.c | 195 +++++++++++++-----------
+ panels/sharing/cc-remote-login.c        |  66 ++++++++
+ 2 files changed, 170 insertions(+), 91 deletions(-)
+
+diff --git a/panels/sharing/cc-remote-login-helper.c b/panels/sharing/cc-remote-login-helper.c
+index 87c12f3..d2752bd 100644
+--- a/panels/sharing/cc-remote-login-helper.c
++++ b/panels/sharing/cc-remote-login-helper.c
+@@ -25,78 +25,99 @@
+ #define SSHD_SERVICE "sshd.service"
+ #endif
+ 
+-static const gchar *service_list[] = { SSHD_SERVICE, NULL };
+-
+-static gint
+-enable_ssh_service ()
++static gboolean
++call_systemd (GDBusConnection    *connection,
++              const gchar        *method,
++              GVariant           *parameters,
++              const GVariantType *reply_type,
++              const gchar        *unit)
+ {
+-  GDBusConnection *connection;
+   GError *error = NULL;
+-  GVariant *temp_variant;
+-
+-  connection = g_bus_get_sync (G_BUS_TYPE_SYSTEM, NULL, &error);
+-  if (!connection)
++  GVariant *reply;
++
++  reply = g_dbus_connection_call_sync (connection,
++                                       "org.freedesktop.systemd1",
++                                       "/org/freedesktop/systemd1",
++                                       "org.freedesktop.systemd1.Manager",
++                                       method,
++                                       parameters,
++                                       reply_type,
++                                       G_DBUS_CALL_FLAGS_NONE,
++                                       -1,
++                                       NULL,
++                                       &error);
++  if (!reply)
+     {
+-      g_critical ("Error connecting to D-Bus system bus: %s", error->message);
++      g_critical ("Error calling %s for %s: %s", method, unit, error->message);
+       g_clear_error (&error);
+-      return 1;
++      return FALSE;
+     }
+ 
+-  temp_variant = g_dbus_connection_call_sync (connection,
+-                                              "org.freedesktop.systemd1",
+-                                              "/org/freedesktop/systemd1",
+-                                              "org.freedesktop.systemd1.Manager",
+-                                              "StartUnit",
+-                                              g_variant_new ("(ss)",
+-                                                             SSHD_SERVICE,
+-                                                             "replace"),
+-                                              (GVariantType *) "(o)",
+-                                              G_DBUS_CALL_FLAGS_NONE,
+-                                              -1,
+-                                              NULL,
+-                                              &error);
+-
+-  if (!temp_variant)
+-    {
+-      g_critical ("Error starting " SSHD_SERVICE ": %s", error->message);
+-      g_clear_error (&error);
+-      return 1;
+-    }
++  g_variant_unref (reply);
+ 
+-  g_variant_unref (temp_variant);
+-
+-  temp_variant = g_dbus_connection_call_sync (connection,
+-                                              "org.freedesktop.systemd1",
+-                                              "/org/freedesktop/systemd1",
+-                                              "org.freedesktop.systemd1.Manager",
+-                                              "EnableUnitFiles",
+-                                              g_variant_new ("(^asbb)",
+-                                                             service_list,
+-                                                             FALSE, FALSE),
+-                                              (GVariantType *) "(ba(sss))",
+-                                              G_DBUS_CALL_FLAGS_NONE,
+-                                              -1,
+-                                              NULL,
+-                                              &error);
+-
+-  if (!temp_variant)
+-    {
+-      g_critical ("Error enabling " SSHD_SERVICE ": %s", error->message);
+-      g_clear_error (&error);
+-      return 1;
+-    }
++  return TRUE;
++}
++
++static gboolean
++enable_unit (GDBusConnection *connection,
++             const gchar     *unit)
++{
++  const gchar *units[] = { unit, NULL };
++
++  return call_systemd (connection, "StartUnit",
++                       g_variant_new ("(ss)", unit, "replace"),
++                       G_VARIANT_TYPE ("(o)"), unit)
++         && call_systemd (connection, "EnableUnitFiles",
++                          g_variant_new ("(^asbb)", units, FALSE, FALSE),
++                          G_VARIANT_TYPE ("(ba(sss))"), unit);
++}
+ 
+-  g_variant_unref (temp_variant);
++static gboolean
++disable_unit (GDBusConnection *connection,
++              const gchar     *unit)
++{
++  const gchar *units[] = { unit, NULL };
++
++  return call_systemd (connection, "StopUnit",
++                       g_variant_new ("(ss)", unit, "replace"),
++                       G_VARIANT_TYPE ("(o)"), unit)
++         && call_systemd (connection, "DisableUnitFiles",
++                          g_variant_new ("(^asb)", units, FALSE),
++                          G_VARIANT_TYPE ("(a(sss))"), unit);
++}
+ 
+-  return 0;
++#ifdef SSHD_SOCKET
++static gboolean
++unit_exists (GDBusConnection *connection,
++             const gchar     *unit)
++{
++  GVariant *reply;
++
++  reply = g_dbus_connection_call_sync (connection,
++                                       "org.freedesktop.systemd1",
++                                       "/org/freedesktop/systemd1",
++                                       "org.freedesktop.systemd1.Manager",
++                                       "GetUnitFileState",
++                                       g_variant_new ("(s)", unit),
++                                       G_VARIANT_TYPE ("(s)"),
++                                       G_DBUS_CALL_FLAGS_NONE,
++                                       -1,
++                                       NULL,
++                                       NULL);
++  if (!reply)
++    return FALSE;
++
++  g_variant_unref (reply);
++
++  return TRUE;
+ }
++#endif
+ 
+ static gint
+-disable_ssh_service ()
++enable_ssh_service (void)
+ {
+   GDBusConnection *connection;
+   GError *error = NULL;
+-  GVariant *temp_variant;
+ 
+   connection = g_bus_get_sync (G_BUS_TYPE_SYSTEM, NULL, &error);
+   if (!connection)
+@@ -106,49 +127,41 @@ disable_ssh_service ()
+       return 1;
+     }
+ 
+-  temp_variant = g_dbus_connection_call_sync (connection,
+-                                              "org.freedesktop.systemd1",
+-                                              "/org/freedesktop/systemd1",
+-                                              "org.freedesktop.systemd1.Manager",
+-                                              "StopUnit",
+-                                              g_variant_new ("(ss)", SSHD_SERVICE, "replace"),
+-                                              (GVariantType *) "(o)",
+-                                              G_DBUS_CALL_FLAGS_NONE,
+-                                              -1,
+-                                              NULL,
+-                                              &error);
+-  if (!temp_variant)
++#ifdef SSHD_SOCKET
++  /* Start the server by socket activation, as GNOME Settings does. Stop the
++   * service first, so that it does not hold the port that the socket binds */
++  if (unit_exists (connection, SSHD_SOCKET))
+     {
+-      g_critical ("Error stopping " SSHD_SERVICE ": %s", error->message);
+-      g_clear_error (&error);
+-      return 1;
++      disable_unit (connection, SSHD_SERVICE);
++      return enable_unit (connection, SSHD_SOCKET) ? 0 : 1;
+     }
++#endif
++
++  return enable_unit (connection, SSHD_SERVICE) ? 0 : 1;
++}
+ 
+-  g_variant_unref (temp_variant);
+-
+-  temp_variant = g_dbus_connection_call_sync (connection,
+-                                              "org.freedesktop.systemd1",
+-                                              "/org/freedesktop/systemd1",
+-                                              "org.freedesktop.systemd1.Manager",
+-                                              "DisableUnitFiles",
+-                                              g_variant_new ("(^asb)", service_list, FALSE,
+-                                                             FALSE),
+-                                              (GVariantType *) "(a(sss))",
+-                                              G_DBUS_CALL_FLAGS_NONE,
+-                                              -1,
+-                                              NULL,
+-                                              &error);
+-
+-  if (!temp_variant)
++static gint
++disable_ssh_service (void)
++{
++  GDBusConnection *connection;
++  GError *error = NULL;
++  gboolean disabled = TRUE;
++
++  connection = g_bus_get_sync (G_BUS_TYPE_SYSTEM, NULL, &error);
++  if (!connection)
+     {
+-      g_critical ("Error disabling " SSHD_SERVICE ": %s", error->message);
++      g_critical ("Error connecting to D-Bus system bus: %s", error->message);
+       g_clear_error (&error);
+       return 1;
+     }
+ 
+-  g_variant_unref (temp_variant);
++#ifdef SSHD_SOCKET
++  /* Stop the socket first, so that it does not start the service again */
++  if (unit_exists (connection, SSHD_SOCKET))
++    disabled = disable_unit (connection, SSHD_SOCKET);
++#endif
+ 
+-  return 0;
++  return disable_unit (connection, SSHD_SERVICE) && disabled ? 0 : 1;
+ }
+ 
+ int
+diff --git a/panels/sharing/cc-remote-login.c b/panels/sharing/cc-remote-login.c
+index e91fd50..f0203a9 100644
+--- a/panels/sharing/cc-remote-login.c
++++ b/panels/sharing/cc-remote-login.c
+@@ -30,6 +30,7 @@ typedef struct
+   GtkSwitch    *gtkswitch;
+   GtkWidget    *button;
+   GCancellable *cancellable;
++  gboolean      service_disabled;
+ } CallbackData;
+ 
+ static void
+@@ -148,6 +149,49 @@ path_ready_callback (GObject      *source_object,
+   g_variant_unref (path_variant);
+ }
+ 
++#ifdef SSHD_SOCKET
++static void
++socket_state_ready_callback (GObject      *source_object,
++                             GAsyncResult *result,
++                             CallbackData *callback_data)
++{
++  GVariant *state_variant;
++  const gchar *state_string = NULL;
++  GError *error = NULL;
++
++  state_variant = g_dbus_connection_call_finish (G_DBUS_CONNECTION (source_object),
++                                                 result, &error);
++  if (!state_variant)
++    {
++      if (g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
++        {
++          g_free (callback_data);
++          g_clear_error (&error);
++
++          return;
++        }
++
++      /* the socket is not available, the service state decides */
++      g_debug ("Error getting %s state: %s", SSHD_SOCKET, error->message);
++      g_clear_error (&error);
++    }
++  else
++    g_variant_get (state_variant, "(&s)", &state_string);
++
++  if (state_string && g_str_equal (state_string, "enabled"))
++    set_switch_state (callback_data->gtkswitch, TRUE);
++  else if (callback_data->service_disabled)
++    set_switch_state (callback_data->gtkswitch, FALSE);
++  else
++    g_warning ("Unknown state of %s and %s", SSHD_SERVICE, SSHD_SOCKET);
++
++  if (state_variant)
++    g_variant_unref (state_variant);
++
++  g_free (callback_data);
++}
++#endif
++
+ static void
+ state_ready_callback (GObject      *source_object,
+                       GAsyncResult *result,
+@@ -202,6 +246,26 @@ state_ready_callback (GObject      *source_object,
+                               (GAsyncReadyCallback) path_ready_callback,
+                               callback_data);
+     }
++#ifdef SSHD_SOCKET
++  else
++    {
++      /* the service is not enabled, but the socket may start it, as
++       * GNOME Settings checks */
++      callback_data->service_disabled = g_str_equal (state_string, "disabled");
++      g_dbus_connection_call (G_DBUS_CONNECTION (source_object),
++                              "org.freedesktop.systemd1",
++                              "/org/freedesktop/systemd1",
++                              "org.freedesktop.systemd1.Manager",
++                              "GetUnitFileState",
++                              g_variant_new ("(s)", SSHD_SOCKET),
++                              (GVariantType*) "(s)",
++                              G_DBUS_CALL_FLAGS_NONE,
++                              -1,
++                              callback_data->cancellable,
++                              (GAsyncReadyCallback) socket_state_ready_callback,
++                              callback_data);
++    }
++#else
+   else if (g_str_equal (state_string, "disabled"))
+     {
+       /* service is available, but is currently disabled */
+@@ -216,6 +280,7 @@ state_ready_callback (GObject      *source_object,
+ 
+       g_free (callback_data);
+     }
++#endif
+ 
+   g_variant_unref (child_variant);
+   g_variant_unref (state_variant);
+@@ -269,6 +334,7 @@ cc_remote_login_get_enabled (GCancellable *cancellable,
+   callback_data->gtkswitch = gtkswitch;
+   callback_data->button = button;
+   callback_data->cancellable = cancellable;
++  callback_data->service_disabled = FALSE;
+ 
+   g_bus_get (G_BUS_TYPE_SYSTEM, callback_data->cancellable,
+              (GAsyncReadyCallback) bus_ready_callback, callback_data);
+-- 
+2.56.1
+

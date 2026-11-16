@@ -2,6 +2,7 @@ OVERLAY_PKG="unity-lens/unity-lens-applications"
 UBUNTU_SRC="unity-lens-applications"
 GROUP="desktop"
 
+## fix-build-with-xapian-2.patch is not needed, Ubuntu has Xapian 1.4.
 PATCHES=(
 	remove-software-center-filter-option.patch
 )

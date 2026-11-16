@@ -2,7 +2,8 @@ OVERLAY_PKG="unity-extra/unity-tweak-tool"
 UBUNTU_SRC="unity-tweak-tool"
 GROUP="desktop"
 
-## The ebuild's default USE flags (+bluetooth +files +hud).
+## The ebuild's default USE flags (+bluetooth +files +hud), so remove-hud.diff is
+##  not needed.
 ##  xorg-cursor-themes-path.diff is for Gentoo's cursor theme path.
 PATCHES=(
 	unity-cursor-scale-factor.diff

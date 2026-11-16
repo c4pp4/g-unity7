@@ -13,6 +13,7 @@ PATCHES=(
 	shell-fix_theme_selection_and_hover.patch
 	use-cinnamon-schema-for-idle-delay.patch
 	printers-fix_launcher.patch
+	sharing-support-ssh-socket-activation.patch
 )
 
 debian_edit() {
@@ -30,9 +31,41 @@ debian_edit() {
 		-e "s/^\(\t\t\t--disable-onlineaccounts\) /\1 --disable-fcitx /" \
 		debian/rules || return 1
 	[[ $(grep -Fc -- "--disable-onlineaccounts --disable-fcitx" debian/rules) -eq 2 ]] || return 1
+
+	# The SSH units of Ubuntu: sshd.service is only an alias of ssh.service, and #
+	#  ssh.socket starts the server (sharing-support-ssh-socket-activation.patch) #
+	sed -i \
+		-e '/^export DEB_CFLAGS_MAINT_APPEND = /a export DEB_CPPFLAGS_MAINT_APPEND = -DSSHD_SERVICE=\\"ssh.service\\" -DSSHD_SOCKET=\\"ssh.socket\\"' \
+		debian/rules || return 1
+	grep -Fqx 'export DEB_CPPFLAGS_MAINT_APPEND = -DSSHD_SERVICE=\"ssh.service\" -DSSHD_SOCKET=\"ssh.socket\"' \
+		debian/rules || return 1
+
+	# The remote login helper of the sharing panel, which Ubuntu does not install #
+	echo "usr/libexec/ucc-remote-login-helper" >> debian/unity-control-center.install || return 1
+	grep -Fqx "usr/libexec/ucc-remote-login-helper" debian/unity-control-center.install || return 1
+
+	# The services of the sharing panel, which the ebuild depends on with its #
+	#  default sharing USE flag. Suggested only: openssh-server would open the #
+	#  SSH port at once, and the panel shows only the installed services #
+	sed -i -e "/^Package: unity-control-center$/,/^$/{s/^\( *\)x11-xserver-utils$/\1x11-xserver-utils,\n\1gnome-user-share,\n\1openssh-server,\n\1rygel/}" \
+		debian/control || return 1
+	sed -n "/^Package: unity-control-center$/,/^$/p" debian/control | grep -qx " *rygel" || return 1
 }
 
 src_edit() {
+	# Rename cc-remote-login-helper as the ebuild does, because #
+	#  gnome-base/gnome-control-center provides it there #
+	sed -i \
+		-e "s/cc-remote-login-helper/ucc-remote-login-helper/g" \
+		panels/sharing/{cc-remote-login.c,com.canonical.controlcenter.remote-login-helper.policy.in.in,Makefile.am} || return 1
+	grep -Fq "ucc-remote-login-helper" panels/sharing/cc-remote-login.c || return 1
+	grep -Fq "ucc-remote-login-helper" panels/sharing/com.canonical.controlcenter.remote-login-helper.policy.in.in || return 1
+	sed -i \
+		-e "s/cc_remote_login_helper/ucc_remote_login_helper/g" \
+		panels/sharing/Makefile.am || return 1
+	grep -Fq "ucc_remote_login_helper_SOURCES = ucc-remote-login-helper.c" panels/sharing/Makefile.am || return 1
+	mv panels/sharing/cc-remote-login-helper.c panels/sharing/ucc-remote-login-helper.c || return 1
+
 	# Branding #
 	cp "${FILESDIR}"/branding/UnityLogo.svg panels/info/GnomeLogoVerticalMedium.svg || return 1
 	sed -i \

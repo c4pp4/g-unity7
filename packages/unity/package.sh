@@ -3,8 +3,12 @@ UBUNTU_SRC="unity"
 GROUP="desktop"
 
 ## The ebuild's default USE flags: -classic-dash -classic-panel +hud -systray
-##  -bfb2013 -bfb2023 +uwidgets. set-desktop-name.patch in packages/unity/patches
-##  is a variant that names the desktop G Unity⁷ Desktop.
+##  -bfb2013 -bfb2023 +uwidgets, so disable-hud.diff is not needed.
+##  lockscreen-spawn-panel-service-without-systemd.patch is only for sessions
+##  without systemd --user (OpenRC), and so is the ebuild's removal of
+##  "killall -9 unity-panel-service" in UnityCore/DBusIndicators.cpp.
+##  set-desktop-name.patch in packages/unity/patches is a variant that names the
+##  desktop G Unity⁷ Desktop.
 PATCHES=(
 	add-nemo-support.patch
 	add-unity-version-xml.patch

@@ -2,6 +2,7 @@ OVERLAY_PKG="ehooks/gnome-extra/nm-applet"
 UBUNTU_SRC="network-manager-applet"
 GROUP="desktop"
 
+## Ubuntu already applies Have-the-appindicator-enabled-by-default.patch.
 PATCHES=(
 	do-not-warn-about-deprecated-appindicator.patch
 	show-notifications-via-libnotify-when-in-unity.patch

@@ -33,8 +33,23 @@ source "${base_dir}"/result.env
 binary="${base_dir}/binary"
 rm -rf "${binary}"
 mkdir -p "${binary}"
-dsc="${base_dir}/out/${SOURCE}_${VERSION#*:}.dsc"
-dpkg-source --no-check -x "${dsc}" "${binary}"/tree >/dev/null
+## The source package files, linked into one directory. build-source.sh leaves
+##  the orig tarballs out of the upload (-sd) when the staging PPA already has
+##  them, so they are only in its work directory.
+src="${binary}/source"
+mkdir -p "${src}"
+dsc_name="${SOURCE}_${VERSION#*:}.dsc"
+ln -s "${base_dir}/out/${dsc_name}" "${src}/"
+while read -r name; do
+	for dir in "${base_dir}"/out "${base_dir}"/work; do
+		if [[ -f ${dir}/${name} ]]; then
+			ln -s "${dir}/${name}" "${src}/"
+			break
+		fi
+	done
+	[[ -e ${src}/${name} ]] || die "${name} of ${dsc_name} is in neither out/ nor work/."
+done < <(awk '/^Files:/ { files = 1; next } /^[^ ]/ { files = 0 } files { print $3 }' "${base_dir}/out/${dsc_name}")
+dpkg-source --no-check -x "${src}/${dsc_name}" "${binary}"/tree >/dev/null
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
@@ -49,7 +64,7 @@ done
 einfo "Building ${SOURCE} ${VERSION}"
 (cd "${binary}"/tree && dpkg-buildpackage -b -us -uc) > "${binary}"/build.log 2>&1 \
 	|| { tail -n 40 "${binary}"/build.log >&2; die "Build failed; see ${binary}/build.log."; }
-rm -rf "${binary}"/tree
+rm -rf "${binary}"/tree "${src}"
 chown -R --reference="${base_dir}" "${binary}"
 einfo "Binary packages in ${binary}:"
 ls "${binary}"/*.deb >&2
