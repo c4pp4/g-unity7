@@ -26,6 +26,14 @@ debian_edit() {
 	sed -i -e "s:^usr/libexec/\* /usr/lib/unity-settings-daemon/$:usr/lib/unity-settings-daemon:" \
 		debian/unity-settings-daemon.install || return 1
 	grep -qx "usr/lib/unity-settings-daemon" debian/unity-settings-daemon.install || return 1
+
+	# Without Fcitx 4, as the ebuild (--disable-fcitx). The libraries of Fcitx 4 #
+	#  suggest fcitx, which apt then keeps with the KDE Frameworks that it pulls #
+	#  in, although G Unity⁷ uses IBus #
+	sed -i -e "/^ *fcitx-libs-dev,$/d" debian/control || return 1
+	! grep -q "fcitx" debian/control || return 1
+	sed -i -e "/^CONFIGURE_EXTRA_FLAGS = /{s/--enable-fcitx/--disable-fcitx/}" debian/rules || return 1
+	grep -q "^CONFIGURE_EXTRA_FLAGS = .*--disable-fcitx" debian/rules || return 1
 }
 
 src_edit() {

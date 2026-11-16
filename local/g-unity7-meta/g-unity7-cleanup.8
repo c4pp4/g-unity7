@@ -121,7 +121,12 @@ does the basic tasks), and the libraries and the snap seeding tool of the
 installer, which it does not remove with Calamares. All packages of the image
 are manually installed. The
 script marks these packages as automatically installed, and autoremove
-removes them unless other packages need them.
+removes them unless other packages need them. The script removes
+.B kdialog
+of the image directly, because apt keeps it as an alternative of
+.B zenity
+and it keeps the KDE Frameworks 6, unless other packages would be removed
+with it.
 .PP
 The script shows all changes and asks for confirmation. To keep a package,
 mark it as manually installed first:

@@ -37,7 +37,8 @@
 ##  - marks the packages of the Ubuntu Unity image that G Unity⁷ does not use
 ##    as automatically installed: Fcitx 4 (im-config no longer supports it, and
 ##    G Unity⁷ uses IBus) with the KDE Frameworks it pulls in, Kvantum,
-##    GParted and the libraries of the installer
+##    GParted and the libraries of the installer, and removes kdialog, which
+##    apt keeps as an alternative and which keeps KDE Frameworks 6
 
 set -euo pipefail
 
@@ -248,10 +249,14 @@ decided() {
 ##  (spared[]) are not marked, installed packages of the other alternatives are
 ##  removed (reason[]). With "change nothing", no package is marked or removed.
 declare -A spared=() reason=()
-## What the G Unity⁷ package adds to an alternative that Ubuntu also has, shown
-##  after its name in the choice. The Breaks of g-unity7-desktop keep the installed package at
-##  the G Unity⁷ version.
-declare -A adds=( [eog]="with Unity's global menu" )
+## Shown after the name of an alternative in the choice: what the G Unity⁷
+##  package adds to a package that Ubuntu also has (the Breaks of
+##  g-unity7-desktop keep the installed package at the G Unity⁷ version), or the
+##  applications of a package that replaces a set of alternatives.
+declare -A adds=(
+	[eog]="with Unity's global menu"
+	[mate-utils]="with mate-screenshot, mate-disk-usage-analyzer and mate-system-log"
+)
 candidates_remove=() install=() unchanged=() asked=
 for group in "${groups[@]}"; do
 	read -ra names <<< "${group}"
@@ -753,7 +758,8 @@ fi
 ##    Fcitx. im-config no longer supports Fcitx 4, so it is not an input method
 ##    that can be selected, but the Dash shows its launchers. G Unity⁷ uses IBus.
 ##  - KDE Frameworks, systemsettings and the libraries that kde-config-fcitx
-##    pulls in through kio, and the KDE Package framework of the installer
+##    pulls in through kio, and the KDE Package framework of the installer.
+##    kdialog, which keeps the KIO of KDE Frameworks 6, is removed below.
 ##  - Kvantum, the Qt style of the installer
 ##  - GParted, an advanced tool; gnome-disk-utility does the basic tasks
 ##  - the libraries and the snap seeding tool of the installer, which it does
@@ -808,10 +814,6 @@ leftovers=(
 	libappstreamqt3 libboost-python1.90.0 libcalamares3.3 libkpmcore13
 	libyaml-cpp0.9 snapd-seed-glue xdelta3
 )
-declare -A leftover_set=()
-for name in "${leftovers[@]}"; do
-	leftover_set[${name}]=1
-done
 add_mark "${leftovers[@]}"
 
 ## Apply the marks to a copy of the apt state and find what autoremove then
@@ -867,6 +869,26 @@ for name in "${duplicates[@]}"; do
 	dup_remove+=( "${name}" )
 done
 
+## Packages of the image that apt keeps only as an installed alternative of
+##  another relation: kdialog of "zenity | kdialog" (im-config). It pulls in the
+##  KIO of KDE Frameworks 6, which suggests systemsettings. It is automatically
+##  installed, so marking does not remove it. It is removed if no other package
+##  would be removed with it.
+leftover_remove=()
+for name in kdialog; do
+	[[ -z ${of_meta[${name}]:-} && -z ${autoremoved[${name}]:-} && -z ${in_remove[${name}]:-} ]] \
+		&& installed "${name}" || continue
+	in_remove[${name}]=1
+	others=
+	while read -r other; do
+		[[ ${other} == "${name}" || -n ${autoremoved[${other}]:-} ]] || others+="${other} "
+	done < <(apt-get -s -o Dir::State::extended_states="${states}" --purge remove "${name}" \
+		"${install_args[@]}" 2>/dev/null | awk '/^(Purg|Remv) / { print $2 }')
+	[[ -n ${others} ]] && continue
+	remove+=( "${name}" )
+	leftover_remove+=( "${name}" )
+done
+
 ## Preview the result with the marks applied to a copy of the apt state.
 if [[ ${#remove[@]} -gt 0 || ${#install[@]} -gt 0 ]]; then
 	apt_args=( --purge --autoremove remove "${remove[@]}" "${install_args[@]}" )
@@ -875,7 +897,21 @@ else
 fi
 simulation=$(apt-get -s -o Dir::State::extended_states="${states}" "${apt_args[@]}" 2>/dev/null)
 mapfile -t removed < <(awk '/^Purg / { print $2 }' <<< "${simulation}")
-mapfile -t installs < <(awk '/^Inst / { print $2 }' <<< "${simulation}")
+## "Inst <package> [<installed version>] (<new version> <release> [<arch>])"
+installs=() upgrades=() downgrades=()
+while read -r name old new; do
+	if [[ ${old} == - ]]; then
+		installs+=( "${name}" )
+	elif dpkg --compare-versions "${new}" gt "${old}"; then
+		upgrades+=( "${name}" )
+	else
+		downgrades+=( "${name}" )
+	fi
+done < <(awk '/^Inst / {
+	old = "-"; new = $3
+	if ($3 ~ /^\[/) { old = $3; new = $4 }
+	gsub(/[][]/, "", old); gsub(/[()]/, "", new)
+	print $2, old, new }' <<< "${simulation}")
 
 ## Keep only the marked packages that apt then removes. The others are still
 ##  needed by G Unity⁷ or by another desktop (ubuntu-desktop shares most of the
@@ -890,15 +926,9 @@ done
 for name in "${remove[@]}"; do
 	removed_set[${name}]=
 done
-marked=() mark_task=() mark_leftover=()
+marked=()
 for name in "${mark[@]}"; do
-	[[ -n ${removed_set[${name}]:-} ]] || continue
-	marked+=( "${name}" )
-	if [[ -n ${leftover_set[${name}]:-} ]]; then
-		mark_leftover+=( "${name}" )
-	else
-		mark_task+=( "${name}" )
-	fi
+	[[ -z ${removed_set[${name}]:-} ]] || marked+=( "${name}" )
 done
 mark=( "${marked[@]}" )
 
@@ -940,14 +970,17 @@ list_lines() {
 
 list_words "Alternatives to install" "${install[@]}"
 list_lines "Alternatives to remove" "${reasons[@]}"
-list_words "Replaced by G Unity⁷ and kept by apt only as alternatives, to be removed" "${dup_remove[@]}"
-list_words "No longer needed or replaced by G Unity⁷, to be marked for autoremove" "${mark_task[@]}"
-list_words "Ubuntu Unity image packages not used by G Unity⁷ (Fcitx 4, KDE Frameworks, Kvantum, GParted, installer libraries), to be marked for autoremove" "${mark_leftover[@]}"
+## The duplicates and image packages that are removed directly, and the
+##  packages that are marked for autoremove
+list_words "Replaced by G Unity⁷ or not used by it, to be removed" \
+	"${dup_remove[@]}" "${leftover_remove[@]}" "${mark[@]}"
 list_lines "Left unchanged by your choice" "${unchanged[@]}"
 list_lines "Alternatives kept because other packages need them" "${needed_kept[@]}"
 list_lines "Firefox and Thunderbird" "${moz_lines[@]}"
 list_lines "Desktop files of snaps that are not installed, to be removed" "${snap_desktop_remove[@]}"
 list_words "Packages apt will install" "${installs[@]}"
+list_words "Packages apt will upgrade" "${upgrades[@]}"
+list_words "Packages apt will downgrade" "${downgrades[@]}"
 ## Purged with their configuration files and marked with * as apt does
 if [[ ${#removed[@]} -gt 0 ]]; then
 	list_words "Packages apt will remove" "${removed[@]/%/*}"
