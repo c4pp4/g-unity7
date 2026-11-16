@@ -5,4 +5,5 @@ GROUP="desktop"
 PATCHES=(
 	Do-not-warn-about-missing-Rhythmbox-database.patch
 	Remove-Banshee-support.patch
+	Refresh-results-when-Rhythmbox-database-changes.patch
 )

@@ -34,6 +34,10 @@
 ##    Evolution is part of this offer, not of the alternatives above.
 ##  - removes the desktop files of snaps that are not installed, which the
 ##    Ubuntu image leaves behind
+##  - marks the packages of the Ubuntu Unity image that G Unity⁷ does not use
+##    as automatically installed: Fcitx 4 (im-config no longer supports it, and
+##    G Unity⁷ uses IBus) with the KDE Frameworks it pulls in, Kvantum,
+##    GParted and the libraries of the installer
 
 set -euo pipefail
 
@@ -742,6 +746,74 @@ if [[ ${#roots[@]} -gt 0 ]]; then
 	add_mark "${closure_of_task[@]}"
 fi
 
+## Packages of the Ubuntu Unity image that G Unity⁷ does not use. All packages
+##  of the image are manually installed, so autoremove never removes them.
+##  - Fcitx 4 with Japanese (Mozc) and Chinese (Pinyin) input. The installer
+##    copies the live system and, unlike the Kubuntu installer, does not remove
+##    Fcitx. im-config no longer supports Fcitx 4, so it is not an input method
+##    that can be selected, but the Dash shows its launchers. G Unity⁷ uses IBus.
+##  - KDE Frameworks, systemsettings and the libraries that kde-config-fcitx
+##    pulls in through kio, and the KDE Package framework of the installer
+##  - Kvantum, the Qt style of the installer
+##  - GParted, an advanced tool; gnome-disk-utility does the basic tasks
+##  - the libraries and the snap seeding tool of the installer, which it does
+##    not remove with Calamares
+leftovers=(
+	fcitx fcitx-bin fcitx-data fcitx-frontend-all fcitx-frontend-gtk2
+	fcitx-frontend-gtk3 fcitx-frontend-qt5 fcitx-frontend-qt6 fcitx-module-dbus
+	fcitx-module-kimpanel fcitx-module-lua fcitx-module-quickphrase-editor5
+	fcitx-module-x11 fcitx-modules fcitx-mozc fcitx-mozc-data fcitx-pinyin
+	fcitx-table fcitx-ui-classic kde-config-fcitx libfcitx-core0 libfcitx-qt5-1
+	libfcitx-qt5-data mozc-data mozc-server mozc-utils-gui
+	kactivitymanagerd kded5 kio kpackagetool6 kwayland-integration
+	kwayland5-data libgettextpo0 libkf5archive-data libkf5archive5
+	libkf5auth-data libkf5authcore5 libkf5codecs-data libkf5codecs5
+	libkf5completion-data libkf5completion5 libkf5config-bin libkf5config-data
+	libkf5configcore5 libkf5configgui5 libkf5configwidgets-data
+	libkf5configwidgets5 libkf5coreaddons-data libkf5coreaddons5 libkf5crash5
+	libkf5dbusaddons-bin libkf5dbusaddons-data libkf5dbusaddons5
+	libkf5doctools5 libkf5guiaddons-bin libkf5guiaddons-data libkf5guiaddons5
+	libkf5i18n-data libkf5i18n5 libkf5iconthemes-bin libkf5iconthemes-data
+	libkf5iconthemes5 libkf5itemviews-data libkf5itemviews5
+	libkf5jobwidgets-data libkf5jobwidgets5 libkf5kiocore5 libkf5kiogui5
+	libkf5kiontlm5 libkf5kiowidgets5 libkf5notifications-data
+	libkf5notifications5 libkf5service-bin libkf5service-data libkf5service5
+	libkf5solid5 libkf5solid5-data libkf5sonnet5-data libkf5sonnetcore5
+	libkf5sonnetui5 libkf5textwidgets-data libkf5textwidgets5 libkf5wallet-bin
+	libkf5wallet-data libkf5wallet5 libkf5waylandclient5
+	libkf5widgetsaddons-data libkf5widgetsaddons5 libkf5windowsystem-data
+	libkf5windowsystem5 libkf6auth-data libkf6authcore6 libkf6i18nqml6
+	libkf6itemmodels6 libkf6kcmutils-bin libkf6kcmutils-data libkf6kcmutils6
+	libkf6kcmutilscore6 libkf6kcmutilsquick6 libkf6package-data libkf6package6
+	libkf6runner6 libkirigami-data libkirigami6 libkirigamicontrols6
+	libkirigamidelegates6 libkirigamidialogs6 libkirigamiforms6
+	libkirigamiformsprivatecards6 libkirigamiformsprivateflat6
+	libkirigamiformsprivatetemplates6 libkirigamilayouts6
+	libkirigamilayoutsprivate6 libkirigamiplatform6 libkirigamipolyfill6
+	libkirigamiprimitives6 libkirigamiprivate6 libkirigamitemplates6
+	liblua5.1-0 libplasmaactivities-data libplasmaactivities7 libpolkit-qt5-1-1
+	libpolkit-qt6-1-1 libpresage-data libpresage1v5 libqt5texttospeech5
+	libqt5xml5t64 libqt6quickcontrols2-6 libqt6quickshapes6
+	libqt6quicktemplates2-6 libqt6quickwidgets6 libqt6sql6 libqt6sql6-sqlite
+	libtinyxml2.6.2v5 plasma-activities-bin presage
+	qml6-module-org-kde-kirigami qml6-module-qtqml qml6-module-qtqml-models
+	qml6-module-qtqml-workerscript qml6-module-qtquick
+	qml6-module-qtquick-controls qml6-module-qtquick-layouts
+	qml6-module-qtquick-shapes qml6-module-qtquick-templates
+	qml6-module-qtquick-window qtspeech5-speechd-plugin sonnet-plugins
+	systemsettings
+	qt-style-kvantum qt-style-kvantum-l10n qt-style-kvantum-themes
+	gparted gparted-common libatkmm-1.6-1v5 libcairomm-1.0-1v5
+	libgtkmm-3.0-1t64 libpangomm-1.4-1v5 libparted-fs-resize0t64
+	libappstreamqt3 libboost-python1.90.0 libcalamares3.3 libkpmcore13
+	libyaml-cpp0.9 snapd-seed-glue xdelta3
+)
+declare -A leftover_set=()
+for name in "${leftovers[@]}"; do
+	leftover_set[${name}]=1
+done
+add_mark "${leftovers[@]}"
+
 ## Apply the marks to a copy of the apt state and find what autoremove then
 ##  removes.
 tmp=$(mktemp -d)
@@ -818,9 +890,15 @@ done
 for name in "${remove[@]}"; do
 	removed_set[${name}]=
 done
-marked=()
+marked=() mark_task=() mark_leftover=()
 for name in "${mark[@]}"; do
-	[[ -z ${removed_set[${name}]:-} ]] || marked+=( "${name}" )
+	[[ -n ${removed_set[${name}]:-} ]] || continue
+	marked+=( "${name}" )
+	if [[ -n ${leftover_set[${name}]:-} ]]; then
+		mark_leftover+=( "${name}" )
+	else
+		mark_task+=( "${name}" )
+	fi
 done
 mark=( "${marked[@]}" )
 
@@ -863,7 +941,8 @@ list_lines() {
 list_words "Alternatives to install" "${install[@]}"
 list_lines "Alternatives to remove" "${reasons[@]}"
 list_words "Replaced by G Unity⁷ and kept by apt only as alternatives, to be removed" "${dup_remove[@]}"
-list_words "No longer needed or replaced by G Unity⁷, to be marked for autoremove" "${mark[@]}"
+list_words "No longer needed or replaced by G Unity⁷, to be marked for autoremove" "${mark_task[@]}"
+list_words "Ubuntu Unity image packages not used by G Unity⁷ (Fcitx 4, KDE Frameworks, Kvantum, GParted, installer libraries), to be marked for autoremove" "${mark_leftover[@]}"
 list_lines "Left unchanged by your choice" "${unchanged[@]}"
 list_lines "Alternatives kept because other packages need them" "${needed_kept[@]}"
 list_lines "Firefox and Thunderbird" "${moz_lines[@]}"

@@ -16,6 +16,12 @@ debian_edit() {
 	sed -i -e "\$d" debian/control || return 1
 	rm debian/unity-scope-video-remote.install || return 1
 	! grep -Fq "unity-scope-video-remote" debian/control || return 1
+
+	# The scope searches the Videos folder with updatedb and locate, which the #
+	#  Ubuntu package does not depend on, as the ebuild does #
+	sed -i -e "s/^\( *\)unity-lens-music (>= 6.6.0),$/&\n\1plocate,/" debian/control || return 1
+	grep -q "^ *plocate,$" debian/control || return 1
+
 	# debhelper installs a single binary package to debian/<package>, but #
 	#  debian/*.install (dh_install --fail-missing) takes the files from debian/tmp #
 	printf '\n%s\n\t%s\n' \

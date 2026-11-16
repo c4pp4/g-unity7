@@ -48,9 +48,13 @@ one.
 
 If you are coming from Ubuntu Unity, it also removes the packages that G Unity⁷
 replaces. The Ubuntu Unity installer marks its applications as manually
-installed, so `apt autoremove` never removes them. Other desktops, such as
-GNOME, are not removed. `g-unity7-cleanup` shows all changes and asks before
-making them. `g-unity7-cleanup --dry-run` only shows them.
+installed, so `apt autoremove` never removes them. It also removes
+packages of the Ubuntu Unity image that G Unity⁷ does not use: Fcitx 4, which
+the installer leaves from the live system, with the KDE Frameworks it pulls in
+(G Unity⁷ uses IBus), Kvantum, the Qt style of the installer, GParted (GNOME
+Disks does the basic tasks) and the libraries of the installer. Other desktops,
+such as GNOME, are not removed. `g-unity7-cleanup` shows all changes and asks
+before making them. `g-unity7-cleanup --dry-run` only shows them.
 
 Ubuntu installs Firefox and Thunderbird as snaps. `g-unity7-cleanup` offers the
 PPA packages with Unity's global menu instead, built from the Debian sources. It

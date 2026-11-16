@@ -107,6 +107,22 @@ The script also removes the desktop files of snaps that are not installed from
 The Ubuntu image leaves those of the snaps that the installer does not
 install, such as Thunderbird, and the Dash shows them with a missing icon.
 .PP
+The Ubuntu Unity installer copies the live system, which has Fcitx 4 with
+Japanese and Chinese input, and does not remove it.
+.B im-config
+no longer supports Fcitx 4, so it cannot be selected as an input method, but
+the Dash shows its launchers. G Unity⁷ uses IBus. Fcitx 4 also pulls in the KDE
+Frameworks and the KDE
+.BR systemsettings .
+The image also has Kvantum, the Qt style of the installer, GParted, an
+advanced partition editor
+.RB ( gnome-disk-utility
+does the basic tasks), and the libraries and the snap seeding tool of the
+installer, which it does not remove with Calamares. All packages of the image
+are manually installed. The
+script marks these packages as automatically installed, and autoremove
+removes them unless other packages need them.
+.PP
 The script shows all changes and asks for confirmation. To keep a package,
 mark it as manually installed first:
 .BI "sudo apt-mark manual " package

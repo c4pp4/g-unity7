@@ -11,6 +11,7 @@ PATCHES=(
 	Show-photo-in-default-file-manager.patch
 	Fix-scope-crash.patch
 	Fix-preview-crash.patch
+	Refresh-results-when-Shotwell-database-changes.patch
 )
 
 debian_edit() {
