@@ -52,8 +52,11 @@ installed, so `apt autoremove` never removes them. It also removes
 packages of the Ubuntu Unity image that G Unity⁷ does not use: Fcitx 4, which
 the installer leaves from the live system, with the KDE Frameworks it pulls in
 (G Unity⁷ uses IBus), Kvantum, the Qt style of the installer, GParted (GNOME
-Disks does the basic tasks) and the libraries of the installer. Other desktops,
-such as GNOME, are not removed. `g-unity7-cleanup` shows all changes and asks
+Disks does the basic tasks) and the libraries of the installer. It removes the
+mount units of snap revisions that are not installed, which fail at every
+boot, and the configuration files of PulseAudio, which PipeWire replaces
+and whose autostart file remains. Other desktops, such as GNOME, are not
+removed. `g-unity7-cleanup` shows all changes and asks
 before making them. `g-unity7-cleanup --dry-run` only shows them.
 
 Ubuntu installs Firefox and Thunderbird as snaps. `g-unity7-cleanup` offers the

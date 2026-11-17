@@ -33,7 +33,10 @@
 ##    the snap, it offers the package too. The choice between Thunderbird and
 ##    Evolution is part of this offer, not of the alternatives above.
 ##  - removes the desktop files of snaps that are not installed, which the
-##    Ubuntu image leaves behind
+##    Ubuntu image leaves behind, and the mount units of snap revisions that
+##    are not installed, which fail at every boot
+##  - purges the configuration files of PulseAudio, which installing
+##    g-unity7-desktop removes for PipeWire, as its autostart file remains
 ##  - marks the packages of the Ubuntu Unity image that G Unity⁷ does not use
 ##    as automatically installed: Fcitx 4 (im-config no longer supports it, and
 ##    G Unity⁷ uses IBus) with the KDE Frameworks it pulls in, Kvantum,
@@ -704,7 +707,9 @@ moz_choice thunderbird snap/thunderbird/common/.thunderbird .thunderbird Thunder
 ##  installed snaps. Nothing is removed if snap list fails.
 snap_desktop_dir=/var/lib/snapd/desktop/applications
 snap_desktop_remove=()
+snaps_listed=
 if command -v snap >/dev/null && snaps=$(LC_ALL=C snap list --all 2>/dev/null); then
+	snaps_listed=1
 	for file in "${snap_desktop_dir}"/*_*.desktop; do
 		[[ -f ${file} ]] || continue
 		## <snap>_<app>.desktop, or <snap>+<key>_<app>.desktop for an instance
@@ -715,6 +720,37 @@ if command -v snap >/dev/null && snaps=$(LC_ALL=C snap list --all 2>/dev/null); 
 			|| snap_desktop_remove+=( "${file}" )
 	done
 fi
+
+## Mount units of snap revisions that are neither installed nor have their
+##  .snap file. Some remain on Ubuntu Unity (old revisions of the base snaps,
+##  Thunderbird), and they fail at every boot. Nothing is removed if snap list
+##  fails.
+snap_mount_remove=() snap_mount_lines=()
+if [[ -n ${snaps_listed} ]]; then
+	for file in /etc/systemd/system/snap-*.mount; do
+		[[ -f ${file} ]] || continue
+		what=$(awk -F= '$1 == "What" { print $2; exit }' "${file}")
+		[[ ${what} == /var/lib/snapd/snaps/*_*.snap && ! -e ${what} ]] || continue
+		## <snap>_<revision>.snap
+		name=${what##*/}
+		name=${name%.snap}
+		rev=${name##*_}
+		name=${name%_*}
+		awk -v n="${name}" -v r="${rev}" 'NR > 1 && $1 == n && $3 == r { found = 1 } END { exit !found }' \
+			<<< "${snaps}" && continue
+		snap_mount_remove+=( "${file##*/}" )
+		snap_mount_lines+=( "${name} ${rev} (${file##*/})" )
+	done
+fi
+
+## Configuration files of packages that installing g-unity7-desktop removed
+##  without purging them. The autostart file of PulseAudio, which PipeWire
+##  replaces, starts a program that no longer exists.
+conf_purge=()
+for name in pulseaudio; do
+	[[ $(dpkg-query -W -f='${db:Status-Status}' "${name}" 2>/dev/null) == config-files ]] \
+		&& conf_purge+=( "${name}" )
+done
 
 mark=()
 add_mark() {
@@ -934,7 +970,8 @@ mark=( "${marked[@]}" )
 
 if [[ ${#mark[@]} -eq 0 && ${#remove[@]} -eq 0 && ${#install[@]} -eq 0 \
 	&& ${#moz_install[@]} -eq 0 && ${#moz_snap_remove[@]} -eq 0 \
-	&& ${#snap_desktop_remove[@]} -eq 0 ]]; then
+	&& ${#snap_desktop_remove[@]} -eq 0 && ${#snap_mount_remove[@]} -eq 0 \
+	&& ${#conf_purge[@]} -eq 0 ]]; then
 	spinner_stop
 	echo "Nothing to do. No Ubuntu Unity packages replaced by G Unity⁷ are left."
 	[[ ${#unchanged[@]} -eq 0 ]] || printf 'Left unchanged by your choice: %s\n' "${unchanged[@]}"
@@ -978,6 +1015,8 @@ list_lines "Left unchanged by your choice" "${unchanged[@]}"
 list_lines "Alternatives kept because other packages need them" "${needed_kept[@]}"
 list_lines "Firefox and Thunderbird" "${moz_lines[@]}"
 list_lines "Desktop files of snaps that are not installed, to be removed" "${snap_desktop_remove[@]}"
+list_lines "Mount units of snap revisions that are not installed, to be removed" "${snap_mount_lines[@]}"
+list_words "Configuration files of removed packages, to be purged" "${conf_purge[@]}"
 list_words "Packages apt will install" "${installs[@]}"
 list_words "Packages apt will upgrade" "${upgrades[@]}"
 list_words "Packages apt will downgrade" "${downgrades[@]}"
@@ -1015,6 +1054,15 @@ if [[ ${#snap_desktop_remove[@]} -gt 0 ]]; then
 	! command -v update-desktop-database >/dev/null \
 		|| update-desktop-database "${snap_desktop_dir}" || true
 fi
+if [[ ${#snap_mount_remove[@]} -gt 0 ]]; then
+	systemctl disable --no-reload "${snap_mount_remove[@]}" 2>/dev/null || true
+	for unit in "${snap_mount_remove[@]}"; do
+		rm -f /etc/systemd/system/"${unit}" /etc/systemd/system/*.wants/"${unit}"
+	done
+	systemctl daemon-reload
+	systemctl reset-failed "${snap_mount_remove[@]}" 2>/dev/null || true
+fi
+[[ ${#conf_purge[@]} -eq 0 ]] || dpkg --purge "${conf_purge[@]}" >/dev/null
 ## The G Unity⁷ Firefox and Thunderbird packages (a lower version than the
 ##  Ubuntu packages; their pin comes with them), then the snap profiles and the
 ##  snaps.

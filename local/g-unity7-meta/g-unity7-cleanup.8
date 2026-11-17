@@ -106,6 +106,19 @@ The script also removes the desktop files of snaps that are not installed from
 .IR /var/lib/snapd/desktop/applications .
 The Ubuntu image leaves those of the snaps that the installer does not
 install, such as Thunderbird, and the Dash shows them with a missing icon.
+It also removes the mount units in
+.I /etc/systemd/system
+of snap revisions that are not installed and whose
+.I .snap
+file does not exist, such as old revisions of the base snaps. They fail at
+every boot.
+.PP
+Installing
+.B g-unity7-desktop
+replaces PulseAudio with PipeWire, and apt removes
+.B pulseaudio
+without its configuration files. Its autostart file then starts a program
+that no longer exists. The script purges these configuration files.
 .PP
 The Ubuntu Unity installer copies the live system, which has Fcitx 4 with
 Japanese and Chinese input, and does not remove it.

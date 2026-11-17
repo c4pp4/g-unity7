@@ -52,6 +52,13 @@ debian_edit() {
 		"install -m 644 debian/g-unity7/*.png debian/libunity-core-6.0-9/usr/share/unity/icons/" \
 		>> debian/rules || return 1
 	grep -Pq "^\tinstall -m 644 debian/g-unity7/\*\.png " debian/rules || return 1
+
+	# The autostart file is not executable, as the ebuild installs it #
+	#  (systemd warned at every login that it is marked executable) #
+	sed -i \
+		-e "s:install -Dm755 uwidgets/uwidgets-runner.desktop :install -Dm644 uwidgets/uwidgets-runner.desktop :" \
+		debian/rules || return 1
+	grep -Fq "install -Dm644 uwidgets/uwidgets-runner.desktop " debian/rules || return 1
 }
 
 src_edit() {
