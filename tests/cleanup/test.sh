@@ -1,7 +1,7 @@
 #!/bin/bash
 ## Tests of g-unity7-cleanup with dummy packages, a fake snap and a fake
-##  systemctl. Run one group of scenarios as root in an Ubuntu container that
-##  has the repository in /work:
+##  systemctl. Run one group of scenarios as root in an Ubuntu container with
+##  the repository, for example in /work:
 ##
 ##    podman run --rm -v "$PWD":/work:ro,Z docker.io/library/ubuntu:26.10 \
 ##      /work/tests/cleanup/test.sh <group>
@@ -30,7 +30,7 @@ if [[ ${1:-} == --update ]]; then
 fi
 [[ $# -eq 1 ]] || { echo "Usage: test.sh [--update] <group>" >&2; exit 2; }
 group=$1
-work=/work
+work=$(cd "$(dirname "$0")"/../.. && pwd)
 meta=${work}/local/g-unity7-meta
 cleanup=${meta}/g-unity7-cleanup
 expected=${work}/tests/cleanup/expected/${group}.out

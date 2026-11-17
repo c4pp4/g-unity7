@@ -24,6 +24,8 @@ concurrency:
 permissions:
   contents: read
 
+## apt-get update is tried again after a minute: it fails while the Ubuntu
+##  mirror syncs. The actions are pinned to the commits of their versions.
 ## The default shell of container jobs is sh.
 defaults:
   run:
@@ -40,8 +42,10 @@ jobs:
       packages: ${{ steps.plan.outputs.packages }}
       series: ${{ steps.setup.outputs.series }}
     steps:
-      - run: apt-get update -qq && apt-get install -y -qq --no-install-recommends git ca-certificates >/dev/null
-      - uses: actions/checkout@v7
+      - run: |
+          for i in 1 2 3; do apt-get update -qq && break; [ "$i" -lt 3 ] || exit 1; sleep 60; done
+          apt-get install -y -qq --no-install-recommends git ca-certificates >/dev/null
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - id: setup
         uses: ./.github/actions/setup
       - id: plan
@@ -69,14 +73,16 @@ jobs:
       DEBFULLNAME: ${{ vars.DEBFULLNAME }}
       BUILD: build/${{ needs.plan.outputs.series }}/${{ matrix.package }}
     steps:
-      - run: apt-get update -qq && apt-get install -y -qq --no-install-recommends git ca-certificates >/dev/null
-      - uses: actions/checkout@v7
+      - run: |
+          for i in 1 2 3; do apt-get update -qq && break; [ "$i" -lt 3 ] || exit 1; sleep 60; done
+          apt-get install -y -qq --no-install-recommends git ca-certificates >/dev/null
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/setup
       - run: scripts/build-source.sh ${{ inputs.force && '--force' || '' }} ${{ matrix.package }}
       - if: always()
         run: |
           [ -f "$BUILD"/review/summary.md ] && cat "$BUILD"/review/summary.md >> "$GITHUB_STEP_SUMMARY" || true
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: source-${{ matrix.package }}
           retention-days: 30
@@ -85,10 +91,25 @@ jobs:
             ${{ env.BUILD }}/review
             ${{ env.BUILD }}/result.env
             ${{ env.BUILD }}/patches.txt
+      # The job log has only the end of a failed build
+      - if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: log-${{ matrix.package }}
+          retention-days: 7
+          if-no-files-found: ignore
+          path: ${{ env.BUILD }}/work/dpkg-buildpackage.log
 
   upload:
     needs: [plan, build]
     if: always() && needs.build.result != 'skipped'
+    ## This job and review.yml both rewrite the approval issue after minutes of
+    ##  Launchpad queries, so they run one at a time, or one would drop the
+    ##  changes of the other. queue: max keeps all waiting runs; by default, a
+    ##  new run would cancel the waiting one, and with it a command.
+    concurrency:
+      group: approve
+      queue: max
     runs-on: ubuntu-latest
     container: ubuntu:26.10
     environment: launchpad
@@ -102,10 +123,12 @@ jobs:
       GPG_KEY_ID: ${{ vars.GPG_KEY_ID }}
       SERIES: ${{ needs.plan.outputs.series }}
     steps:
-      - run: apt-get update -qq && apt-get install -y -qq --no-install-recommends git ca-certificates >/dev/null
-      - uses: actions/checkout@v7
+      - run: |
+          for i in 1 2 3; do apt-get update -qq && break; [ "$i" -lt 3 ] || exit 1; sleep 60; done
+          apt-get install -y -qq --no-install-recommends git ca-certificates >/dev/null
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/setup
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: source-*
           path: artifacts

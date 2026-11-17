@@ -2,13 +2,20 @@
 ##  packages can be built, without uploading anything.
 name: Check
 
+## A change of the README alone does not need the 67 source packages.
 on:
   push:
+    paths-ignore:
+      - README.md
   pull_request:
+    paths-ignore:
+      - README.md
 
 permissions:
   contents: read
 
+## apt-get update is tried again after a minute: it fails while the Ubuntu
+##  mirror syncs. The actions are pinned to the commits of their versions.
 ## The default shell of container jobs is sh.
 defaults:
   run:
@@ -20,7 +27,7 @@ jobs:
     outputs:
       packages: ${{ steps.list.outputs.packages }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - id: list
         run: |
           source scripts/lib.sh
@@ -47,8 +54,10 @@ jobs:
       DEBEMAIL: ${{ vars.DEBEMAIL || 'noreply@example.invalid' }}
       DEBFULLNAME: ${{ vars.DEBFULLNAME || 'c4pp4' }}
     steps:
-      - run: apt-get update -qq && apt-get install -y -qq --no-install-recommends git ca-certificates >/dev/null
-      - uses: actions/checkout@v7
+      - run: |
+          for i in 1 2 3; do apt-get update -qq && break; [ "$i" -lt 3 ] || exit 1; sleep 60; done
+          apt-get install -y -qq --no-install-recommends git ca-certificates >/dev/null
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/setup
       - run: scripts/build-source.sh --force ${{ matrix.package }}
       - if: always()
@@ -57,3 +66,11 @@ jobs:
             [ -f "$summary" ] && cat "$summary" >> "$GITHUB_STEP_SUMMARY"
           done
           true
+      # The job log has only the end of a failed build
+      - if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: log-${{ matrix.package }}
+          retention-days: 7
+          if-no-files-found: ignore
+          path: build/*/${{ matrix.package }}/work/dpkg-buildpackage.log

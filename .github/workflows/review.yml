@@ -1,5 +1,6 @@
-## The approval issue: update it every hour and run the commands that the
-##  repository owner gives in its comments (/upload, /reject, /promote, /retry).
+## The approval issue: update it (the cron asks for every hour, GitHub runs it
+##  a few times a day) and run the commands that the repository owner gives in
+##  its comments (/upload, /reject, /promote, /retry).
 name: Review
 
 on:
@@ -14,13 +15,11 @@ on:
         required: false
         default: ''
 
-concurrency:
-  group: review
-  cancel-in-progress: false
-
 permissions:
   contents: read
 
+## apt-get update is tried again after a minute: it fails while the Ubuntu
+##  mirror syncs. The actions are pinned to the commits of their versions.
 ## The default shell of container jobs is sh.
 defaults:
   run:
@@ -33,6 +32,11 @@ jobs:
       (contains(github.event.issue.labels.*.name, 'approve') &&
        github.event.comment.author_association == 'OWNER' &&
        startsWith(github.event.comment.body, '/'))
+    ## One at a time with the upload job of ppa.yml, which also rewrites the
+    ##  approval issue; queue: max keeps all waiting runs and their commands.
+    concurrency:
+      group: approve
+      queue: max
     runs-on: ubuntu-latest
     container: ubuntu:26.10
     environment: launchpad
@@ -45,8 +49,10 @@ jobs:
       DEBFULLNAME: ${{ vars.DEBFULLNAME }}
       GPG_KEY_ID: ${{ vars.GPG_KEY_ID }}
     steps:
-      - run: apt-get update -qq && apt-get install -y -qq --no-install-recommends git ca-certificates >/dev/null
-      - uses: actions/checkout@v7
+      - run: |
+          for i in 1 2 3; do apt-get update -qq && break; [ "$i" -lt 3 ] || exit 1; sleep 60; done
+          apt-get install -y -qq --no-install-recommends git ca-certificates >/dev/null
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/setup
       - env:
           GITHUB_TOKEN: ${{ github.token }}

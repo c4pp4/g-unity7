@@ -74,7 +74,7 @@ remove_trees() {
 ##  InRelease, which has the checksums of Sources, which has those of the .dsc
 ##  and its tarballs, so apt fails on any file that the archive did not publish.
 apt_download() {
-	local source=$1 version=$2 url=$3 keyring=$4 apt_dir="${work}/apt" suite
+	local source=$1 version=$2 url=$3 keyring=$4 apt_dir="${work}/apt" suite try
 	local -a apt_opts suites=( "${@:5}" )
 	mkdir -p "${apt_dir}"/lists/partial "${apt_dir}"/cache/archives/partial
 	for suite in "${suites[@]}"; do
@@ -85,7 +85,14 @@ apt_download() {
 		-o Dir::State::Lists="${apt_dir}"/lists -o Dir::Cache="${apt_dir}"/cache
 		-o Debug::NoLocking=true -o APT::Sandbox::User=root
 	)
-	apt-get "${apt_opts[@]}" -qq update >&2 || die "apt-get update of ${url} failed."
+	## A mirror that is syncing serves indexes that do not match the Release
+	##  file for minutes
+	for try in 1 2 3; do
+		apt-get "${apt_opts[@]}" -qq update >&2 && break
+		[[ ${try} -lt 3 ]] || die "apt-get update of ${url} failed."
+		ewarn "apt-get update of ${url} failed, trying again in a minute."
+		sleep 60
+	done
 	(cd "${work}" && apt-get "${apt_opts[@]}" -qq source --download-only "${source}=${version}" >&2) \
 		|| die "Download of ${source} ${version} from ${url} failed."
 	rm -rf "${apt_dir}"
