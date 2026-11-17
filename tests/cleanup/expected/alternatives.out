@@ -1,0 +1,774 @@
+### dry-run: 1 1 Enter 2
+For some applications (terminal, image viewer, …), a different package than
+the recommended one, or more than one package, is installed.
+Choose the package to keep; the others will be removed. Press Enter to accept
+the number in brackets.
+
+a1 and a2 are installed:
+  1) Keep a1: test package a1 (recommended)
+  2) Keep a2: test package a2
+  3) Install a3: test package a3
+  4) Change nothing; I will handle it myself
+
+b1 and b2 are installed:
+  1) Keep b1: test package b1 (recommended)
+  2) Keep b2: test package b2
+  3) Change nothing; I will handle it myself
+
+c2 and c3 are installed:
+  1) Keep c2: test package c2
+  2) Keep c3: test package c3
+  3) Change nothing; I will handle it myself
+
+d2 is installed instead of d1:
+  1) Install d1: test package d1 (recommended)
+  2) Keep d2: test package d2
+
+Alternatives to remove (1):
+  a2 (a1 is kept)
+
+Replaced by G Unity⁷ or not used by it, to be removed (4):
+  ubuntu-unity-desktop dup1 a2dep dupdep
+
+Left unchanged by your choice (1):
+  c1 | c2 | c3
+
+Alternatives kept because other packages need them (1):
+  b2 (needed by needs-b2)
+
+Packages apt will remove (6):
+  a2* a2dep* ubuntu-unity-desktop* dup1* dupdep* eapp*
+
+To keep a package, mark it as manually installed first: sudo apt-mark manual <package>
+state: g-unity7-desktop ubuntu-unity-desktop dup1 dupdep tool a1(a) a2 a2dep b1(a) b2(a) c2 c3 d2(a) needs-b2 eapp(a) 
+
+dry-run changed nothing
+
+### dry-run: 2 2 1 1
+For some applications (terminal, image viewer, …), a different package than
+the recommended one, or more than one package, is installed.
+Choose the package to keep; the others will be removed. Press Enter to accept
+the number in brackets.
+
+a1 and a2 are installed:
+  1) Keep a1: test package a1 (recommended)
+  2) Keep a2: test package a2
+  3) Install a3: test package a3
+  4) Change nothing; I will handle it myself
+
+b1 and b2 are installed:
+  1) Keep b1: test package b1 (recommended)
+  2) Keep b2: test package b2
+  3) Change nothing; I will handle it myself
+
+c2 and c3 are installed:
+  1) Keep c2: test package c2
+  2) Keep c3: test package c3
+  3) Change nothing; I will handle it myself
+
+d2 is installed instead of d1:
+  1) Install d1: test package d1 (recommended)
+  2) Keep d2: test package d2
+
+Alternatives to install (1):
+  d1
+
+Alternatives to remove (4):
+  a1 (a2 is kept)
+  b1 (b2 is kept)
+  c3 (c2 is kept)
+  d2 (d1 is installed instead)
+
+Replaced by G Unity⁷ or not used by it, to be removed (3):
+  ubuntu-unity-desktop dup1 dupdep
+
+Packages apt will install (1):
+  d1
+
+Packages apt will remove (8):
+  a1* b1* c3* d2* ubuntu-unity-desktop* dup1* dupdep* eapp*
+
+To keep a package, mark it as manually installed first: sudo apt-mark manual <package>
+state: g-unity7-desktop ubuntu-unity-desktop dup1 dupdep tool a1(a) a2 a2dep b1(a) b2(a) c2 c3 d2(a) needs-b2 eapp(a) 
+
+### dry-run: invalid answers x 9 0, then 4 3 3 2
+For some applications (terminal, image viewer, …), a different package than
+the recommended one, or more than one package, is installed.
+Choose the package to keep; the others will be removed. Press Enter to accept
+the number in brackets.
+
+a1 and a2 are installed:
+  1) Keep a1: test package a1 (recommended)
+  2) Keep a2: test package a2
+  3) Install a3: test package a3
+  4) Change nothing; I will handle it myself
+Enter a number from 1 to 4.
+Enter a number from 1 to 4.
+Enter a number from 1 to 4.
+
+b1 and b2 are installed:
+  1) Keep b1: test package b1 (recommended)
+  2) Keep b2: test package b2
+  3) Change nothing; I will handle it myself
+
+c2 and c3 are installed:
+  1) Keep c2: test package c2
+  2) Keep c3: test package c3
+  3) Change nothing; I will handle it myself
+
+d2 is installed instead of d1:
+  1) Install d1: test package d1 (recommended)
+  2) Keep d2: test package d2
+
+Replaced by G Unity⁷ or not used by it, to be removed (3):
+  ubuntu-unity-desktop dup1 dupdep
+
+Left unchanged by your choice (3):
+  a1 | a2 | a3
+  b1 | b2
+  c1 | c2 | c3
+
+Packages apt will remove (4):
+  ubuntu-unity-desktop* dup1* dupdep* eapp*
+
+To keep a package, mark it as manually installed first: sudo apt-mark manual <package>
+state: g-unity7-desktop ubuntu-unity-desktop dup1 dupdep tool a1(a) a2 a2dep b1(a) b2(a) c2 c3 d2(a) needs-b2 eapp(a) 
+
+### dry-run: no answer
+For some applications (terminal, image viewer, …), a different package than
+the recommended one, or more than one package, is installed.
+Choose the package to keep; the others will be removed. Press Enter to accept
+the number in brackets.
+
+a1 and a2 are installed:
+  1) Keep a1: test package a1 (recommended)
+  2) Keep a2: test package a2
+  3) Install a3: test package a3
+  4) Change nothing; I will handle it myself
+g-unity7-cleanup: no answer; use --yes to accept the recommended choices
+[exit 1]
+state: g-unity7-desktop ubuntu-unity-desktop dup1 dupdep tool a1(a) a2 a2dep b1(a) b2(a) c2 c3 d2(a) needs-b2 eapp(a) 
+
+### --yes --dry-run
+For some applications (terminal, image viewer, …), a different package than
+the recommended one, or more than one package, is installed.
+The recommended packages are kept or installed, and the others are removed.
+
+a1 and a2 are installed:
+  Keep a1: test package a1 (recommended)
+
+b1 and b2 are installed:
+  Keep b1: test package b1 (recommended)
+
+c2 and c3 are installed:
+  Change nothing; I will handle it myself
+
+d2 is installed instead of d1:
+  Install d1: test package d1 (recommended)
+
+Alternatives to install (1):
+  d1
+
+Alternatives to remove (2):
+  a2 (a1 is kept)
+  d2 (d1 is installed instead)
+
+Replaced by G Unity⁷ or not used by it, to be removed (4):
+  ubuntu-unity-desktop dup1 a2dep dupdep
+
+Left unchanged by your choice (1):
+  c1 | c2 | c3
+
+Alternatives kept because other packages need them (1):
+  b2 (needed by needs-b2)
+
+Packages apt will install (1):
+  d1
+
+Packages apt will remove (7):
+  a2* a2dep* d2* ubuntu-unity-desktop* dup1* dupdep* eapp*
+
+To keep a package, mark it as manually installed first: sudo apt-mark manual <package>
+state: g-unity7-desktop ubuntu-unity-desktop dup1 dupdep tool a1(a) a2 a2dep b1(a) b2(a) c2 c3 d2(a) needs-b2 eapp(a) 
+
+### --yes
+For some applications (terminal, image viewer, …), a different package than
+the recommended one, or more than one package, is installed.
+The recommended packages are kept or installed, and the others are removed.
+
+a1 and a2 are installed:
+  Keep a1: test package a1 (recommended)
+
+b1 and b2 are installed:
+  Keep b1: test package b1 (recommended)
+
+c2 and c3 are installed:
+  Change nothing; I will handle it myself
+
+d2 is installed instead of d1:
+  Install d1: test package d1 (recommended)
+
+Alternatives to install (1):
+  d1
+
+Alternatives to remove (2):
+  a2 (a1 is kept)
+  d2 (d1 is installed instead)
+
+Replaced by G Unity⁷ or not used by it, to be removed (4):
+  ubuntu-unity-desktop dup1 a2dep dupdep
+
+Left unchanged by your choice (1):
+  c1 | c2 | c3
+
+Alternatives kept because other packages need them (1):
+  b2 (needed by needs-b2)
+
+Packages apt will install (1):
+  d1
+
+Packages apt will remove (7):
+  a2* a2dep* d2* ubuntu-unity-desktop* dup1* dupdep* eapp*
+
+To keep a package, mark it as manually installed first: sudo apt-mark manual <package>
+The following packages will be REMOVED:
+  a2* a2dep* d2* dup1* dupdep* eapp* ubuntu-unity-desktop*
+The following NEW packages will be installed:
+  d1
+0 upgraded, 1 newly installed, 7 to remove and 0 not upgraded.
+After this operation, 0 B of additional disk space will be used.
+state: g-unity7-desktop tool a1(a) b1(a) b2(a) c2 c3 d1(a) needs-b2 
+
+### again --yes
+For some applications (terminal, image viewer, …), a different package than
+the recommended one, or more than one package, is installed.
+The recommended packages are kept or installed, and the others are removed.
+
+b1 and b2 are installed:
+  Keep b1: test package b1 (recommended)
+
+c2 and c3 are installed:
+  Change nothing; I will handle it myself
+
+Nothing to do. No Ubuntu Unity packages replaced by G Unity⁷ are left.
+Left unchanged by your choice: c1 | c2 | c3
+Kept because other packages need it: b2 (needed by needs-b2)
+state: g-unity7-desktop tool a1(a) b1(a) b2(a) c2 c3 d1(a) needs-b2 
+
+### answers 1 1 Enter 2, no answer to the confirmation
+For some applications (terminal, image viewer, …), a different package than
+the recommended one, or more than one package, is installed.
+Choose the package to keep; the others will be removed. Press Enter to accept
+the number in brackets.
+
+a1 and a2 are installed:
+  1) Keep a1: test package a1 (recommended)
+  2) Keep a2: test package a2
+  3) Install a3: test package a3
+  4) Change nothing; I will handle it myself
+
+b1 and b2 are installed:
+  1) Keep b1: test package b1 (recommended)
+  2) Keep b2: test package b2
+  3) Change nothing; I will handle it myself
+
+c2 and c3 are installed:
+  1) Keep c2: test package c2
+  2) Keep c3: test package c3
+  3) Change nothing; I will handle it myself
+
+d2 is installed instead of d1:
+  1) Install d1: test package d1 (recommended)
+  2) Keep d2: test package d2
+
+Alternatives to remove (1):
+  a2 (a1 is kept)
+
+Replaced by G Unity⁷ or not used by it, to be removed (4):
+  ubuntu-unity-desktop dup1 a2dep dupdep
+
+Left unchanged by your choice (1):
+  c1 | c2 | c3
+
+Alternatives kept because other packages need them (1):
+  b2 (needed by needs-b2)
+
+Packages apt will remove (6):
+  a2* a2dep* ubuntu-unity-desktop* dup1* dupdep* eapp*
+
+To keep a package, mark it as manually installed first: sudo apt-mark manual <package>
+No changes were made.
+state: g-unity7-desktop ubuntu-unity-desktop dup1 dupdep tool a1(a) a2 a2dep b1(a) b2(a) c2 c3 d2(a) needs-b2 eapp(a) 
+
+### answers 1 1 Enter 2, confirmation n
+For some applications (terminal, image viewer, …), a different package than
+the recommended one, or more than one package, is installed.
+Choose the package to keep; the others will be removed. Press Enter to accept
+the number in brackets.
+
+a1 and a2 are installed:
+  1) Keep a1: test package a1 (recommended)
+  2) Keep a2: test package a2
+  3) Install a3: test package a3
+  4) Change nothing; I will handle it myself
+
+b1 and b2 are installed:
+  1) Keep b1: test package b1 (recommended)
+  2) Keep b2: test package b2
+  3) Change nothing; I will handle it myself
+
+c2 and c3 are installed:
+  1) Keep c2: test package c2
+  2) Keep c3: test package c3
+  3) Change nothing; I will handle it myself
+
+d2 is installed instead of d1:
+  1) Install d1: test package d1 (recommended)
+  2) Keep d2: test package d2
+
+Alternatives to remove (1):
+  a2 (a1 is kept)
+
+Replaced by G Unity⁷ or not used by it, to be removed (4):
+  ubuntu-unity-desktop dup1 a2dep dupdep
+
+Left unchanged by your choice (1):
+  c1 | c2 | c3
+
+Alternatives kept because other packages need them (1):
+  b2 (needed by needs-b2)
+
+Packages apt will remove (6):
+  a2* a2dep* ubuntu-unity-desktop* dup1* dupdep* eapp*
+
+To keep a package, mark it as manually installed first: sudo apt-mark manual <package>
+No changes were made.
+state: g-unity7-desktop ubuntu-unity-desktop dup1 dupdep tool a1(a) a2 a2dep b1(a) b2(a) c2 c3 d2(a) needs-b2 eapp(a) 
+
+### a2 a3 without a1: 1 (install a1), 2 (keep d2), confirm
+For some applications (terminal, image viewer, …), a different package than
+the recommended one, or more than one package, is installed.
+Choose the package to keep; the others will be removed. Press Enter to accept
+the number in brackets.
+
+a2 and a3 are installed:
+  1) Install a1: test package a1 (recommended)
+  2) Keep a2: test package a2
+  3) Keep a3: test package a3
+  4) Change nothing; I will handle it myself
+
+d2 is installed instead of d1:
+  1) Install d1: test package d1 (recommended)
+  2) Keep d2: test package d2
+
+Alternatives to install (1):
+  a1
+
+Alternatives to remove (2):
+  a2 (a1 is installed instead)
+  a3 (a1 is installed instead)
+
+Packages apt will install (1):
+  a1
+
+Packages apt will remove (3):
+  a2* a2dep* a3*
+
+To keep a package, mark it as manually installed first: sudo apt-mark manual <package>
+The following packages will be REMOVED:
+  a2* a2dep* a3*
+The following NEW packages will be installed:
+  a1
+0 upgraded, 1 newly installed, 3 to remove and 0 not upgraded.
+After this operation, 0 B of additional disk space will be used.
+state: g-unity7-desktop a1(a) d2(a) 
+
+### c2 c3, c1 not in the archive: Enter, --dry-run
+For some applications (terminal, image viewer, …), a different package than
+the recommended one, or more than one package, is installed.
+Choose the package to keep; the others will be removed. Press Enter to accept
+the number in brackets.
+
+c2 and c3 are installed:
+  1) Keep c2: test package c2
+  2) Keep c3: test package c3
+  3) Change nothing; I will handle it myself
+
+Nothing to do. No Ubuntu Unity packages replaced by G Unity⁷ are left.
+Left unchanged by your choice: c1 | c2 | c3
+state: g-unity7-desktop c2 c3(a) 
+
+### c2 c3: --yes
+For some applications (terminal, image viewer, …), a different package than
+the recommended one, or more than one package, is installed.
+The recommended packages are kept or installed, and the others are removed.
+
+c2 and c3 are installed:
+  Change nothing; I will handle it myself
+
+Nothing to do. No Ubuntu Unity packages replaced by G Unity⁷ are left.
+Left unchanged by your choice: c1 | c2 | c3
+state: g-unity7-desktop c2 c3(a) 
+
+### only a3 (a1 in the archive) and only c2 (c1 not): 1, confirm
+For some applications (terminal, image viewer, …), a different package than
+the recommended one, or more than one package, is installed.
+Choose the package to keep; the others will be removed. Press Enter to accept
+the number in brackets.
+
+a3 is installed instead of a1:
+  1) Install a1: test package a1 (recommended)
+  2) Install a2: test package a2
+  3) Keep a3: test package a3
+
+Alternatives to install (1):
+  a1
+
+Alternatives to remove (1):
+  a3 (a1 is installed instead)
+
+Packages apt will install (1):
+  a1
+
+Packages apt will remove (1):
+  a3*
+
+To keep a package, mark it as manually installed first: sudo apt-mark manual <package>
+The following packages will be REMOVED:
+  a3*
+The following NEW packages will be installed:
+  a1
+0 upgraded, 1 newly installed, 1 to remove and 0 not upgraded.
+After this operation, 0 B of additional disk space will be used.
+state: g-unity7-desktop a1(a) c2(a) 
+
+### e2 instead of e1: 2 (keep e2), confirm
+For some applications (terminal, image viewer, …), a different package than
+the recommended one, or more than one package, is installed.
+Choose the package to keep; the others will be removed. Press Enter to accept
+the number in brackets.
+
+e2 is installed instead of e1:
+  1) Install e1: test package e1 (recommended)
+  2) Keep e2: test package e2
+
+Replaced by G Unity⁷ or not used by it, to be removed (4):
+  ubuntu-unity-desktop dup1 eapp dupdep
+
+Packages apt will remove (4):
+  ubuntu-unity-desktop* dup1* dupdep* eapp*
+
+To keep a package, mark it as manually installed first: sudo apt-mark manual <package>
+The following packages will be REMOVED:
+  dup1* dupdep* eapp* ubuntu-unity-desktop*
+0 upgraded, 0 newly installed, 4 to remove and 0 not upgraded.
+After this operation, 0 B of additional disk space will be used.
+state: g-unity7-desktop e2 eapp2 
+
+### e2 instead of e1: 1 (install e1), confirm
+For some applications (terminal, image viewer, …), a different package than
+the recommended one, or more than one package, is installed.
+Choose the package to keep; the others will be removed. Press Enter to accept
+the number in brackets.
+
+e2 is installed instead of e1:
+  1) Install e1: test package e1 (recommended)
+  2) Keep e2: test package e2
+
+Alternatives to install (1):
+  e1
+
+Alternatives to remove (1):
+  e2 (e1 is installed instead)
+
+Replaced by G Unity⁷ or not used by it, to be removed (4):
+  ubuntu-unity-desktop dup1 dupdep eapp2
+
+Packages apt will install (1):
+  e1
+
+Packages apt will remove (5):
+  ubuntu-unity-desktop* dup1* dupdep* e2* eapp2*
+
+To keep a package, mark it as manually installed first: sudo apt-mark manual <package>
+The following packages will be REMOVED:
+  dup1* dupdep* e2* eapp2* ubuntu-unity-desktop*
+The following NEW packages will be installed:
+  e1
+0 upgraded, 1 newly installed, 5 to remove and 0 not upgraded.
+After this operation, 0 B of additional disk space will be used.
+state: g-unity7-desktop e1(a) eapp 
+
+### Czech apt-cache policy
+  Kandidát:          1
+
+### Czech: d2 instead of d1, --yes --dry-run
+For some applications (terminal, image viewer, …), a different package than
+the recommended one, or more than one package, is installed.
+The recommended packages are kept or installed, and the others are removed.
+
+d2 is installed instead of d1:
+  Install d1: test package d1 (recommended)
+
+Alternatives to install (1):
+  d1
+
+Alternatives to remove (1):
+  d2 (d1 is installed instead)
+
+Packages apt will install (1):
+  d1
+
+Packages apt will remove (1):
+  d2*
+
+To keep a package, mark it as manually installed first: sudo apt-mark manual <package>
+state: g-unity7-desktop d2(a) 
+
+### terminal: 1 1, confirmation n
+spinner shown
+no changes made
+
+### f1 and f2: 1 (keep f1), confirm
+For some applications (terminal, image viewer, …), a different package than
+the recommended one, or more than one package, is installed.
+Choose the package to keep; the others will be removed. Press Enter to accept
+the number in brackets.
+
+f1 and f2 are installed:
+  1) Keep f1: test package f1 (recommended)
+  2) Keep f2, and install f3 and f4
+  3) Change nothing; I will handle it myself
+
+Alternatives to remove (1):
+  f2 (f1 is kept)
+
+Packages apt will remove (1):
+  f2*
+
+To keep a package, mark it as manually installed first: sudo apt-mark manual <package>
+The following packages will be REMOVED:
+  f2*
+0 upgraded, 0 newly installed, 1 to remove and 0 not upgraded.
+After this operation, 0 B of additional disk space will be used.
+state: g-unity7-desktop f1(a) 
+
+### f1 and f2: 2 (keep f2 with f3 f4), confirm
+For some applications (terminal, image viewer, …), a different package than
+the recommended one, or more than one package, is installed.
+Choose the package to keep; the others will be removed. Press Enter to accept
+the number in brackets.
+
+f1 and f2 are installed:
+  1) Keep f1: test package f1 (recommended)
+  2) Keep f2, and install f3 and f4
+  3) Change nothing; I will handle it myself
+
+Alternatives to install (2):
+  f3 f4
+
+Alternatives to remove (1):
+  f1 (f2, f3 and f4 are kept)
+
+Packages apt will install (2):
+  f3 f4
+
+Packages apt will remove (1):
+  f1*
+
+To keep a package, mark it as manually installed first: sudo apt-mark manual <package>
+The following packages will be REMOVED:
+  f1*
+The following NEW packages will be installed:
+  f3 f4
+0 upgraded, 2 newly installed, 1 to remove and 0 not upgraded.
+After this operation, 0 B of additional disk space will be used.
+state: g-unity7-desktop f2 f3 f4 
+
+### f2 f3 without f1: --yes
+For some applications (terminal, image viewer, …), a different package than
+the recommended one, or more than one package, is installed.
+The recommended packages are kept or installed, and the others are removed.
+
+f2 and f3 are installed instead of f1:
+  Install f1: test package f1 (recommended)
+
+Alternatives to install (1):
+  f1
+
+Alternatives to remove (2):
+  f2 (f1 is installed instead)
+  f3 (f1 is installed instead)
+
+Packages apt will install (1):
+  f1
+
+Packages apt will remove (2):
+  f2* f3*
+
+To keep a package, mark it as manually installed first: sudo apt-mark manual <package>
+The following packages will be REMOVED:
+  f2* f3*
+The following NEW packages will be installed:
+  f1
+0 upgraded, 1 newly installed, 2 to remove and 0 not upgraded.
+After this operation, 0 B of additional disk space will be used.
+state: g-unity7-desktop f1(a) 
+
+### f2 f3 without f1: 2 (keep the set), confirm
+For some applications (terminal, image viewer, …), a different package than
+the recommended one, or more than one package, is installed.
+Choose the package to keep; the others will be removed. Press Enter to accept
+the number in brackets.
+
+f2 and f3 are installed instead of f1:
+  1) Install f1: test package f1 (recommended)
+  2) Keep f2 and f3, and install f4
+
+Alternatives to install (1):
+  f4
+
+Packages apt will install (1):
+  f4
+
+Packages apt will remove: none
+
+To keep a package, mark it as manually installed first: sudo apt-mark manual <package>
+The following NEW packages will be installed:
+  f4
+0 upgraded, 1 newly installed, 0 to remove and 0 not upgraded.
+After this operation, 0 B of additional disk space will be used.
+state: g-unity7-desktop f2 f3 f4 
+
+### a1 and a2: 3 (install a3), confirm
+For some applications (terminal, image viewer, …), a different package than
+the recommended one, or more than one package, is installed.
+Choose the package to keep; the others will be removed. Press Enter to accept
+the number in brackets.
+
+a1 and a2 are installed:
+  1) Keep a1: test package a1 (recommended)
+  2) Keep a2: test package a2
+  3) Install a3: test package a3
+  4) Change nothing; I will handle it myself
+
+Alternatives to install (1):
+  a3
+
+Alternatives to remove (2):
+  a1 (a3 is installed instead)
+  a2 (a3 is installed instead)
+
+Packages apt will install (1):
+  a3
+
+Packages apt will remove (3):
+  a1* a2* a2dep*
+
+To keep a package, mark it as manually installed first: sudo apt-mark manual <package>
+The following packages will be REMOVED:
+  a1* a2* a2dep*
+The following NEW packages will be installed:
+  a3
+0 upgraded, 1 newly installed, 3 to remove and 0 not upgraded.
+After this operation, 0 B of additional disk space will be used.
+state: g-unity7-desktop a3 
+
+### only a2: 3 (install a3), confirm
+For some applications (terminal, image viewer, …), a different package than
+the recommended one, or more than one package, is installed.
+Choose the package to keep; the others will be removed. Press Enter to accept
+the number in brackets.
+
+a2 is installed instead of a1:
+  1) Install a1: test package a1 (recommended)
+  2) Keep a2: test package a2
+  3) Install a3: test package a3
+
+Alternatives to install (1):
+  a3
+
+Alternatives to remove (1):
+  a2 (a3 is installed instead)
+
+Packages apt will install (1):
+  a3
+
+Packages apt will remove (2):
+  a2* a2dep*
+
+To keep a package, mark it as manually installed first: sudo apt-mark manual <package>
+The following packages will be REMOVED:
+  a2* a2dep*
+The following NEW packages will be installed:
+  a3
+0 upgraded, 1 newly installed, 2 to remove and 0 not upgraded.
+After this operation, 0 B of additional disk space will be used.
+state: g-unity7-desktop a3 
+
+### g2 instead of g1, which needs an older glib: 1 (install g1), confirm
+For some applications (terminal, image viewer, …), a different package than
+the recommended one, or more than one package, is installed.
+Choose the package to keep; the others will be removed. Press Enter to accept
+the number in brackets.
+
+g2 is installed instead of g1:
+  1) Install g1: test package g1 (recommended)
+  2) Keep g2: test package g2
+
+g-unity7-cleanup: apt cannot make these changes:
+Some packages could not be installed. This may mean that you have
+requested an impossible situation or if you are using the unstable
+distribution that some required packages have not yet been created
+or been moved out of Incoming.
+The following information may help to resolve the situation:
+
+The following packages have unmet dependencies:
+ g1 : Depends: glib (= 1) but 2 is to be installed
+E: Unable to satisfy dependencies. Reached two conflicting assignments:
+   1. g1:amd64=1 is selected for install
+   2. g1:amd64 Depends glib (= 1)
+      but none of the choices are installable:
+      - glib:amd64=1 is not selected for install
+[exit 1]
+state: g-unity7-desktop g2 glib 
+
+### the same with glib pinned to the repository: 1 (install g1), confirm
+For some applications (terminal, image viewer, …), a different package than
+the recommended one, or more than one package, is installed.
+Choose the package to keep; the others will be removed. Press Enter to accept
+the number in brackets.
+
+g2 is installed instead of g1:
+  1) Install g1: test package g1 (recommended)
+  2) Keep g2: test package g2
+
+Alternatives to install (1):
+  g1
+
+Alternatives to remove (1):
+  g2 (g1 is installed instead)
+
+Packages apt will install (1):
+  g1
+
+Packages apt will downgrade (1):
+  glib
+
+Packages apt will remove (1):
+  g2*
+
+To keep a package, mark it as manually installed first: sudo apt-mark manual <package>
+The following additional packages will be installed:
+  glib
+The following packages will be REMOVED:
+  g2*
+The following NEW packages will be installed:
+  g1
+The following packages will be DOWNGRADED:
+  glib
+0 upgraded, 1 newly installed, 1 downgraded, 1 to remove and 0 not upgraded.
+After this operation, 0 B of additional disk space will be used.
+dpkg: warning: downgrading glib (2) to (1)
+state: g-unity7-desktop g1(a) glib 
+

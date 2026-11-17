@@ -1,0 +1,279 @@
+### installs.ini of the snap profile is a link to /etc/shadow
+Firefox is installed as an Ubuntu snap.
+G Unity⁷ provides a Firefox package with Unity's global menu:
+  Install the G Unity⁷ package, copy the snap profile for mallory and remove the snap (recommended)
+
+Thunderbird is not installed.
+G Unity⁷ provides a Thunderbird package with Unity's global menu:
+  Install the G Unity⁷ package (recommended)
+
+Firefox and Thunderbird (6):
+  Firefox: install firefox 159.0.1-1+gu7.1~26.10 from G Unity⁷
+  Firefox: install firefox-l10n-cs 159.0.1-1+gu7.1~26.10 from G Unity⁷
+  Firefox: copy /home/mallory/snap/firefox/common/.mozilla/firefox to /home/mallory/.mozilla/firefox
+  Firefox: remove the snap (snapd saves a snapshot of its data)
+  Thunderbird: install thunderbird 1:159.0-1+gu7.1~26.10 from G Unity⁷
+  Thunderbird: install thunderbird-l10n-cs 1:159.0-1+gu7.1~26.10 from G Unity⁷
+
+Packages apt will install (2):
+  firefox-l10n-cs thunderbird-l10n-cs
+
+Packages apt will downgrade (2):
+  firefox thunderbird
+
+Packages apt will remove: none
+
+To keep a package, mark it as manually installed first: sudo apt-mark manual <package>
+The following NEW packages will be installed:
+  firefox-l10n-cs thunderbird-l10n-cs
+The following packages will be DOWNGRADED:
+  firefox thunderbird
+0 upgraded, 2 newly installed, 2 downgraded, 0 to remove and 0 not upgraded.
+After this operation, 0 B of additional disk space will be used.
+dpkg: warning: downgrading firefox (1:1snap1) to (159.0.1-1+gu7.1~26.10)
+dpkg: warning: downgrading thunderbird (2:1snap1) to (1:159.0-1+gu7.1~26.10)
+Copied /home/mallory/snap/firefox/common/.mozilla/firefox to /home/mallory/.mozilla/firefox
+grep: /home/mallory/.mozilla/firefox/installs.ini: Permission denied
+/usr/libexec/g-unity7/copy-snap-profiles: line 55: /home/mallory/.mozilla/firefox/installs.ini: Permission denied
+copy-snap-profiles: cannot write /home/mallory/.mozilla/firefox/installs.ini
+g-unity7-cleanup: cannot copy the profiles of mallory; no snap has been removed
+[exit 1]
+state: firefox firefox-l10n-cs thunderbird thunderbird-l10n-cs 
+
+root:root 755 /etc
+root:shadow 640 /etc/shadow
+root:root 644 /root/.bashrc
+/etc/shadow unchanged
+/root/.bashrc unchanged
+mallory:mallory 700 /home/mallory/.mozilla/
+mallory:mallory 755 /home/mallory/.mozilla/firefox/
+mallory:mallory 777 /home/mallory/.mozilla/firefox/installs.ini@
+mallory:mallory 644 /home/mallory/.mozilla/firefox/profiles.ini
+-- snaps: firefox 
+
+### ~/.mozilla is a link to /etc
+Firefox is installed as an Ubuntu snap.
+G Unity⁷ provides a Firefox package with Unity's global menu:
+  Install the G Unity⁷ package, copy the snap profile for mallory and remove the snap (recommended)
+
+Firefox and Thunderbird (4):
+  Firefox: install firefox 159.0.1-1+gu7.1~26.10 from G Unity⁷
+  Firefox: install firefox-l10n-cs 159.0.1-1+gu7.1~26.10 from G Unity⁷
+  Firefox: copy /home/mallory/snap/firefox/common/.mozilla/firefox to /home/mallory/.mozilla/firefox
+  Firefox: remove the snap (snapd saves a snapshot of its data)
+
+Packages apt will install (1):
+  firefox-l10n-cs
+
+Packages apt will downgrade (1):
+  firefox
+
+Packages apt will remove: none
+
+To keep a package, mark it as manually installed first: sudo apt-mark manual <package>
+The following NEW packages will be installed:
+  firefox-l10n-cs
+The following packages will be DOWNGRADED:
+  firefox
+0 upgraded, 1 newly installed, 1 downgraded, 0 to remove and 0 not upgraded.
+After this operation, 0 B of additional disk space will be used.
+dpkg: warning: downgrading firefox (1:1snap1) to (159.0.1-1+gu7.1~26.10)
+cp: Permission denied (os error 13)
+copy-snap-profiles: cannot copy /home/mallory/snap/firefox/common/.mozilla/firefox
+g-unity7-cleanup: cannot copy the profiles of mallory; no snap has been removed
+[exit 1]
+state: firefox firefox-l10n-cs thunderbird thunderbird-l10n-cs 
+
+root:root 755 /etc
+root:shadow 640 /etc/shadow
+root:root 644 /root/.bashrc
+/etc/shadow unchanged
+/root/.bashrc unchanged
+mallory:mallory 777 /home/mallory/.mozilla@
+-- snaps: firefox 
+
+### ~/.mozilla/firefox/profiles.ini is a link to /root/.bashrc
+Firefox is installed as an Ubuntu snap.
+G Unity⁷ provides a Firefox package with Unity's global menu:
+  Install the G Unity⁷ package, copy the snap profile for mallory and remove the snap (recommended)
+
+Firefox and Thunderbird (4):
+  Firefox: install firefox 159.0.1-1+gu7.1~26.10 from G Unity⁷
+  Firefox: install firefox-l10n-cs 159.0.1-1+gu7.1~26.10 from G Unity⁷
+  Firefox: add the profiles in /home/mallory/snap/firefox/common/.mozilla/firefox to /home/mallory/.mozilla/firefox and make the snap's default profile the default
+  Firefox: remove the snap (snapd saves a snapshot of its data)
+
+Packages apt will install (1):
+  firefox-l10n-cs
+
+Packages apt will downgrade (1):
+  firefox
+
+Packages apt will remove: none
+
+To keep a package, mark it as manually installed first: sudo apt-mark manual <package>
+The following NEW packages will be installed:
+  firefox-l10n-cs
+The following packages will be DOWNGRADED:
+  firefox
+0 upgraded, 1 newly installed, 1 downgraded, 0 to remove and 0 not upgraded.
+After this operation, 0 B of additional disk space will be used.
+dpkg: warning: downgrading firefox (1:1snap1) to (159.0.1-1+gu7.1~26.10)
+cp: not writing through dangling symlink '/home/mallory/.mozilla/firefox/profiles.ini'
+copy-snap-profiles: cannot copy /home/mallory/snap/firefox/common/.mozilla/firefox
+g-unity7-cleanup: cannot copy the profiles of mallory; no snap has been removed
+[exit 1]
+state: firefox firefox-l10n-cs thunderbird thunderbird-l10n-cs 
+
+root:root 755 /etc
+root:shadow 640 /etc/shadow
+root:root 644 /root/.bashrc
+/etc/shadow unchanged
+/root/.bashrc unchanged
+mallory:mallory 755 /home/mallory/.mozilla/
+mallory:mallory 755 /home/mallory/.mozilla/firefox/
+mallory:mallory 777 /home/mallory/.mozilla/firefox/profiles.ini@
+-- snaps: firefox 
+
+### ~/.mozilla/firefox is a link to /etc/profile.d
+Firefox is installed as an Ubuntu snap.
+G Unity⁷ provides a Firefox package with Unity's global menu:
+  Install the G Unity⁷ package, copy the snap profile for mallory and remove the snap (recommended)
+
+Firefox and Thunderbird (4):
+  Firefox: install firefox 159.0.1-1+gu7.1~26.10 from G Unity⁷
+  Firefox: install firefox-l10n-cs 159.0.1-1+gu7.1~26.10 from G Unity⁷
+  Firefox: copy /home/mallory/snap/firefox/common/.mozilla/firefox to /home/mallory/.mozilla/firefox
+  Firefox: remove the snap (snapd saves a snapshot of its data)
+
+Packages apt will install (1):
+  firefox-l10n-cs
+
+Packages apt will downgrade (1):
+  firefox
+
+Packages apt will remove: none
+
+To keep a package, mark it as manually installed first: sudo apt-mark manual <package>
+The following NEW packages will be installed:
+  firefox-l10n-cs
+The following packages will be DOWNGRADED:
+  firefox
+0 upgraded, 1 newly installed, 1 downgraded, 0 to remove and 0 not upgraded.
+After this operation, 0 B of additional disk space will be used.
+dpkg: warning: downgrading firefox (1:1snap1) to (159.0.1-1+gu7.1~26.10)
+cp: Permission denied (os error 13)
+copy-snap-profiles: cannot copy /home/mallory/snap/firefox/common/.mozilla/firefox
+g-unity7-cleanup: cannot copy the profiles of mallory; no snap has been removed
+[exit 1]
+state: firefox firefox-l10n-cs thunderbird thunderbird-l10n-cs 
+
+root:root 755 /etc
+root:shadow 640 /etc/shadow
+root:root 644 /root/.bashrc
+/etc/shadow unchanged
+/root/.bashrc unchanged
+mallory:mallory 755 /home/mallory/.mozilla/
+mallory:mallory 777 /home/mallory/.mozilla/firefox@
+-- snaps: firefox 
+
+### the snap profile directory is a link to the profiles of alice
+Firefox is installed as an Ubuntu snap.
+G Unity⁷ provides a Firefox package with Unity's global menu:
+  Install the G Unity⁷ package, copy the snap profile for mallory and remove the snap (recommended)
+
+Firefox and Thunderbird (4):
+  Firefox: install firefox 159.0.1-1+gu7.1~26.10 from G Unity⁷
+  Firefox: install firefox-l10n-cs 159.0.1-1+gu7.1~26.10 from G Unity⁷
+  Firefox: copy /home/mallory/snap/firefox/common/.mozilla/firefox to /home/mallory/.mozilla/firefox
+  Firefox: remove the snap (snapd saves a snapshot of its data)
+
+Packages apt will install (1):
+  firefox-l10n-cs
+
+Packages apt will downgrade (1):
+  firefox
+
+Packages apt will remove: none
+
+To keep a package, mark it as manually installed first: sudo apt-mark manual <package>
+The following NEW packages will be installed:
+  firefox-l10n-cs
+The following packages will be DOWNGRADED:
+  firefox
+0 upgraded, 1 newly installed, 1 downgraded, 0 to remove and 0 not upgraded.
+After this operation, 0 B of additional disk space will be used.
+dpkg: warning: downgrading firefox (1:1snap1) to (159.0.1-1+gu7.1~26.10)
+copy-snap-profiles: cannot read /home/mallory/snap/firefox/common/.mozilla/firefox/profiles.ini
+g-unity7-cleanup: cannot copy the profiles of mallory; no snap has been removed
+[exit 1]
+state: firefox firefox-l10n-cs thunderbird thunderbird-l10n-cs 
+
+root:root 755 /etc
+root:shadow 640 /etc/shadow
+root:root 644 /root/.bashrc
+/etc/shadow unchanged
+/root/.bashrc unchanged
+mallory:mallory 755 /home/mallory/.mozilla/
+mallory:mallory 755 /home/mallory/.mozilla/firefox/
+-- snaps: firefox 
+
+### a snap profile with the path ../../../../../../../../etc
+Firefox is installed as an Ubuntu snap.
+G Unity⁷ provides a Firefox package with Unity's global menu:
+  Install the G Unity⁷ package, copy the snap profile for mallory and remove the snap (recommended)
+
+Firefox and Thunderbird (4):
+  Firefox: install firefox 159.0.1-1+gu7.1~26.10 from G Unity⁷
+  Firefox: install firefox-l10n-cs 159.0.1-1+gu7.1~26.10 from G Unity⁷
+  Firefox: add the profiles in /home/mallory/snap/firefox/common/.mozilla/firefox to /home/mallory/.mozilla/firefox and make the snap's default profile the default
+  Firefox: remove the snap (snapd saves a snapshot of its data)
+
+Packages apt will install (1):
+  firefox-l10n-cs
+
+Packages apt will downgrade (1):
+  firefox
+
+Packages apt will remove: none
+
+To keep a package, mark it as manually installed first: sudo apt-mark manual <package>
+The following NEW packages will be installed:
+  firefox-l10n-cs
+The following packages will be DOWNGRADED:
+  firefox
+0 upgraded, 1 newly installed, 1 downgraded, 0 to remove and 0 not upgraded.
+After this operation, 0 B of additional disk space will be used.
+dpkg: warning: downgrading firefox (1:1snap1) to (159.0.1-1+gu7.1~26.10)
+Copied /home/mallory/snap/firefox/common/.mozilla/firefox/abc.default to /home/mallory/.mozilla/firefox/abc.default
+Set /home/mallory/.mozilla/firefox/abc.default as the default profile
+firefox removed (test)
+state: firefox firefox-l10n-cs thunderbird thunderbird-l10n-cs 
+
+root:root 755 /etc
+root:shadow 640 /etc/shadow
+root:root 644 /root/.bashrc
+/etc/shadow unchanged
+/root/.bashrc unchanged
+mallory:mallory 755 /home/mallory/.mozilla/
+mallory:mallory 755 /home/mallory/.mozilla/firefox/
+mallory:mallory 600 /home/mallory/.mozilla/firefox/installs.ini
+mallory:mallory 755 /home/mallory/.mozilla/firefox/own.default/
+mallory:mallory 644 /home/mallory/.mozilla/firefox/profiles.ini
+-- snaps: 
+
+-- profiles.ini
+[Profile0]
+Name=own
+IsRelative=1
+Path=own.default
+Default=1
+
+[Profile1]
+Name=default (snap)
+IsRelative=1
+Path=abc.default
+
+[Install4F96D1932A9F858E]
+Default=abc.default
+Locked=1

@@ -1,0 +1,66 @@
+### snap list fails: --dry-run
+Configuration files of removed packages, to be purged (1):
+  pulseaudio
+
+Packages apt will remove: none
+
+To keep a package, mark it as manually installed first: sudo apt-mark manual <package>
+state: g-unity7-desktop pulseaudio(c) 
+
+### --dry-run
+Desktop files of snaps that are not installed, to be removed (1):
+  /var/lib/snapd/desktop/applications/thunderbird_thunderbird.desktop
+
+Mount units of snap revisions that are not installed, to be removed (2):
+  firefox 9036 (snap-firefox-9036.mount)
+  thunderbird 1282 (snap-thunderbird-1282.mount)
+
+Configuration files of removed packages, to be purged (1):
+  pulseaudio
+
+Packages apt will remove: none
+
+To keep a package, mark it as manually installed first: sudo apt-mark manual <package>
+state: g-unity7-desktop pulseaudio(c) 
+
+### --yes
+Desktop files of snaps that are not installed, to be removed (1):
+  /var/lib/snapd/desktop/applications/thunderbird_thunderbird.desktop
+
+Mount units of snap revisions that are not installed, to be removed (2):
+  firefox 9036 (snap-firefox-9036.mount)
+  thunderbird 1282 (snap-thunderbird-1282.mount)
+
+Configuration files of removed packages, to be purged (1):
+  pulseaudio
+
+Packages apt will remove: none
+
+To keep a package, mark it as manually installed first: sudo apt-mark manual <package>
+state: g-unity7-desktop 
+
+-- units
+multi-user.target.wants/snap-core24-2124.mount
+multi-user.target.wants/snap-core24-2307.mount
+multi-user.target.wants/snap-firefox-7000.mount
+multi-user.target.wants/snap-gnome-46-2404-168.mount
+snap-core24-2124.mount
+snap-core24-2307.mount
+snap-firefox-7000.mount
+snap-gnome-46-2404-168.mount
+snapd.mounts.target.wants/snap-core24-2124.mount
+snapd.mounts.target.wants/snap-core24-2307.mount
+snapd.mounts.target.wants/snap-firefox-7000.mount
+snapd.mounts.target.wants/snap-gnome-46-2404-168.mount
+-- desktop files
+firefox_firefox.desktop
+-- systemctl
+systemctl disable --no-reload snap-firefox-9036.mount snap-thunderbird-1282.mount
+systemctl daemon-reload
+systemctl reset-failed snap-firefox-9036.mount snap-thunderbird-1282.mount
+-- /etc/xdg/autostart
+
+### again: --yes
+Nothing to do. No Ubuntu Unity packages replaced by G Unity⁷ are left.
+state: g-unity7-desktop 
+

@@ -1,1 +1,2 @@
 g-unity7-cleanup usr/sbin
+copy-snap-profiles usr/libexec/g-unity7

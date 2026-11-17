@@ -28,10 +28,11 @@
 ##    with them
 ##  - runs autoremove
 ##  - offers the G Unity⁷ Firefox and Thunderbird packages, which have Unity's
-##    global menu, instead of the Ubuntu snaps, copies the snap profiles
-##    without replacing any existing profile, and removes the snaps. Without
-##    the snap, it offers the package too. The choice between Thunderbird and
-##    Evolution is part of this offer, not of the alternatives above.
+##    global menu, instead of the Ubuntu snaps, copies the snap profiles as
+##    their user without replacing any existing profile, and removes the
+##    snaps. Without the snap, it offers the package too. The choice between
+##    Thunderbird and Evolution is part of this offer, not of the alternatives
+##    above.
 ##  - removes the desktop files of snaps that are not installed, which the
 ##    Ubuntu image leaves behind, and the mount units of snap revisions that
 ##    are not installed, which fail at every boot
@@ -47,6 +48,10 @@ set -euo pipefail
 
 meta=g-unity7-desktop
 task=ubuntu-unity-desktop
+## Copies the snap profiles of a user as that user
+copy_profiles=/usr/libexec/g-unity7/copy-snap-profiles
+## apt waits for the lock that unattended-upgrades often holds on a new system
+apt_lock=( -o DPkg::Lock::Timeout=300 )
 
 usage() {
 	cat <<-EOF
@@ -408,12 +413,13 @@ done
 ##  sources. Their version is lower, so g-unity7-apt-pin keeps the Ubuntu
 ##  packages until this script installs the PPA package, which then links its
 ##  own pin. When the user chooses the PPA package, its language packages for
-##  the languages in use are installed, the snap profiles are copied for every
-##  user (added to the existing profiles, if any), and the snap is removed. A PPA package older
+##  the languages in use are installed, the snap profiles of every user are
+##  copied as that user (added to the existing profiles, if any), and the snap
+##  is removed. A PPA package older
 ##  than the snap is not offered: Firefox and Thunderbird do not open a profile
 ##  that a newer version used. Without the snap, the PPA package is offered
 ##  as well; Evolution is mentioned if it is installed instead of Thunderbird.
-moz_install=() moz_snap_remove=() moz_copy=() moz_lines=()
+moz_install=() moz_snap_remove=() moz_copy=() moz_lines=() homes_noted=
 
 ## Print the version of $1 in the G Unity⁷ PPA or the staging PPA, if any.
 ppa_version() {
@@ -486,88 +492,14 @@ moz_l10n() {
 	return 0
 }
 
-## Print the path of the default profile in profiles.ini $1: the one in its
-##  install section, or else the profile with Default=1. The snap uses one
-##  profile for all installs.
-moz_default_profile() {
-	awk -F= '
-		/^\[/ { section = $0; next }
-		section ~ /^\[Install/ && $1 == "Default" && install == "" { install = $2 }
-		section ~ /^\[Profile/ && $1 == "Path" { path[section] = $2 }
-		section ~ /^\[Profile/ && $1 == "Default" && $2 == "1" { def = section }
-		END { if (install != "") print install; else if (def != "") print path[def] }
-	' "$1" 2>/dev/null || true
-}
-
-## Set Default=$3 in section [$2] of ini file $1, or add the section. The file
-##  keeps its owner and mode.
-ini_set_default() {
-	local file=$1 section=$2 value=$3 content
-	if [[ -f ${file} ]] && grep -qxF "[${section}]" "${file}"; then
-		content=$(awk -v s="[${section}]" -v v="${value}" '
-			/^\[/ { in_s = ($0 == s); print; if (in_s) print "Default=" v; next }
-			in_s && /^Default=/ { next }
-			{ print }' "${file}") || die "cannot read ${file}"
-		printf '%s\n' "${content}" > "${file}" || die "cannot write ${file}"
-	else
-		printf '\n[%s]\nDefault=%s\nLocked=1\n' "${section}" "${value}" >> "${file}" \
-			|| die "cannot write ${file}"
-	fi
-}
-
-## Make profile $4 (a path relative to the profile directory $2) the profile of
-##  the PPA package, as Firefox does on its first run. $3 is the install hash of
-##  the package directory in profiles.ini and installs.ini. Without this,
-##  Firefox creates a new profile, because the compatibility.ini of a copied
-##  profile points to the snap. User $1 owns installs.ini.
-moz_claim_profile() {
-	local user=$1 dir=$2 hash=$3 profile=$4
-	[[ -n ${hash} && -n ${profile} ]] || return 0
-	ini_set_default "${dir}/profiles.ini" "Install${hash}" "${profile}"
-	ini_set_default "${dir}/installs.ini" "${hash}" "${profile}"
-	chown "${user}:$(id -gn "${user}")" "${dir}/installs.ini"
-	echo "Set ${dir}/${profile} as the default profile"
-}
-
-## Add the profiles in the snap profile directory $2 to the profile directory
-##  $3 of user $1, which has its own profiles.ini: copy each profile directory
-##  (with "-snap" added if the name is taken; the snap copied the old profiles
-##  of the Ubuntu package under the same names) and add it to profiles.ini with
-##  "(snap)" after its name. No profile is replaced. With $5, the snap's
-##  default profile becomes the default profile of the package (install hash
-##  $4); otherwise the default stays. Profiles with an absolute path are not
-##  copied.
-moz_merge_profiles() {
-	local user=$1 src=$2 dst=$3 hash=$4 adopt=$5
-	local def def_new= n name path rel new i
-	def=$(moz_default_profile "${src}/profiles.ini")
-	n=$(sed -n 's/^\[Profile\([0-9]*\)\]$/\1/p' "${dst}/profiles.ini" | sort -n | tail -n 1) || true
-	n=$(( ${n:--1} + 1 ))
-	## Fields separated by \x1f, which keeps an empty name as a field
-	while IFS=$'\x1f' read -r name path rel; do
-		[[ ${rel} == 1 && -d ${src}/${path} ]] || continue
-		new=${path}
-		[[ ! -e ${dst}/${new} ]] || new=${path}-snap
-		i=2
-		while [[ -e ${dst}/${new} ]]; do
-			new=${path}-snap${i}
-			i=$(( i + 1 ))
-		done
-		cp -a "${src}/${path}" "${dst}/${new}" || die "cannot copy ${src}/${path}"
-		printf '\n[Profile%s]\nName=%s (snap)\nIsRelative=1\nPath=%s\n' "${n}" "${name}" "${new}" \
-			>> "${dst}/profiles.ini" || die "cannot write ${dst}/profiles.ini"
-		echo "Copied ${src}/${path} to ${dst}/${new}"
-		n=$(( n + 1 ))
-		[[ ${path} != "${def}" ]] || def_new=${new}
-	done < <(awk '
-		function out() { if (sec ~ /^\[Profile[0-9]+\]$/ && path != "") printf "%s\037%s\037%s\n", name, path, rel }
-		/^\[/ { out(); sec = $0; name = path = rel = ""; next }
-		{ k = $0; sub(/=.*/, "", k); v = $0; sub(/^[^=]*=/, "", v) }
-		k == "Name" { name = v }
-		k == "Path" { path = v }
-		k == "IsRelative" { rel = v }
-		END { out() }' "${src}/profiles.ini")
-	[[ -z ${adopt} ]] || moz_claim_profile "${user}" "${dst}" "${hash}" "${def_new}"
+## Succeed if the home directory of a user (UID 1000 to 59999) is not
+##  accessible, as those of other users without root (mode 750)
+homes_hidden() {
+	local uid home
+	while IFS=: read -r _ _ uid _ _ home _; do
+		[[ ${uid} -ge 1000 && ${uid} -lt 60000 && -d ${home} && ! -x ${home} ]] && return 0
+	done < <(getent passwd)
+	return 1
 }
 
 ## moz_choice <package> <snap profile> <package profile> <name> <install hash> [<alternative>]
@@ -603,6 +535,10 @@ moz_choice() {
 			return 0
 		fi
 		mapfile -t users < <(profiles_to_copy "${snap_profile}")
+		if [[ ${EUID} -ne 0 && -z ${homes_noted} ]] && homes_hidden; then
+			moz_lines+=( "Without root, the snap profiles of other users are not shown (sudo g-unity7-cleanup --dry-run shows them)" )
+			homes_noted=1
+		fi
 	fi
 
 	copy_text=
@@ -931,23 +867,37 @@ if [[ ${#remove[@]} -gt 0 || ${#install[@]} -gt 0 ]]; then
 else
 	apt_args=( --purge autoremove )
 fi
-simulation=$(apt-get -s -o Dir::State::extended_states="${states}" "${apt_args[@]}" 2>/dev/null)
+simulation=$(apt-get -s -o Dir::State::extended_states="${states}" "${apt_args[@]}" 2>&1) \
+	|| die "apt cannot make these changes:"$'\n'"${simulation}"
 mapfile -t removed < <(awk '/^Purg / { print $2 }' <<< "${simulation}")
+
+## Add the packages that the apt simulation $1 installs, upgrades or
+##  downgrades to installs, upgrades or downgrades, each package once.
 ## "Inst <package> [<installed version>] (<new version> <release> [<arch>])"
 installs=() upgrades=() downgrades=()
-while read -r name old new; do
-	if [[ ${old} == - ]]; then
-		installs+=( "${name}" )
-	elif dpkg --compare-versions "${new}" gt "${old}"; then
-		upgrades+=( "${name}" )
-	else
-		downgrades+=( "${name}" )
-	fi
-done < <(awk '/^Inst / {
-	old = "-"; new = $3
-	if ($3 ~ /^\[/) { old = $3; new = $4 }
-	gsub(/[][]/, "", old); gsub(/[()]/, "", new)
-	print $2, old, new }' <<< "${simulation}")
+declare -A listed=()
+read_installs() {
+	local name old new
+	while read -r name old new; do
+		[[ -z ${listed[${name}]:-} ]] || continue
+		listed[${name}]=1
+		if [[ ${old} == - ]]; then
+			installs+=( "${name}" )
+		elif dpkg --compare-versions "${new}" gt "${old}"; then
+			upgrades+=( "${name}" )
+		else
+			downgrades+=( "${name}" )
+		fi
+	done < <(awk '/^Inst / {
+		old = "-"; new = $3
+		if ($3 ~ /^\[/) { old = $3; new = $4 }
+		gsub(/[][]/, "", old); gsub(/[()]/, "", new)
+		print $2, old, new }' <<< "$1")
+}
+read_installs "${simulation}"
+## apt-get -y refuses to downgrade packages unless it is allowed. The list
+##  below shows them before the confirmation.
+main_downgrades=${#downgrades[@]}
 
 ## Keep only the marked packages that apt then removes. The others are still
 ##  needed by G Unity⁷ or by another desktop (ubuntu-desktop shares most of the
@@ -967,6 +917,18 @@ for name in "${mark[@]}"; do
 	[[ -z ${removed_set[${name}]:-} ]] || marked+=( "${name}" )
 done
 mark=( "${marked[@]}" )
+
+## The G Unity⁷ Firefox and Thunderbird packages are installed after the
+##  changes above, as a downgrade of the Ubuntu packages. Their simulation on
+##  the current state adds what apt installs and removes with them.
+moz_removed=()
+if [[ ${#moz_install[@]} -gt 0 ]]; then
+	simulation=$(apt-get -s -o Dir::State::extended_states="${states}" --allow-downgrades \
+		install "${moz_install[@]}" 2>&1) \
+		|| die "apt cannot install $(and_list "${moz_install[@]%%=*}"):"$'\n'"${simulation}"
+	read_installs "${simulation}"
+	mapfile -t moz_removed < <(awk '/^(Remv|Purg) / { print $2 }' <<< "${simulation}")
+fi
 
 if [[ ${#mark[@]} -eq 0 && ${#remove[@]} -eq 0 && ${#install[@]} -eq 0 \
 	&& ${#moz_install[@]} -eq 0 && ${#moz_snap_remove[@]} -eq 0 \
@@ -1021,8 +983,8 @@ list_words "Packages apt will install" "${installs[@]}"
 list_words "Packages apt will upgrade" "${upgrades[@]}"
 list_words "Packages apt will downgrade" "${downgrades[@]}"
 ## Purged with their configuration files and marked with * as apt does
-if [[ ${#removed[@]} -gt 0 ]]; then
-	list_words "Packages apt will remove" "${removed[@]/%/*}"
+if [[ ${#removed[@]} -gt 0 || ${#moz_removed[@]} -gt 0 ]]; then
+	list_words "Packages apt will remove" "${removed[@]/%/*}" "${moz_removed[@]}"
 else
 	echo "Packages apt will remove: none"
 	echo
@@ -1032,13 +994,22 @@ echo "To keep a package, mark it as manually installed first: sudo apt-mark manu
 [[ -z ${dry_run} ]] || exit 0
 
 if [[ -z ${yes} ]]; then
-	read -r -p "Do you want to continue? [y/N] " answer
+	read -r -p "Do you want to continue? [y/N] " answer || answer=
 	[[ ${answer} == [yY]* ]] || { echo "No changes were made."; exit 0; }
 fi
 
+[[ ${#moz_copy[@]} -eq 0 || -x ${copy_profiles} ]] \
+	|| die "${copy_profiles} is missing; reinstall g-unity7-desktop"
+## apt-mark does not wait for another apt, which would write back its own marks
+##  when it finishes. apt-get check waits until it has finished.
+apt-get -qq "${apt_lock[@]}" check
 [[ ${#mark[@]} -eq 0 ]] || apt-mark auto "${mark[@]}" >/dev/null
 if [[ ${#mark[@]} -gt 0 || ${#remove[@]} -gt 0 || ${#install[@]} -gt 0 ]]; then
-	apt-get -y "${apt_args[@]}"
+	if [[ ${main_downgrades} -gt 0 ]]; then
+		apt-get -y "${apt_lock[@]}" --allow-downgrades "${apt_args[@]}"
+	else
+		apt-get -y "${apt_lock[@]}" "${apt_args[@]}"
+	fi
 fi
 ## Installed first alternatives are needed only by g-unity7-desktop. Other
 ##  alternatives were chosen by the user and stay manual, like a package in
@@ -1062,29 +1033,22 @@ if [[ ${#snap_mount_remove[@]} -gt 0 ]]; then
 	systemctl daemon-reload
 	systemctl reset-failed "${snap_mount_remove[@]}" 2>/dev/null || true
 fi
-[[ ${#conf_purge[@]} -eq 0 ]] || dpkg --purge "${conf_purge[@]}" >/dev/null
+[[ ${#conf_purge[@]} -eq 0 ]] || apt-get -y -qq "${apt_lock[@]}" purge "${conf_purge[@]}" >/dev/null
 ## The G Unity⁷ Firefox and Thunderbird packages (a lower version than the
 ##  Ubuntu packages; their pin comes with them), then the snap profiles and the
 ##  snaps.
 if [[ ${#moz_install[@]} -gt 0 ]]; then
-	apt-get -y --allow-downgrades install "${moz_install[@]}"
+	apt-get -y "${apt_lock[@]}" --allow-downgrades install "${moz_install[@]}"
 fi
+## The users own their home directories and can replace any path in them with
+##  a link, so the profiles of each user are copied as that user (setpriv is
+##  part of util-linux, which is essential).
+cd /
 for entry in "${moz_copy[@]}"; do
 	IFS=: read -r user src dst hash adopt <<< "${entry}"
-	if [[ -f ${dst}/profiles.ini ]]; then
-		[[ ${adopt} == adopt ]] || adopt=
-		moz_merge_profiles "${user}" "${src}" "${dst}" "${hash}" "${adopt}"
-		continue
-	fi
-	if [[ -d ${dst} ]]; then
-		cp -a "${src}/." "${dst}/" || die "cannot copy ${src}"
-	else
-		mkdir -p "$(dirname "${dst}")"
-		cp -a "${src}" "${dst}" || die "cannot copy ${src}"
-		chown "${user}:$(id -gn "${user}")" "$(dirname "${dst}")"
-	fi
-	echo "Copied ${src} to ${dst}"
-	moz_claim_profile "${user}" "${dst}" "${hash}" "$(moz_default_profile "${dst}/profiles.ini")"
+	setpriv --reuid="${user}" --regid="$(id -g "${user}")" --init-groups --reset-env \
+		"${copy_profiles}" "${src}" "${dst}" "${hash}" "${adopt}" \
+		|| die "cannot copy the profiles of ${user}; no snap has been removed"
 done
 moz_failed=()
 for name in "${moz_snap_remove[@]}"; do
