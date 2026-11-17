@@ -13,6 +13,7 @@ GROUP="desktop"
 PATCHES=(
 	appearance-ignore_screenshots_from_mate_screenshot.patch
 	appearance-process_filename_dark_files.patch
+	appearance-render_static_preview_once.patch
 	network-fix-hotspot-button-state.patch
 	sharing-fix_translation.patch
 	shell-fix_theme_selection_and_hover.patch
