@@ -38,9 +38,12 @@ repos=/tmp/repo
 ## Timestamps of the dummy packages
 export SOURCE_DATE_EPOCH=1793000000
 
-## Output of apt and dpkg that depends on the image or the time
+## Leave out the output of apt and dpkg that depends on the image or the time.
+##  The error of cp depends on the order of the files in a directory, which
+##  differs between runs.
 quiet() {
-	grep -v -E '^(Reading package lists|Building dependency tree|Reading state information|Solving dependencies|\(Reading database|Selecting previously unselected package|Preparing to unpack|Unpacking |Setting up |Removing |Purging configuration files|Processing triggers|Get:[0-9]|Need to get|debconf: )' || true
+	{ grep -v -E '^(Reading package lists|Building dependency tree|Reading state information|Solving dependencies|\(Reading database|Selecting previously unselected package|Preparing to unpack|Unpacking |Setting up |Removing |Purging configuration files|Processing triggers|Get:[0-9]|Need to get|debconf: )' || true; } \
+		| sed -E 's/^cp: .*/cp: (error)/'
 }
 
 ## mkdeb <repository> <name> <version> [<control line>...]: build a dummy
