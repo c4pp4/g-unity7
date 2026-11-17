@@ -1,17 +1,20 @@
 ## Test g-unity7-cleanup with dummy packages in Ubuntu containers
-##  (tests/cleanup), and check the shell scripts for errors.
+##  (tests/cleanup), test lp.py and approve.py (tests/scripts), and check the
+##  shell scripts for errors.
 name: Tests
 
 on:
   push:
     paths:
       - '**.sh'
+      - 'scripts/**'
       - 'local/g-unity7-meta/**'
       - 'tests/**'
       - '.github/workflows/tests.yml'
   pull_request:
     paths:
       - '**.sh'
+      - 'scripts/**'
       - 'local/g-unity7-meta/**'
       - 'tests/**'
       - '.github/workflows/tests.yml'
@@ -41,6 +44,16 @@ jobs:
           apt-get install -y -qq --no-install-recommends git ca-certificates >/dev/null
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: tests/cleanup/test.sh ${{ matrix.group }}
+
+  scripts:
+    runs-on: ubuntu-latest
+    container: ubuntu:26.10
+    steps:
+      - run: |
+          for i in 1 2 3; do apt-get update -qq && break; [ "$i" -lt 3 ] || exit 1; sleep 60; done
+          apt-get install -y -qq --no-install-recommends git ca-certificates python3 >/dev/null
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: python3 -m unittest discover -s tests/scripts -v
 
   shellcheck:
     runs-on: ubuntu-latest

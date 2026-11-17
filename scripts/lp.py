@@ -93,11 +93,21 @@ def published_sources(archive, source, series, statuses):
     return entries
 
 
+## An Ubuntu or Debian changelog entry that fixes security issues names a CVE,
+##  or for Firefox and Thunderbird a Mozilla Foundation Security Advisory.
+SECURITY_RE = re.compile(r"CVE-\d{4}-\d+|mfsa\d{4}-\d+", re.I)
+## The entries after the G Unity⁷ entry that parse_changelog reads, enough to
+##  reach the version in the main PPA
+UPSTREAM_ENTRIES = 30
+
+
 def parse_changelog(text):
-    """Return the G Unity⁷ data of the first changelog entry."""
-    entry = re.split(r"\n(?=\S)", text.strip(), maxsplit=2)
+    """Return the G Unity⁷ data of the first changelog entry (patches,
+    fingerprint, input), and the version of each following entry with whether
+    it names a CVE or a Mozilla security advisory (upstream)."""
+    entry = re.split(r"\n(?=\S)", text.strip())
     head = "\n".join(entry[:2])
-    data = {"patches": {}}
+    data = {"patches": {}, "upstream": []}
     for key in ("Fingerprint", "Input"):
         match = re.search(rf"G-Unity7-{key}: (\S+)", head)
         if match:
@@ -110,6 +120,13 @@ def parse_changelog(text):
             match = re.match(r"\s+- (\S+) \[(\w+)\]$", line)
             if match:
                 data["patches"][match.group(1)] = match.group(2)
+    for item in entry[1:]:
+        match = re.match(r"\S+ \(([^)\s]+)\)", item)
+        if not match:
+            continue
+        data["upstream"].append([match.group(1), bool(SECURITY_RE.search(item))])
+        if len(data["upstream"]) >= UPSTREAM_ENTRIES:
+            break
     return data
 
 
@@ -120,12 +137,32 @@ def cmd_ubuntu_version(args):
     print(version, pocket)
 
 
+def ppa_archive(ppa):
+    owner, name = ppa.split("/")
+    return f"{API}/~{owner}/+archive/ubuntu/{name}"
+
+
+def publication(entry):
+    """Return the fields of a source publication that the scripts use."""
+    return {
+        "version": entry["source_package_version"],
+        "status": entry["status"],
+        "pocket": entry["pocket"],
+        "self_link": entry["self_link"],
+    }
+
+
+def changelog_data(entry):
+    """Return the G Unity⁷ data of the changelog of a source publication (see
+    parse_changelog), or {} if Launchpad has no changelog."""
+    changelog_url = get(entry["self_link"], {"ws.op": "changelogUrl"})
+    return parse_changelog(get_text(changelog_url)) if changelog_url else {}
+
+
 def ppa_latest(source, ppa, series):
     """Return the latest version in a PPA with its G Unity⁷ data, or {} if none."""
-    owner, name = ppa.split("/")
-    archive = f"{API}/~{owner}/+archive/ubuntu/{name}"
     try:
-        entries = published_sources(archive, source, series, ["Pending", "Published"])
+        entries = published_sources(ppa_archive(ppa), source, series, ["Pending", "Published"])
     except urllib.error.HTTPError as error:
         if error.code != 404:
             raise
@@ -133,17 +170,49 @@ def ppa_latest(source, ppa, series):
         entries = []
     result = {}
     if entries:
-        entry = newest(entries)
-        result = {
-            "version": entry["source_package_version"],
-            "status": entry["status"],
-            "pocket": entry["pocket"],
-            "self_link": entry["self_link"],
-        }
-        changelog_url = get(entry["self_link"], {"ws.op": "changelogUrl"})
-        if changelog_url:
-            result.update(parse_changelog(get_text(changelog_url)))
+        result = publication(newest(entries))
+        result.update(changelog_data(result))
     return result
+
+
+def ppa_sources(ppa, series):
+    """Return the latest Pending or Published version of each source in a PPA
+    series, {source: publication}. One listing instead of the queries for each
+    source."""
+    params = {"ws.op": "getPublishedSources", "distro_series": f"{API}/ubuntu/{series}",
+              "ws.size": "300"}
+    latest = {}
+    try:
+        for status in ("Pending", "Published"):
+            for entry in collection(ppa_archive(ppa), dict(params, status=status)):
+                name = entry["source_package_name"]
+                if name not in latest or version_cmp(entry["source_package_version"],
+                                                     latest[name]["source_package_version"]) > 0:
+                    latest[name] = entry
+    except urllib.error.HTTPError as error:
+        if error.code != 404:
+            raise
+        print(f"lp.py: PPA {ppa} not found", file=sys.stderr)
+    return {name: publication(entry) for name, entry in latest.items()}
+
+
+def ppa_max_n(source, ppa, series, base, tag):
+    """Return the highest N of the versions <base>+<tag>.<N>~<series version> of
+    a source in a PPA series in any state, also deleted, or 0. Launchpad refuses
+    a version that the PPA had."""
+    params = {"ws.op": "getPublishedSources", "source_name": source, "exact_match": "true",
+              "distro_series": f"{API}/ubuntu/{series}"}
+    version_re = re.compile(rf"{re.escape(base)}\+{re.escape(tag)}\.(\d+)~[\d.]+")
+    highest = 0
+    try:
+        for entry in collection(ppa_archive(ppa), params):
+            match = version_re.fullmatch(entry["source_package_version"])
+            if match:
+                highest = max(highest, int(match.group(1)))
+    except urllib.error.HTTPError as error:
+        if error.code != 404:
+            raise
+    return highest
 
 
 def ubuntu_version(source, series):
@@ -160,6 +229,8 @@ def ubuntu_version(source, series):
 ## Debian archive (ftp-master's madison), for ports with DEBIAN_SUITE.
 MADISON = "https://api.ftp-master.debian.org/madison"
 DEBIAN_SUITES = {"sid": "unstable", "unstable": "unstable", "experimental": "experimental"}
+## Prereleases are not built. Debian uploaded Thunderbird betas to experimental.
+PRERELEASE_RE = re.compile(r"~(a|b|rc)\d")
 
 
 def debian_version(source, suites):
@@ -170,7 +241,8 @@ def debian_version(source, suites):
     found = []
     for item in data:
         for suite, versions in item.get(source, {}).items():
-            found += [{"source_package_version": v, "suite": suite} for v in versions]
+            found += [{"source_package_version": v, "suite": suite} for v in versions
+                      if not PRERELEASE_RE.search(v)]
     if not found:
         return None, None
     entry = newest(found)
@@ -188,6 +260,10 @@ def cmd_ppa_latest(args):
     print(json.dumps(ppa_latest(args.source, args.ppa, args.series)))
 
 
+def cmd_ppa_max_n(args):
+    print(ppa_max_n(args.source, args.ppa, args.series, args.base, args.tag))
+
+
 ## Launchpad build states.
 BUILDING = ("Needs building", "Currently building", "Uploading build", "Gathering build output")
 FAILED = ("Failed to build", "Chroot problem", "Failed to upload", "Cancelled build",
@@ -196,15 +272,18 @@ DEPWAIT_LIMIT = datetime.timedelta(hours=24)
 
 
 def build_state(source_name, version, ppa, series):
-    """Return the build state of a version in a PPA: ok (built, with the
-    binaries published), building, failed or missing."""
-    owner, name = ppa.split("/")
-    archive = f"{API}/~{owner}/+archive/ubuntu/{name}"
-    entries = [e for e in published_sources(archive, source_name, series, ["Pending", "Published"])
+    """Return the build state of a version in a PPA (see build_state_of), or
+    missing."""
+    entries = [e for e in published_sources(ppa_archive(ppa), source_name, series, ["Pending", "Published"])
                if e["source_package_version"] == version]
     if not entries:
         return {"state": "missing"}
-    source = entries[0]
+    return build_state_of(publication(entries[0]))
+
+
+def build_state_of(source):
+    """Return the build state of a source publication: ok (built, with the
+    binaries published), building or failed."""
     now = datetime.datetime.now(datetime.timezone.utc)
     builds = []
     state = "ok"
@@ -254,6 +333,14 @@ def main():
     p.add_argument("--ppa", required=True)
     p.add_argument("--series", required=True)
     p.set_defaults(func=cmd_ppa_latest)
+
+    p = sub.add_parser("ppa-max-n", help="highest N of a base version in a PPA, in any state")
+    p.add_argument("source")
+    p.add_argument("--ppa", required=True)
+    p.add_argument("--series", required=True)
+    p.add_argument("--base", required=True)
+    p.add_argument("--tag", required=True)
+    p.set_defaults(func=cmd_ppa_max_n)
 
     p = sub.add_parser("build-state", help="build state of a version in a PPA")
     p.add_argument("source")

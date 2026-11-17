@@ -102,13 +102,18 @@ apt_download() {
 ## Check the signature of a Debian .dsc against the keys of the Debian
 ##  developers and keep its SHA256 and signer for the changelog.
 debian_verify() {
-	local dsc=$1 home
+	local dsc=$1 home status
 	home=$(mktemp -d)
-	dsc_signer=$(gpg --homedir "${home}" --batch --no-default-keyring \
-		--keyring /usr/share/keyrings/debian-keyring.gpg --status-fd 1 --verify "${dsc}" 2>/dev/null \
-		| awk '$2 == "VALIDSIG" { print $3 }') || true
+	status=$(gpg --homedir "${home}" --batch --no-default-keyring \
+		--keyring /usr/share/keyrings/debian-keyring.gpg --status-fd 1 --verify "${dsc}" 2>/dev/null) || true
 	rm -rf "${home}"
-	[[ -n ${dsc_signer} ]] || die "${dsc##*/} has no valid signature of a Debian developer."
+	## GnuPG reports VALIDSIG also for a key that is revoked (REVKEYSIG) or
+	##  expired (EXPKEYSIG). An expired key is accepted: Debian developers
+	##  extend their keys, and debian-keyring in Ubuntu may be older.
+	! grep -q '^\[GNUPG:\] REVKEYSIG ' <<< "${status}" || die "${dsc##*/} is signed with a revoked key."
+	dsc_signer=$(awk '$2 == "VALIDSIG" { print $3 }' <<< "${status}")
+	[[ -n ${dsc_signer} ]] \
+		|| die "${dsc##*/} has no valid signature of a Debian developer (or debian-keyring does not have the key yet)."
 	einfo "${dsc##*/} is signed by ${dsc_signer} (Debian keyring)."
 }
 
@@ -362,6 +367,11 @@ if [[ ${staging_version} =~ ${suffix_re} ]]; then
 		n=$(( staging_n + 1 ))
 	fi
 fi
+## Launchpad refuses a version that the staging PPA had, also a deleted one,
+##  which ppa-latest does not show
+used_n=$(python3 -I "${REPO_ROOT}"/scripts/lp.py ppa-max-n "${SOURCE_NAME}" --ppa "${PPA_STAGING}" \
+	--series "${series}" --base "${ubuntu_version}" --tag "${VERSION_TAG}")
+[[ ${used_n} -lt ${n} ]] || n=$(( used_n + 1 ))
 version="${ubuntu_version}+${VERSION_TAG}.${n}~${series_version}"
 
 ## "Changes since" compares with the version that users have from the main PPA.

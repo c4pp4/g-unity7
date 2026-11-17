@@ -10,6 +10,8 @@ Commands (in comments by the repository owner):
                            copy built versions from staging to the main PPA
   /retry <source> <version>
                            retry the failed builds of a version in staging
+  /ported <name>...        record that the ports (or other items) of the
+                           section with overlay changes were checked
 
 Environment: GITHUB_TOKEN, GITHUB_REPOSITORY, OVERLAY_DIR, LP_CREDENTIALS_FILE
 (for /promote and /retry), and the GPG variables of upload.sh (for /upload).
@@ -49,6 +51,13 @@ LP_FAILURES_MAX = 3
 LP_ERRORS = (urllib.error.URLError, http.client.HTTPException, TimeoutError, ConnectionError,
              ValueError)
 STATE_ICONS = {"ok": "✅", "building": "⏳", "failed": "❌", "missing": "❔"}
+## The ports were compared with the ebuilds and ehooks of the overlay on
+##  2026-11-16 and follow its changes up to this commit. A port that has no
+##  commit of its own in the state was checked against this one.
+PORTED_BASE = "611f038323f8eb05c252c29105b88106815e7946"
+OVERLAY_REPO = "c4pp4/gentoo-unity7"
+## Seconds between two checks for changes of the overlay and the archive
+DRIFT_INTERVAL = 24 * 60 * 60
 
 
 def config():
@@ -96,9 +105,10 @@ def load_state(issue):
         match = STATE_RE.search(issue["body"])
         if match:
             state = json.loads(match.group(1))
-    for key in ("review", "rejected", "uptodate", "promote", "seen"):
+    for key in ("review", "rejected", "uptodate", "promote", "seen", "ported", "drift"):
         state.setdefault(key, {})
     state.setdefault("stale", [])
+    state.setdefault("drift_checked", "")
     return state
 
 
@@ -116,6 +126,11 @@ def packages():
 
 def newer(a, b):
     return not b or lp.version_cmp(a, b) > 0
+
+
+def utc_now():
+    """The time as GitHub writes it, which compares as text."""
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
 def base_of(version):
@@ -147,53 +162,85 @@ def waiting_groups(state, pkgs):
 
 
 def promote_rows(pkgs, old=None):
-    """Return the staging versions that are newer than in the main PPA, and the
-    names of the packages that Launchpad gave no state for. Without the rows
-    from the last update (old), a Launchpad error is raised. With them, the
-    package keeps its row."""
+    """Return the rows of the packages whose staging version is newer than in
+    the main PPA, and the names of the packages that Launchpad gave no state
+    for. A row from the last update (old) with the same versions is kept
+    without queries once its build is ✅, before that only its build state is
+    queried. Without old, a Launchpad error is raised. With it, a package keeps
+    its row."""
+    series = CONFIG["series"]
+    old_rows = old or {}
     rows, stale = {}, []
+    try:
+        staging_list = lp.ppa_sources(CONFIG["staging"], series)
+        main_list = lp.ppa_sources(CONFIG["main"], series)
+    except LP_ERRORS:
+        if old is None:
+            raise
+        traceback.print_exc()
+        return dict(old_rows), sorted(pkgs)
     failures = 0
     for name, pkg in pkgs.items():
-        if old is None:
-            row = promote_row(pkg)
-        elif failures < LP_FAILURES_MAX:
-            try:
-                row = promote_row(pkg)
-                failures = 0
-            except LP_ERRORS:
-                traceback.print_exc()
-                failures += 1
-                row = old.get(name)
-                stale.append(name)
-        else:
-            row = old.get(name)
+        staging = staging_list.get(pkg["source"])
+        main = main_list.get(pkg["source"], {})
+        if not staging or (main and not newer(staging["version"], main["version"])):
+            continue
+        prev = old_rows.get(name)
+        if not (prev and prev["staging"] == staging["version"]
+                and prev["main"] == main.get("version", "")):
+            prev = None
+        if prev and prev["state"] == "ok":
+            rows[name] = prev
+            continue
+        if old is not None and failures >= LP_FAILURES_MAX:
+            if name in old_rows:
+                rows[name] = old_rows[name]
             stale.append(name)
-        if row:
-            rows[name] = row
+            continue
+        try:
+            rows[name] = promote_row(pkg, staging, main, prev)
+            failures = 0
+        except LP_ERRORS:
+            if old is None:
+                raise
+            traceback.print_exc()
+            failures += 1
+            if name in old_rows:
+                rows[name] = old_rows[name]
+            stale.append(name)
     return rows, stale
 
 
-def promote_row(pkg):
-    """Return the row of a package whose staging version is newer than in the
-    main PPA, or None."""
-    series = CONFIG["series"]
-    staging = lp.ppa_latest(pkg["source"], CONFIG["staging"], series)
-    if not staging:
-        return None
-    main = lp.ppa_latest(pkg["source"], CONFIG["main"], series)
-    if not newer(staging["version"], main.get("version")):
-        return None
-    state = lp.build_state(pkg["source"], staging["version"], CONFIG["staging"], series)
-    changes = describe_changes(staging.get("patches", {}), main.get("patches")) if main else "new package"
-    if main and not changes:
-        if base_of(staging["version"]) != base_of(main["version"]):
-            changes = "rebased on " + base_of(staging["version"])
-        else:
-            changes = "rebuild"
-    security = False
-    if not pkg["local"]:
-        version, pocket = lp.ubuntu_version(pkg["source"], series)
-        security = pocket == "Security" and base_of(staging["version"]) == version
+def security_fix(upstream, since):
+    """Return whether one of the Ubuntu or Debian changelog entries (upstream,
+    newest first, from lp.parse_changelog) that are newer than version since
+    names a CVE or a Mozilla security advisory."""
+    for version, security in upstream:
+        if version == since or lp.version_cmp(version, since) <= 0:
+            return False
+        if security:
+            return True
+    return False
+
+
+def promote_row(pkg, staging, main, prev=None):
+    """Return the row of a package whose staging version (a publication from
+    lp.ppa_sources) is newer than in the main PPA (a publication, or {}). The
+    changes of a row with the same versions from the last update (prev) are
+    kept, and only the build state is queried."""
+    state = lp.build_state_of(staging)
+    if prev:
+        changes, security = prev["changes"], prev["security"]
+    else:
+        data = lp.changelog_data(staging)
+        main_data = lp.changelog_data(main) if main else {}
+        changes = describe_changes(data.get("patches", {}), main_data.get("patches")) if main else "new package"
+        if main and not changes:
+            if base_of(staging["version"]) != base_of(main["version"]):
+                changes = "rebased on " + base_of(staging["version"])
+            else:
+                changes = "rebuild"
+        security = bool(main) and security_fix(data.get("upstream", []), base_of(main["version"]))
     return {
         "source": pkg["source"],
         "group": pkg["group"],
@@ -207,12 +254,110 @@ def promote_row(pkg):
     }
 
 
+## Overlay and archive changes that the ports may need (drift).
+
+def overlay_head():
+    """Return the commit of the overlay checkout."""
+    overlay = os.environ.get("OVERLAY_DIR", os.path.join(REPO_ROOT, "..", "gentoo-unity7"))
+    return subprocess.run(["git", "-c", "safe.directory=*", "-C", overlay, "rev-parse", "HEAD"],
+                          check=True, capture_output=True, text=True).stdout.strip()
+
+
+def port_pattern(overlay_pkg):
+    """Return the regular expression for the overlay files that a port follows
+    by hand: those of its ebuild directory, or of its ehooks directory with the
+    versioned ones (firefox-160:rapid for firefox:rapid), but not files/, which
+    the input hash covers, Manifest and metadata.xml."""
+    name, _, slot = overlay_pkg.partition(":")
+    slot = f":{slot}" if slot else ""
+    if name.startswith("ehooks/"):
+        return re.compile(rf"{re.escape(name)}(-[0-9][0-9.]*)?{re.escape(slot)}/(?!files/)")
+    return re.compile(rf"{re.escape(name)}/(?!files/|Manifest$|metadata\.xml$)")
+
+
+def overlay_changes(base, head):
+    """Return the files that the overlay changed from commit base to head, and
+    the link to the comparison."""
+    data = github("GET", f"/repos/{OVERLAY_REPO}/compare/{base}...{head}")
+    files = []
+    for item in data.get("files", []):
+        files.append(item["filename"])
+        if item.get("previous_filename"):
+            files.append(item["previous_filename"])
+    return files, data["html_url"]
+
+
+def check_drift(state, pkgs):
+    """Find what may need a change of the ports: overlay changes of the ebuilds,
+    ehooks and eclasses since they were last checked, a new version of the
+    seeds of Ubuntu Unity (ubuntu-unity-meta), a source of the archive with the
+    name of a derived source, and a source from an older series that is back in
+    the series (not for a derived source, such as unity-docs from the
+    ubuntu-docs of an older series). Items checked with /ported (state["ported"]) are left out until
+    they change again."""
+    series = CONFIG["series"]
+    ported = state["ported"]
+    head = overlay_head()
+    drift = {}
+    followed = {name: port_pattern(pkg["overlay_pkg"]) for name, pkg in pkgs.items() if pkg["overlay_pkg"]}
+    followed["eclass"] = re.compile(r"eclass/")
+    by_base = {}
+    for name in followed:
+        by_base.setdefault(ported.get(name, PORTED_BASE), []).append(name)
+    for base, names in sorted(by_base.items()):
+        if base == head:
+            continue
+        files, url = overlay_changes(base, head)
+        for name in sorted(names):
+            changed = [f for f in files if followed[name].match(f)]
+            if not changed:
+                continue
+            shown = ", ".join(f"`{f}`" for f in changed[:5]) + (", …" if len(changed) > 5 else "")
+            count = f"{len(changed)} file" + ("s" if len(changed) > 1 else "")
+            drift[name] = {"value": head, "text": f"[{count} since `{base[:7]}`]({url}): {shown}"}
+
+    seeds, _ = lp.ubuntu_version("ubuntu-unity-meta", series)
+    if seeds:
+        checked = ported.setdefault("ubuntu-unity-meta", seeds)
+        if seeds != checked:
+            drift["ubuntu-unity-meta"] = {
+                "value": seeds,
+                "text": f"`{seeds}` instead of `{checked}`: compare its seeds (desktop, "
+                        "desktop-recommends) with `g-unity7-desktop`"}
+
+    for name, pkg in sorted(pkgs.items()):
+        found = []
+        if pkg["derived"]:
+            version, _ = lp.ubuntu_version(pkg["source"], series)
+            if version:
+                found.append(f"Ubuntu has a source `{pkg['source']}` (`{version}`), the name of this derived source")
+        if pkg["older"] and not pkg["derived"]:
+            version, _ = lp.ubuntu_version(pkg["ubuntu_src"], series)
+            if version:
+                found.append(f"{series} has `{pkg['ubuntu_src']}` again (`{version}`), UBUNTU_SERIES may go")
+        key = f"archive:{name}"
+        value = "; ".join(found)
+        if value and ported.get(key) != value:
+            drift[key] = {"value": value, "text": value}
+    state["drift"] = drift
+
+
+def drift_due(state):
+    """Return whether the last check for drift is older than DRIFT_INTERVAL."""
+    checked = state.get("drift_checked")
+    if not checked:
+        return True
+    then = time.mktime(time.strptime(checked, "%Y-%m-%dT%H:%M:%SZ"))
+    return time.mktime(time.gmtime()) - then >= DRIFT_INTERVAL
+
+
 ## The issue body.
 
 def render(state, pkgs=None):
     out = [f"<!-- g-unity7-state\n{json.dumps(state, indent=1, ensure_ascii=False)}\n-->", ""]
     out += ["G Unity⁷ packages waiting for the owner's decision. The `review.yml` workflow "
-            "updates the tables every hour. Give commands in comments.", ""]
+            "updates the tables a few times a day and after each command. Give commands in "
+            "comments.", ""]
 
     out += ["## Review before upload", ""]
     if state["review"]:
@@ -246,7 +391,8 @@ def render(state, pkgs=None):
                 out.append(f"| `{name}`{lock} | `{r['staging']}`<br>{main} | "
                            f"{STATE_ICONS[r['state']]} | {r['changes']} |")
             out.append("")
-        out += ["✅ built and published, ⏳ building, ❌ failed, 🔒 Ubuntu security update. "
+        out += ["✅ built and published, ⏳ building, ❌ failed, 🔒 security fixes (the changelog "
+                "names a CVE or a Mozilla security advisory since the version in the main PPA). "
                 "`/promote` copies all ✅ versions of complete groups to the main PPA, and "
                 "`/promote <package>…` only the given ones. `--force` also promotes from an "
                 "incomplete group.", ""]
@@ -268,13 +414,22 @@ def render(state, pkgs=None):
                 f"sudo ppa-purge ppa:{CONFIG['staging']}", "```", "</details>", ""]
     else:
         out += ["Nothing is waiting.", ""]
+
+    out += ["## Overlay and archive changes to check", ""]
+    if state["drift"]:
+        for name, item in sorted(state["drift"].items()):
+            out.append(f"- `{name}`: {item['text']}")
+        out += ["", "After checking an item, and changing the port if needed, `/ported <name>…` "
+                "records it; `/ported all` records all of them.", ""]
+    else:
+        out += ["Nothing to check.", ""]
     return "\n".join(out)
 
 
 def save(issue, state, pkgs=None):
     """Write the state to the issue, and create, close or reopen it."""
     body = render(state, pkgs)
-    waiting = bool(state["review"] or state["promote"])
+    waiting = bool(state["review"] or state["promote"] or state["drift"])
     if not issue:
         if not waiting:
             return None
@@ -308,6 +463,14 @@ def notify_new(issue, state):
 def refresh(issue, state, pkgs=None):
     pkgs = pkgs or packages()
     state["promote"], state["stale"] = promote_rows(pkgs, state["promote"])
+    if drift_due(state):
+        try:
+            check_drift(state, pkgs)
+            state["drift_checked"] = utc_now()
+        except (*LP_ERRORS, subprocess.CalledProcessError):
+            traceback.print_exc()
+            print("::warning::The check for overlay and archive changes failed. "
+                  "The section keeps the items of the last check.")
     if state["stale"]:
         print(f"::warning::Launchpad gave no state for {len(state['stale'])} packages. "
               "They keep their rows from the last update.")
@@ -358,6 +521,7 @@ def cmd_add_review(args):
             "run_id": args.run_id,
             "artifact": args.artifact_prefix + name,
             "reason": reason or "change outside the patches",
+            "added": utc_now(),
         }
         state["rejected"].pop(name, None)
     refresh(issue, state)
@@ -373,9 +537,27 @@ def download_artifact(run_id, name, target):
     return False
 
 
-def do_upload(issue, state, names, pkgs):
+def command_time():
+    """Return the time of the comment with the command, or None."""
+    path = os.environ.get("GITHUB_EVENT_PATH")
+    if not path:
+        return None
+    try:
+        with open(path) as f:
+            event = json.load(f)
+    except (OSError, ValueError):
+        return None
+    return (event.get("comment") or {}).get("created_at")
+
+
+def do_upload(issue, state, names, pkgs, before=None):
+    """Upload the given versions, or without names those that were added for
+    review before the command (before), which the owner could see."""
     messages = []
-    names = names or sorted(state["review"])
+    if not names:
+        names = sorted(n for n, r in state["review"].items() if not before or r.get("added", "") <= before)
+        messages += [f"- `{n}`: added for review after the command. Check it and give the command again."
+                     for n, r in sorted(state["review"].items()) if before and r.get("added", "") > before]
     for name in names:
         r = state["review"].get(name)
         if not r:
@@ -474,6 +656,23 @@ def do_promote(state, names, force, pkgs):
     return messages
 
 
+def do_ported(state, names):
+    """Record that items of the section with overlay and archive changes were
+    checked: the overlay commit for a port or eclass, the version for the
+    seeds and the archive items."""
+    messages = []
+    if names == ["all"]:
+        names = sorted(state["drift"])
+    for name in names:
+        item = state["drift"].pop(name, None)
+        if not item:
+            messages.append(f"- `{name}`: nothing to check.")
+            continue
+        state["ported"][name] = item["value"]
+        messages.append(f"- `{name}`: checked (`{item['value'][:40]}`).")
+    return messages
+
+
 def do_retry(source, version):
     proc = subprocess.run([f"{SCRIPTS}/lp_write.py", "--credentials", os.environ.get("LP_CREDENTIALS_FILE"),
                            "retry", source, version, "--ppa", CONFIG["staging"],
@@ -494,7 +693,7 @@ def run_command(issue, state, text):
     ## Save the issue state and send the reply even if the command fails.
     try:
         if command == "/upload":
-            messages = do_upload(issue, state, args, pkgs)
+            messages = do_upload(issue, state, args, pkgs, command_time())
         elif command == "/reject" and args:
             messages = do_reject(state, args)
         elif command == "/promote":
@@ -502,6 +701,8 @@ def run_command(issue, state, text):
             messages = do_promote(state, [a for a in args if a != "--force"], force, pkgs)
         elif command == "/retry" and len(args) == 2:
             messages = do_retry(*args)
+        elif command == "/ported" and args:
+            messages = do_ported(state, args)
         else:
             messages = [f"Unknown command `{line}`. See the issue description."]
     except Exception as e:  # noqa: BLE001

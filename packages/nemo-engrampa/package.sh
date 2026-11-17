@@ -1,7 +1,11 @@
 ## Derived source: nemo-fileroller renamed for Engrampa, as in the overlay.
+##  It is only in the PPA, and g-unity7-desktop recommends it before
+##  nemo-fileroller, so it is promoted with the desktop group. Without it, apt
+##  would install nemo-fileroller with file-roller from Ubuntu.
 OVERLAY_PKG="gnome-extra/nemo-engrampa"
 UBUNTU_SRC="nemo-fileroller"
 SOURCE_NAME="nemo-engrampa"
+GROUP="desktop"
 
 debian_edit() {
 	sed -i \
