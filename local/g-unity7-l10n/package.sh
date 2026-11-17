@@ -2,8 +2,10 @@
 ##  package or language pack installs, for the ported packages. They go to
 ##  /usr/share/locale, where a language pack would take precedence. The other
 ##  translations of the ebuild are in the Ubuntu language packs, except the
-##  legacy translations of unity and unity-control-center, which the language
-##  packs shadow, and the languages that no longer have an Ubuntu language pack.
+##  languages that no longer have an Ubuntu language pack.
+## The ebuild merges the translations of the network and sharing panels into
+##  unity-control-center; the port translates these panels in their own domains
+##  (*-use-own-translation-domain.patch), which no language pack has.
 OVERLAY_PKG="unity-base/unity-language-pack"
 GROUP="desktop"
 
@@ -23,6 +25,8 @@ local_prepare() {
 		indicator-notifications-translations-261017 indicator-notifications
 		mate-screenshot-translations-focal mate-screenshot
 		session-shortcuts-translations-artful session-shortcuts
+		unity-control-center-network-translations-261117 unity-control-center-network
+		unity-control-center-sharing-translations-261117 unity-control-center-sharing
 		unity-help-translations-261017 unity-help
 	EOF
 }

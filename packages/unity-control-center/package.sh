@@ -5,6 +5,11 @@ GROUP="desktop"
 ## The ebuild's default USE flags (+cups: printers-fix_launcher.patch).
 ##  01-langselector.patch and 02-optional-bt-colord-kerberos-wacom.patch only
 ##  replace Ubuntu tools that Gentoo lacks and make dependencies optional.
+## network-use-own-translation-domain.patch and
+##  sharing-use-own-translation-domain.patch are only in the port: the ebuild
+##  merges the translations of these panels into unity-control-center
+##  (unity-base/unity-language-pack), which the Ubuntu language packs hide, so
+##  g-unity7-l10n installs them in their own domains.
 PATCHES=(
 	appearance-ignore_screenshots_from_mate_screenshot.patch
 	appearance-process_filename_dark_files.patch
@@ -14,6 +19,8 @@ PATCHES=(
 	use-cinnamon-schema-for-idle-delay.patch
 	printers-fix_launcher.patch
 	sharing-support-ssh-socket-activation.patch
+	network-use-own-translation-domain.patch
+	sharing-use-own-translation-domain.patch
 )
 
 debian_edit() {
@@ -44,12 +51,33 @@ debian_edit() {
 	echo "usr/libexec/ucc-remote-login-helper" >> debian/unity-control-center.install || return 1
 	grep -Fqx "usr/libexec/ucc-remote-login-helper" debian/unity-control-center.install || return 1
 
+	# dh_translations adds gettext-domain="unity-control-center" also to the #
+	#  messages of the remote login policy, which have the domain of the sharing #
+	#  panel (sharing-use-own-translation-domain.patch): drop the duplicate #
+	cat >> debian/rules <<-EOF || return 1
+
+		execute_after_dh_translations:
+		$(printf '\t')sed -i -e 's/ gettext-domain="unity-control-center"//' \\
+		$(printf '\t\t')debian/unity-control-center/usr/share/polkit-1/actions/com.canonical.controlcenter.remote-login-helper.policy
+		$(printf '\t')! grep -Fq 'gettext-domain="unity-control-center"' \\
+		$(printf '\t\t')debian/unity-control-center/usr/share/polkit-1/actions/com.canonical.controlcenter.remote-login-helper.policy
+		$(printf '\t')[ \$\$(grep -Fc 'gettext-domain="unity-control-center-sharing"' \\
+		$(printf '\t\t')debian/unity-control-center/usr/share/polkit-1/actions/com.canonical.controlcenter.remote-login-helper.policy) -eq 2 ]
+	EOF
+	grep -qx "execute_after_dh_translations:" debian/rules || return 1
+
 	# The services of the sharing panel, which the ebuild depends on with its #
-	#  default sharing USE flag. Suggested only: openssh-server would open the #
-	#  SSH port at once, and the panel shows only the installed services #
-	sed -i -e "/^Package: unity-control-center$/,/^$/{s/^\( *\)x11-xserver-utils$/\1x11-xserver-utils,\n\1gnome-user-share,\n\1openssh-server,\n\1rygel/}" \
+	#  default sharing USE flag. gnome-user-share and rygel start only when #
+	#  they are enabled in the panel, but openssh-server starts the SSH server #
+	#  at once, so it is only suggested. The panel shows only installed services #
+	sed -i \
+		-e "/^Package: unity-control-center$/,/^$/{s/^\( *\)ubuntu-system-service$/\1ubuntu-system-service,\n\1gnome-user-share,\n\1rygel/}" \
+		-e "/^Package: unity-control-center$/,/^$/{s/^\( *\)x11-xserver-utils$/\1x11-xserver-utils,\n\1openssh-server/}" \
 		debian/control || return 1
-	sed -n "/^Package: unity-control-center$/,/^$/p" debian/control | grep -qx " *rygel" || return 1
+	sed -n "/^Package: unity-control-center$/,/^$/p" debian/control \
+		| grep -A 2 -x " *ubuntu-system-service," | grep -qx " *rygel" || return 1
+	sed -n "/^Package: unity-control-center$/,/^$/p" debian/control \
+		| grep -A 1 -x " *x11-xserver-utils," | grep -qx " *openssh-server" || return 1
 }
 
 src_edit() {

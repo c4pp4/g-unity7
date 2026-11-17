@@ -1,0 +1,122 @@
+From 8c37a57c59fe3b8eed2df18ec6b0276989997e1b Mon Sep 17 00:00:00 2001
+From: c4pp4
+Date: Tue, 17 Nov 2026 12:46:41 +0100
+Subject: [PATCH 1/1] Sharing: use an own translation domain
+
+The Ubuntu language packs translate unity-control-center without the
+sharing panel, which is not in po/POTFILES.in. Their translations in
+/usr/share/locale-langpack take precedence over /usr/share/locale, so
+another package cannot add the missing ones to the
+unity-control-center domain.
+
+Translate the panel, its desktop file and the remote login policy in
+the unity-control-center-sharing domain instead. The panel no longer
+calls textdomain(), which would change the default domain of the whole
+control center.
+
+Signed-off-by: c4pp4
+---
+ panels/sharing/cc-sharing-networks.c                     | 4 +++-
+ panels/sharing/cc-sharing-panel.c                        | 9 +++++++--
+ ...onical.controlcenter.remote-login-helper.policy.in.in | 4 ++--
+ panels/sharing/networks.ui                               | 2 +-
+ panels/sharing/sharing.ui                                | 2 +-
+ panels/sharing/unity-sharing-panel.desktop.in.in         | 2 +-
+ 6 files changed, 15 insertions(+), 8 deletions(-)
+
+diff --git a/panels/sharing/cc-sharing-networks.c b/panels/sharing/cc-sharing-networks.c
+index 10920de..9b25326 100644
+--- a/panels/sharing/cc-sharing-networks.c
++++ b/panels/sharing/cc-sharing-networks.c
+@@ -21,7 +21,9 @@
+ 
+ #include <gtk/gtk.h>
+ #include <gio/gio.h>
+-#include <glib/gi18n.h>
++#undef GETTEXT_PACKAGE
++#define GETTEXT_PACKAGE "unity-control-center-sharing"
++#include <glib/gi18n-lib.h>
+ 
+ #include "cc-sharing-networks.h"
+ #include "org.gnome.SettingsDaemon.Sharing.h"
+diff --git a/panels/sharing/cc-sharing-panel.c b/panels/sharing/cc-sharing-panel.c
+index b0ee3a2..d9518f1 100644
+--- a/panels/sharing/cc-sharing-panel.c
++++ b/panels/sharing/cc-sharing-panel.c
+@@ -35,9 +35,15 @@
+ #ifdef GDK_WINDOWING_WAYLAND
+ #include <gdk/gdkwayland.h>
+ #endif
+-#include <glib/gi18n.h>
+ #include <config.h>
+ 
++/* The sharing panel has its own translation domain: the Ubuntu language
++ * packs translate unity-control-center without it, and their translations
++ * hide those of any other package for that domain. */
++#undef GETTEXT_PACKAGE
++#define GETTEXT_PACKAGE "unity-control-center-sharing"
++#include <glib/gi18n-lib.h>
++
+ CC_PANEL_REGISTER (CcSharingPanel, cc_sharing_panel)
+ 
+ #define PANEL_PRIVATE(o) \
+@@ -1277,7 +1283,6 @@ cc_sharing_panel_new (void)
+ void
+ cc_sharing_panel_register (GIOModule *module)
+ {
+-        textdomain (GETTEXT_PACKAGE);
+         bindtextdomain (GETTEXT_PACKAGE, "/usr/share/locale");
+         bind_textdomain_codeset (GETTEXT_PACKAGE, "UTF-8");
+         cc_sharing_panel_register_type (G_TYPE_MODULE (module));
+diff --git a/panels/sharing/com.canonical.controlcenter.remote-login-helper.policy.in.in b/panels/sharing/com.canonical.controlcenter.remote-login-helper.policy.in.in
+index beded23..678347a 100644
+--- a/panels/sharing/com.canonical.controlcenter.remote-login-helper.policy.in.in
++++ b/panels/sharing/com.canonical.controlcenter.remote-login-helper.policy.in.in
+@@ -8,8 +8,8 @@
+   <vendor_url>http://www.gnome.org/</vendor_url>
+ 
+   <action id="com.canonical.controlcenter.remote-login-helper">
+-    <_description>Enable or disable remote login</_description>
+-    <_message>Authentication is required to enable or disable remote login</_message>
++    <description gettext-domain="unity-control-center-sharing">Enable or disable remote login</description>
++    <message gettext-domain="unity-control-center-sharing">Authentication is required to enable or disable remote login</message>
+     <defaults>
+       <allow_any>no</allow_any>
+       <allow_inactive>no</allow_inactive>
+diff --git a/panels/sharing/networks.ui b/panels/sharing/networks.ui
+index d646d32..173e9b3 100644
+--- a/panels/sharing/networks.ui
++++ b/panels/sharing/networks.ui
+@@ -1,6 +1,6 @@
+ <?xml version="1.0" encoding="UTF-8"?>
+ <!-- Generated with glade 3.18.1 -->
+-<interface>
++<interface domain="unity-control-center-sharing">
+   <requires lib="gtk+" version="3.10"/>
+   <template class="CcSharingNetworks" parent="GtkGrid">
+     <property name="visible">True</property>
+diff --git a/panels/sharing/sharing.ui b/panels/sharing/sharing.ui
+index 0a81ba3..3cb67be 100644
+--- a/panels/sharing/sharing.ui
++++ b/panels/sharing/sharing.ui
+@@ -1,6 +1,6 @@
+ <?xml version="1.0" encoding="UTF-8"?>
+ <!-- Generated with glade 3.18.1 -->
+-<interface>
++<interface domain="unity-control-center-sharing">
+   <requires lib="gtk+" version="3.10"/>
+   <object class="GtkBox"  id="sharing-panel">
+     <property name="visible">True</property>
+diff --git a/panels/sharing/unity-sharing-panel.desktop.in.in b/panels/sharing/unity-sharing-panel.desktop.in.in
+index 2650dea..acb5b19 100644
+--- a/panels/sharing/unity-sharing-panel.desktop.in.in
++++ b/panels/sharing/unity-sharing-panel.desktop.in.in
+@@ -14,4 +14,4 @@ X-Unity-Settings-Panel=sharing
+ #X-GNOME-Settings-Panel=sharing
+ # Translators: those are keywords for the sharing control-center panel
+ _Keywords=share;sharing;ssh;host;name;remote;desktop;media;audio;video;pictures;photos;movies;server;renderer;
+-X-Ubuntu-Gettext-Domain=unity-control-center
++X-GNOME-Gettext-Domain=unity-control-center-sharing
+-- 
+2.56.1
+

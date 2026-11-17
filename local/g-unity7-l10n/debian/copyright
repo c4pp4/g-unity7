@@ -14,7 +14,10 @@ Comment: Translations from unity-base/unity-language-pack in the
  gentoo-unity7 overlay: activity-log-manager (Ubuntu 17.10),
  unity-session-properties (cinnamon-session), indicator-appearance,
  indicator-notifications, the mate-screenshot quicklist (Ubuntu 20.04),
- session-shortcuts (Ubuntu 17.10) and the Unity Help launcher (unity-help).
+ session-shortcuts (Ubuntu 17.10), the Unity Help launcher (unity-help) and
+ the network and sharing panels of unity-control-center
+ (unity-control-center of Ubuntu 22.10 and 26.10, gnome-control-center-2.0 of
+ Ubuntu 22.04).
 
 License: GPL-2
  This program is free software; you can redistribute it and/or modify it

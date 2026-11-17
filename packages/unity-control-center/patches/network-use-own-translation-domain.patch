@@ -1,0 +1,849 @@
+From d99de711092384593dd9f3eb7d90a13d2a8ae01d Mon Sep 17 00:00:00 2001
+From: c4pp4
+Date: Tue, 17 Nov 2026 12:47:18 +0100
+Subject: [PATCH 1/1] Network: use an own translation domain
+
+The network panel has many messages from newer GNOME Settings and
+NetworkManager that the Ubuntu language packs do not translate in
+unity-control-center. Their translations in /usr/share/locale-langpack
+take precedence over /usr/share/locale, so another package cannot add
+the missing ones to the unity-control-center domain.
+
+Translate the panel, the connection editor, the wireless security
+widgets and the desktop file in the unity-control-center-network domain
+instead.
+
+Signed-off-by: c4pp4
+---
+ panels/network/cc-network-panel.c                         | 4 +++-
+ panels/network/connection-editor/8021x-security-page.ui   | 2 +-
+ panels/network/connection-editor/ce-page-8021x-security.c | 4 +++-
+ panels/network/connection-editor/ce-page-details.c        | 4 +++-
+ panels/network/connection-editor/ce-page-ethernet.c       | 4 +++-
+ panels/network/connection-editor/ce-page-ip4.c            | 4 +++-
+ panels/network/connection-editor/ce-page-ip6.c            | 4 +++-
+ panels/network/connection-editor/ce-page-security.c       | 4 +++-
+ panels/network/connection-editor/ce-page-vpn.c            | 4 +++-
+ panels/network/connection-editor/ce-page-wifi.c           | 4 +++-
+ panels/network/connection-editor/ce-page.c                | 4 +++-
+ panels/network/connection-editor/connection-editor.ui     | 2 +-
+ panels/network/connection-editor/details-page.ui          | 2 +-
+ panels/network/connection-editor/ethernet-page.ui         | 2 +-
+ panels/network/connection-editor/ip4-page.ui              | 2 +-
+ panels/network/connection-editor/ip6-page.ui              | 2 +-
+ panels/network/connection-editor/net-connection-editor.c  | 4 +++-
+ panels/network/connection-editor/security-page.ui         | 2 +-
+ panels/network/connection-editor/vpn-helpers.c            | 4 +++-
+ panels/network/connection-editor/vpn-page.ui              | 2 +-
+ panels/network/connection-editor/wifi-page.ui             | 2 +-
+ panels/network/net-device-ethernet.c                      | 4 +++-
+ panels/network/net-device-mobile.c                        | 4 +++-
+ panels/network/net-device-simple.c                        | 4 +++-
+ panels/network/net-device-wifi.c                          | 4 +++-
+ panels/network/net-device-wired.c                         | 4 +++-
+ panels/network/net-device.c                               | 4 +++-
+ panels/network/net-object.c                               | 4 +++-
+ panels/network/net-proxy.c                                | 4 +++-
+ panels/network/net-vpn.c                                  | 4 +++-
+ panels/network/network-ethernet.ui                        | 2 +-
+ panels/network/network-mobile.ui                          | 2 +-
+ panels/network/network-module.c                           | 5 +++++
+ panels/network/network-proxy.ui                           | 2 +-
+ panels/network/network-simple.ui                          | 2 +-
+ panels/network/network-vpn.ui                             | 2 +-
+ panels/network/network-wifi.ui                            | 2 +-
+ panels/network/network-wired.ui                           | 2 +-
+ panels/network/network.ui                                 | 2 +-
+ panels/network/panel-cell-renderer-mode.c                 | 4 +++-
+ panels/network/panel-cell-renderer-pixbuf.c               | 4 +++-
+ panels/network/panel-cell-renderer-security.c             | 4 +++-
+ panels/network/panel-cell-renderer-separator.c            | 4 +++-
+ panels/network/panel-cell-renderer-signal.c               | 4 +++-
+ panels/network/panel-cell-renderer-text.c                 | 4 +++-
+ panels/network/panel-common.c                             | 4 +++-
+ panels/network/unity-network-panel.desktop.in.in          | 1 +
+ panels/network/wireless-security/eap-method-fast.ui       | 2 +-
+ panels/network/wireless-security/eap-method-leap.ui       | 2 +-
+ panels/network/wireless-security/eap-method-peap.ui       | 2 +-
+ panels/network/wireless-security/eap-method-simple.ui     | 2 +-
+ panels/network/wireless-security/eap-method-tls.ui        | 2 +-
+ panels/network/wireless-security/eap-method-ttls.ui       | 2 +-
+ panels/network/wireless-security/nm-default.h             | 4 +++-
+ panels/network/wireless-security/ws-dynamic-wep.ui        | 2 +-
+ panels/network/wireless-security/ws-leap.ui               | 2 +-
+ panels/network/wireless-security/ws-wep-key.ui            | 2 +-
+ panels/network/wireless-security/ws-wpa-eap.ui            | 2 +-
+ panels/network/wireless-security/ws-wpa-psk.ui            | 2 +-
+ 59 files changed, 121 insertions(+), 57 deletions(-)
+
+diff --git a/panels/network/cc-network-panel.c b/panels/network/cc-network-panel.c
+index 2ac9af1..85d7fd8 100644
+--- a/panels/network/cc-network-panel.c
++++ b/panels/network/cc-network-panel.c
+@@ -20,7 +20,9 @@
+  */
+ 
+ #include <config.h>
+-#include <glib/gi18n.h>
++#undef GETTEXT_PACKAGE
++#define GETTEXT_PACKAGE "unity-control-center-network"
++#include <glib/gi18n-lib.h>
+ #include <stdlib.h>
+ 
+ #include "cc-network-panel.h"
+diff --git a/panels/network/connection-editor/8021x-security-page.ui b/panels/network/connection-editor/8021x-security-page.ui
+index 5111dfb..ad88afc 100644
+--- a/panels/network/connection-editor/8021x-security-page.ui
++++ b/panels/network/connection-editor/8021x-security-page.ui
+@@ -1,5 +1,5 @@
+ <?xml version="1.0" encoding="UTF-8"?>
+-<interface>
++<interface domain="unity-control-center-network">
+   <!-- interface-requires gtk+ 3.0 -->
+   <object class="GtkNotebook" id="page">
+     <property name="visible">True</property>
+diff --git a/panels/network/connection-editor/ce-page-8021x-security.c b/panels/network/connection-editor/ce-page-8021x-security.c
+index f7d3196..c345848 100644
+--- a/panels/network/connection-editor/ce-page-8021x-security.c
++++ b/panels/network/connection-editor/ce-page-8021x-security.c
+@@ -25,7 +25,9 @@
+ #include <string.h>
+ 
+ #include <gtk/gtk.h>
+-#include <glib/gi18n.h>
++#undef GETTEXT_PACKAGE
++#define GETTEXT_PACKAGE "unity-control-center-network"
++#include <glib/gi18n-lib.h>
+ 
+ #include <NetworkManager.h>
+ 
+diff --git a/panels/network/connection-editor/ce-page-details.c b/panels/network/connection-editor/ce-page-details.c
+index 2d85836..67e47a4 100644
+--- a/panels/network/connection-editor/ce-page-details.c
++++ b/panels/network/connection-editor/ce-page-details.c
+@@ -22,7 +22,9 @@
+ #include "config.h"
+ 
+ #include <glib-object.h>
+-#include <glib/gi18n.h>
++#undef GETTEXT_PACKAGE
++#define GETTEXT_PACKAGE "unity-control-center-network"
++#include <glib/gi18n-lib.h>
+ 
+ #include <NetworkManager.h>
+ 
+diff --git a/panels/network/connection-editor/ce-page-ethernet.c b/panels/network/connection-editor/ce-page-ethernet.c
+index 2163cdb..621d9dc 100644
+--- a/panels/network/connection-editor/ce-page-ethernet.c
++++ b/panels/network/connection-editor/ce-page-ethernet.c
+@@ -22,7 +22,9 @@
+ #include "config.h"
+ 
+ #include <glib-object.h>
+-#include <glib/gi18n.h>
++#undef GETTEXT_PACKAGE
++#define GETTEXT_PACKAGE "unity-control-center-network"
++#include <glib/gi18n-lib.h>
+ #include <net/if_arp.h>
+ 
+ #include <NetworkManager.h>
+diff --git a/panels/network/connection-editor/ce-page-ip4.c b/panels/network/connection-editor/ce-page-ip4.c
+index 0f34f6f..a326f0a 100644
+--- a/panels/network/connection-editor/ce-page-ip4.c
++++ b/panels/network/connection-editor/ce-page-ip4.c
+@@ -25,7 +25,9 @@
+ #include <stdlib.h>
+ #include <arpa/inet.h>
+ #include <glib-object.h>
+-#include <glib/gi18n.h>
++#undef GETTEXT_PACKAGE
++#define GETTEXT_PACKAGE "unity-control-center-network"
++#include <glib/gi18n-lib.h>
+ #include <NetworkManager.h>
+ 
+ #include "shell/list-box-helper.h"
+diff --git a/panels/network/connection-editor/ce-page-ip6.c b/panels/network/connection-editor/ce-page-ip6.c
+index c9daab1..8e7ef2c 100644
+--- a/panels/network/connection-editor/ce-page-ip6.c
++++ b/panels/network/connection-editor/ce-page-ip6.c
+@@ -25,7 +25,9 @@
+ #include <stdlib.h>
+ #include <arpa/inet.h>
+ #include <glib-object.h>
+-#include <glib/gi18n.h>
++#undef GETTEXT_PACKAGE
++#define GETTEXT_PACKAGE "unity-control-center-network"
++#include <glib/gi18n-lib.h>
+ #include <NetworkManager.h>
+ 
+ #include "shell/list-box-helper.h"
+diff --git a/panels/network/connection-editor/ce-page-security.c b/panels/network/connection-editor/ce-page-security.c
+index d06e3ae..4d8f7dc 100644
+--- a/panels/network/connection-editor/ce-page-security.c
++++ b/panels/network/connection-editor/ce-page-security.c
+@@ -22,7 +22,9 @@
+ #include "config.h"
+ 
+ #include <glib-object.h>
+-#include <glib/gi18n.h>
++#undef GETTEXT_PACKAGE
++#define GETTEXT_PACKAGE "unity-control-center-network"
++#include <glib/gi18n-lib.h>
+ 
+ #include <NetworkManager.h>
+ 
+diff --git a/panels/network/connection-editor/ce-page-vpn.c b/panels/network/connection-editor/ce-page-vpn.c
+index dd6d42f..8bff2fe 100644
+--- a/panels/network/connection-editor/ce-page-vpn.c
++++ b/panels/network/connection-editor/ce-page-vpn.c
+@@ -22,7 +22,9 @@
+ #include "config.h"
+ 
+ #include <glib-object.h>
+-#include <glib/gi18n.h>
++#undef GETTEXT_PACKAGE
++#define GETTEXT_PACKAGE "unity-control-center-network"
++#include <glib/gi18n-lib.h>
+ 
+ #include <NetworkManager.h>
+ 
+diff --git a/panels/network/connection-editor/ce-page-wifi.c b/panels/network/connection-editor/ce-page-wifi.c
+index 08e8e37..b8a0b78 100644
+--- a/panels/network/connection-editor/ce-page-wifi.c
++++ b/panels/network/connection-editor/ce-page-wifi.c
+@@ -22,7 +22,9 @@
+ #include "config.h"
+ 
+ #include <glib-object.h>
+-#include <glib/gi18n.h>
++#undef GETTEXT_PACKAGE
++#define GETTEXT_PACKAGE "unity-control-center-network"
++#include <glib/gi18n-lib.h>
+ 
+ #include <NetworkManager.h>
+ 
+diff --git a/panels/network/connection-editor/ce-page.c b/panels/network/connection-editor/ce-page.c
+index 1b4e082..a47f6f9 100644
+--- a/panels/network/connection-editor/ce-page.c
++++ b/panels/network/connection-editor/ce-page.c
+@@ -28,7 +28,9 @@
+ 
+ #include <NetworkManager.h>
+ 
+-#include <glib/gi18n.h>
++#undef GETTEXT_PACKAGE
++#define GETTEXT_PACKAGE "unity-control-center-network"
++#include <glib/gi18n-lib.h>
+ 
+ #include "ce-page.h"
+ 
+diff --git a/panels/network/connection-editor/connection-editor.ui b/panels/network/connection-editor/connection-editor.ui
+index 4495c72..130236d 100644
+--- a/panels/network/connection-editor/connection-editor.ui
++++ b/panels/network/connection-editor/connection-editor.ui
+@@ -1,5 +1,5 @@
+ <?xml version="1.0" encoding="UTF-8"?>
+-<interface>
++<interface domain="unity-control-center-network">
+   <!-- interface-requires gtk+ 3.0 -->
+   <object class="GtkDialog" id="details_dialog">
+     <property name="can_focus">False</property>
+diff --git a/panels/network/connection-editor/details-page.ui b/panels/network/connection-editor/details-page.ui
+index 3b1c716..49edb35 100644
+--- a/panels/network/connection-editor/details-page.ui
++++ b/panels/network/connection-editor/details-page.ui
+@@ -1,5 +1,5 @@
+ <?xml version="1.0" encoding="UTF-8"?>
+-<interface>
++<interface domain="unity-control-center-network">
+   <!-- interface-requires gtk+ 3.0 -->
+   <object class="GtkGrid" id="page">
+     <property name="visible">True</property>
+diff --git a/panels/network/connection-editor/ethernet-page.ui b/panels/network/connection-editor/ethernet-page.ui
+index eb1bfb0..9afc990 100644
+--- a/panels/network/connection-editor/ethernet-page.ui
++++ b/panels/network/connection-editor/ethernet-page.ui
+@@ -1,5 +1,5 @@
+ <?xml version="1.0" encoding="UTF-8"?>
+-<interface>
++<interface domain="unity-control-center-network">
+   <!-- interface-requires gtk+ 3.0 -->
+   <object class="GtkAdjustment" id="adjustment1">
+     <property name="upper">10000</property>
+diff --git a/panels/network/connection-editor/ip4-page.ui b/panels/network/connection-editor/ip4-page.ui
+index fe5d407..a944134 100644
+--- a/panels/network/connection-editor/ip4-page.ui
++++ b/panels/network/connection-editor/ip4-page.ui
+@@ -1,5 +1,5 @@
+ <?xml version="1.0" encoding="UTF-8"?>
+-<interface>
++<interface domain="unity-control-center-network">
+   <!-- interface-requires gtk+ 3.0 -->
+   <object class="GtkScrolledWindow" id="page">
+     <property name="visible">True</property>
+diff --git a/panels/network/connection-editor/ip6-page.ui b/panels/network/connection-editor/ip6-page.ui
+index 6d39bd0..6b172e5 100644
+--- a/panels/network/connection-editor/ip6-page.ui
++++ b/panels/network/connection-editor/ip6-page.ui
+@@ -1,5 +1,5 @@
+ <?xml version="1.0" encoding="UTF-8"?>
+-<interface>
++<interface domain="unity-control-center-network">
+   <!-- interface-requires gtk+ 3.0 -->
+   <object class="GtkScrolledWindow" id="page">
+     <property name="visible">True</property>
+diff --git a/panels/network/connection-editor/net-connection-editor.c b/panels/network/connection-editor/net-connection-editor.c
+index 8c21667..1b9acd7 100644
+--- a/panels/network/connection-editor/net-connection-editor.c
++++ b/panels/network/connection-editor/net-connection-editor.c
+@@ -22,7 +22,9 @@
+ #include "config.h"
+ 
+ #include <glib-object.h>
+-#include <glib/gi18n.h>
++#undef GETTEXT_PACKAGE
++#define GETTEXT_PACKAGE "unity-control-center-network"
++#include <glib/gi18n-lib.h>
+ 
+ #include <NetworkManager.h>
+ 
+diff --git a/panels/network/connection-editor/security-page.ui b/panels/network/connection-editor/security-page.ui
+index 0c3dd92..4ba3d7c 100644
+--- a/panels/network/connection-editor/security-page.ui
++++ b/panels/network/connection-editor/security-page.ui
+@@ -1,5 +1,5 @@
+ <?xml version="1.0" encoding="UTF-8"?>
+-<interface>
++<interface domain="unity-control-center-network">
+   <!-- interface-requires gtk+ 3.0 -->
+   <object class="GtkNotebook" id="page">
+     <property name="visible">True</property>
+diff --git a/panels/network/connection-editor/vpn-helpers.c b/panels/network/connection-editor/vpn-helpers.c
+index 09b5208..343ed89 100644
+--- a/panels/network/connection-editor/vpn-helpers.c
++++ b/panels/network/connection-editor/vpn-helpers.c
+@@ -26,7 +26,9 @@
+ #include <glib.h>
+ #include <gmodule.h>
+ #include <gtk/gtk.h>
+-#include <glib/gi18n.h>
++#undef GETTEXT_PACKAGE
++#define GETTEXT_PACKAGE "unity-control-center-network"
++#include <glib/gi18n-lib.h>
+ #include <NetworkManager.h>
+ 
+ #include "vpn-helpers.h"
+diff --git a/panels/network/connection-editor/vpn-page.ui b/panels/network/connection-editor/vpn-page.ui
+index 589b199..473da1b 100644
+--- a/panels/network/connection-editor/vpn-page.ui
++++ b/panels/network/connection-editor/vpn-page.ui
+@@ -1,5 +1,5 @@
+ <?xml version="1.0" encoding="UTF-8"?>
+-<interface>
++<interface domain="unity-control-center-network">
+   <!-- interface-requires gtk+ 3.0 -->
+   <object class="GtkBox" id="page">
+     <property name="visible">True</property>
+diff --git a/panels/network/connection-editor/wifi-page.ui b/panels/network/connection-editor/wifi-page.ui
+index 96d2bfb..60f22a2 100644
+--- a/panels/network/connection-editor/wifi-page.ui
++++ b/panels/network/connection-editor/wifi-page.ui
+@@ -1,5 +1,5 @@
+ <?xml version="1.0" encoding="UTF-8"?>
+-<interface>
++<interface domain="unity-control-center-network">
+   <!-- interface-requires gtk+ 3.0 -->
+   <object class="GtkGrid" id="page">
+     <property name="visible">True</property>
+diff --git a/panels/network/net-device-ethernet.c b/panels/network/net-device-ethernet.c
+index e3ab8b8..1c8398b 100644
+--- a/panels/network/net-device-ethernet.c
++++ b/panels/network/net-device-ethernet.c
+@@ -22,7 +22,9 @@
+ #include "config.h"
+ 
+ #include <glib-object.h>
+-#include <glib/gi18n.h>
++#undef GETTEXT_PACKAGE
++#define GETTEXT_PACKAGE "unity-control-center-network"
++#include <glib/gi18n-lib.h>
+ 
+ #include <NetworkManager.h>
+ 
+diff --git a/panels/network/net-device-mobile.c b/panels/network/net-device-mobile.c
+index fe83bff..cfe8fdf 100644
+--- a/panels/network/net-device-mobile.c
++++ b/panels/network/net-device-mobile.c
+@@ -23,7 +23,9 @@
+ #include "config.h"
+ 
+ #include <glib-object.h>
+-#include <glib/gi18n.h>
++#undef GETTEXT_PACKAGE
++#define GETTEXT_PACKAGE "unity-control-center-network"
++#include <glib/gi18n-lib.h>
+ 
+ #include <NetworkManager.h>
+ #include <libmm-glib.h>
+diff --git a/panels/network/net-device-simple.c b/panels/network/net-device-simple.c
+index 79b6ca3..780b0d6 100644
+--- a/panels/network/net-device-simple.c
++++ b/panels/network/net-device-simple.c
+@@ -23,7 +23,9 @@
+ #include "config.h"
+ 
+ #include <glib-object.h>
+-#include <glib/gi18n.h>
++#undef GETTEXT_PACKAGE
++#define GETTEXT_PACKAGE "unity-control-center-network"
++#include <glib/gi18n-lib.h>
+ 
+ #include <NetworkManager.h>
+ 
+diff --git a/panels/network/net-device-wifi.c b/panels/network/net-device-wifi.c
+index 167f46d..07f002f 100644
+--- a/panels/network/net-device-wifi.c
++++ b/panels/network/net-device-wifi.c
+@@ -22,7 +22,9 @@
+ #include "config.h"
+ 
+ #include <glib-object.h>
+-#include <glib/gi18n.h>
++#undef GETTEXT_PACKAGE
++#define GETTEXT_PACKAGE "unity-control-center-network"
++#include <glib/gi18n-lib.h>
+ 
+ #include <netinet/ether.h>
+ 
+diff --git a/panels/network/net-device-wired.c b/panels/network/net-device-wired.c
+index ebc60d9..46927df 100644
+--- a/panels/network/net-device-wired.c
++++ b/panels/network/net-device-wired.c
+@@ -22,7 +22,9 @@
+ #include "config.h"
+ 
+ #include <glib-object.h>
+-#include <glib/gi18n.h>
++#undef GETTEXT_PACKAGE
++#define GETTEXT_PACKAGE "unity-control-center-network"
++#include <glib/gi18n-lib.h>
+ 
+ #include <nm-client.h>
+ #include <nm-device.h>
+diff --git a/panels/network/net-device.c b/panels/network/net-device.c
+index b98e686..3e6521d 100644
+--- a/panels/network/net-device.c
++++ b/panels/network/net-device.c
+@@ -22,7 +22,9 @@
+ #include "config.h"
+ 
+ #include <glib-object.h>
+-#include <glib/gi18n.h>
++#undef GETTEXT_PACKAGE
++#define GETTEXT_PACKAGE "unity-control-center-network"
++#include <glib/gi18n-lib.h>
+ #include <arpa/inet.h>
+ #include <netinet/ether.h>
+ 
+diff --git a/panels/network/net-object.c b/panels/network/net-object.c
+index ef94523..b863ee9 100644
+--- a/panels/network/net-object.c
++++ b/panels/network/net-object.c
+@@ -22,7 +22,9 @@
+ #include "config.h"
+ 
+ #include <glib-object.h>
+-#include <glib/gi18n.h>
++#undef GETTEXT_PACKAGE
++#define GETTEXT_PACKAGE "unity-control-center-network"
++#include <glib/gi18n-lib.h>
+ 
+ #include "net-object.h"
+ 
+diff --git a/panels/network/net-proxy.c b/panels/network/net-proxy.c
+index b1a499c..37270ba 100644
+--- a/panels/network/net-proxy.c
++++ b/panels/network/net-proxy.c
+@@ -22,7 +22,9 @@
+ #include "config.h"
+ 
+ #include <glib-object.h>
+-#include <glib/gi18n.h>
++#undef GETTEXT_PACKAGE
++#define GETTEXT_PACKAGE "unity-control-center-network"
++#include <glib/gi18n-lib.h>
+ #include <gio/gio.h>
+ 
+ #include "net-proxy.h"
+diff --git a/panels/network/net-vpn.c b/panels/network/net-vpn.c
+index 4ed09e3..5f29768 100644
+--- a/panels/network/net-vpn.c
++++ b/panels/network/net-vpn.c
+@@ -22,7 +22,9 @@
+ #include "config.h"
+ 
+ #include <glib-object.h>
+-#include <glib/gi18n.h>
++#undef GETTEXT_PACKAGE
++#define GETTEXT_PACKAGE "unity-control-center-network"
++#include <glib/gi18n-lib.h>
+ #include <NetworkManager.h>
+ 
+ #include "panel-common.h"
+diff --git a/panels/network/network-ethernet.ui b/panels/network/network-ethernet.ui
+index 472c312..9449cd5 100644
+--- a/panels/network/network-ethernet.ui
++++ b/panels/network/network-ethernet.ui
+@@ -1,5 +1,5 @@
+ <?xml version="1.0" encoding="UTF-8"?>
+-<interface>
++<interface domain="unity-control-center-network">
+   <!-- interface-requires gtk+ 3.0 -->
+   <object class="GtkImage" id="image1">
+     <property name="visible">True</property>
+diff --git a/panels/network/network-mobile.ui b/panels/network/network-mobile.ui
+index 3533bce..881596b 100644
+--- a/panels/network/network-mobile.ui
++++ b/panels/network/network-mobile.ui
+@@ -1,5 +1,5 @@
+ <?xml version="1.0" encoding="UTF-8"?>
+-<interface>
++<interface domain="unity-control-center-network">
+   <!-- interface-requires gtk+ 3.0 -->
+   <object class="GtkListStore" id="liststore_mobile_connections">
+     <columns>
+diff --git a/panels/network/network-module.c b/panels/network/network-module.c
+index fac5b94..26788ca 100644
+--- a/panels/network/network-module.c
++++ b/panels/network/network-module.c
+@@ -23,6 +23,11 @@
+ 
+ #include "cc-network-panel.h"
+ 
++/* The network panel has its own translation domain: the Ubuntu language
++ * packs translate unity-control-center without most of its messages, and
++ * their translations hide those of any other package for that domain. */
++#undef GETTEXT_PACKAGE
++#define GETTEXT_PACKAGE "unity-control-center-network"
+ #include <glib/gi18n-lib.h>
+ 
+ void
+diff --git a/panels/network/network-proxy.ui b/panels/network/network-proxy.ui
+index 9cf51b6..daca2dc 100644
+--- a/panels/network/network-proxy.ui
++++ b/panels/network/network-proxy.ui
+@@ -1,5 +1,5 @@
+ <?xml version="1.0" encoding="UTF-8"?>
+-<interface>
++<interface domain="unity-control-center-network">
+   <!-- interface-requires gtk+ 3.0 -->
+   <object class="GtkAdjustment" id="adjustment_proxy_port_ftp">
+     <property name="upper">65535</property>
+diff --git a/panels/network/network-simple.ui b/panels/network/network-simple.ui
+index 0142c1d..005e8f5 100644
+--- a/panels/network/network-simple.ui
++++ b/panels/network/network-simple.ui
+@@ -1,5 +1,5 @@
+ <?xml version="1.0" encoding="UTF-8"?>
+-<interface>
++<interface domain="unity-control-center-network">
+   <!-- interface-requires gtk+ 3.0 -->
+       <object class="GtkVBox" id="vbox6">
+         <property name="visible">True</property>
+diff --git a/panels/network/network-vpn.ui b/panels/network/network-vpn.ui
+index 7a3fab4..be9d21c 100644
+--- a/panels/network/network-vpn.ui
++++ b/panels/network/network-vpn.ui
+@@ -1,5 +1,5 @@
+ <?xml version="1.0" encoding="UTF-8"?>
+-<interface>
++<interface domain="unity-control-center-network">
+   <!-- interface-requires gtk+ 3.0 -->
+       <object class="GtkVBox" id="vbox9">
+         <property name="visible">True</property>
+diff --git a/panels/network/network-wifi.ui b/panels/network/network-wifi.ui
+index 71c5b7b..b2e9129 100644
+--- a/panels/network/network-wifi.ui
++++ b/panels/network/network-wifi.ui
+@@ -1,5 +1,5 @@
+ <?xml version="1.0" encoding="UTF-8"?>
+-<interface>
++<interface domain="unity-control-center-network">
+   <!-- interface-requires gtk+ 3.0 -->
+   <object class="GtkDialog" id="details_dialog">
+     <property name="can_focus">False</property>
+diff --git a/panels/network/network-wired.ui b/panels/network/network-wired.ui
+index c74f648..2509a86 100644
+--- a/panels/network/network-wired.ui
++++ b/panels/network/network-wired.ui
+@@ -1,5 +1,5 @@
+ <?xml version="1.0" encoding="UTF-8"?>
+-<interface>
++<interface domain="unity-control-center-network">
+   <!-- interface-requires gtk+ 3.0 -->
+   <object class="GtkWindow" id="window_tmp">
+     <property name="can_focus">False</property>
+diff --git a/panels/network/network.ui b/panels/network/network.ui
+index e092766..d066035 100644
+--- a/panels/network/network.ui
++++ b/panels/network/network.ui
+@@ -1,5 +1,5 @@
+ <?xml version="1.0" encoding="UTF-8"?>
+-<interface>
++<interface domain="unity-control-center-network">
+   <!-- interface-requires gtk+ 3.0 -->
+   <object class="GtkAdjustment" id="adjustment_proxy_port_ftp">
+     <property name="upper">65535</property>
+diff --git a/panels/network/panel-cell-renderer-mode.c b/panels/network/panel-cell-renderer-mode.c
+index 7bc443d..de7b8bd 100644
+--- a/panels/network/panel-cell-renderer-mode.c
++++ b/panels/network/panel-cell-renderer-mode.c
+@@ -22,7 +22,9 @@
+ #include "config.h"
+ 
+ #include <glib.h>
+-#include <glib/gi18n.h>
++#undef GETTEXT_PACKAGE
++#define GETTEXT_PACKAGE "unity-control-center-network"
++#include <glib/gi18n-lib.h>
+ #include <gtk/gtk.h>
+ 
+ #include "panel-cell-renderer-mode.h"
+diff --git a/panels/network/panel-cell-renderer-pixbuf.c b/panels/network/panel-cell-renderer-pixbuf.c
+index 72650c9..4ffbba3 100644
+--- a/panels/network/panel-cell-renderer-pixbuf.c
++++ b/panels/network/panel-cell-renderer-pixbuf.c
+@@ -24,7 +24,9 @@
+ #include "config.h"
+ 
+ #include <glib.h>
+-#include <glib/gi18n.h>
++#undef GETTEXT_PACKAGE
++#define GETTEXT_PACKAGE "unity-control-center-network"
++#include <glib/gi18n-lib.h>
+ #include <gtk/gtk.h>
+ 
+ #include "panel-cell-renderer-pixbuf.h"
+diff --git a/panels/network/panel-cell-renderer-security.c b/panels/network/panel-cell-renderer-security.c
+index a964bcf..95742d2 100644
+--- a/panels/network/panel-cell-renderer-security.c
++++ b/panels/network/panel-cell-renderer-security.c
+@@ -22,7 +22,9 @@
+ #include "config.h"
+ 
+ #include <glib.h>
+-#include <glib/gi18n.h>
++#undef GETTEXT_PACKAGE
++#define GETTEXT_PACKAGE "unity-control-center-network"
++#include <glib/gi18n-lib.h>
+ #include <gtk/gtk.h>
+ 
+ #include "panel-cell-renderer-security.h"
+diff --git a/panels/network/panel-cell-renderer-separator.c b/panels/network/panel-cell-renderer-separator.c
+index ae4d5d2..a639d5a 100644
+--- a/panels/network/panel-cell-renderer-separator.c
++++ b/panels/network/panel-cell-renderer-separator.c
+@@ -24,7 +24,9 @@
+ #include "config.h"
+ 
+ #include <glib.h>
+-#include <glib/gi18n.h>
++#undef GETTEXT_PACKAGE
++#define GETTEXT_PACKAGE "unity-control-center-network"
++#include <glib/gi18n-lib.h>
+ #include <gtk/gtk.h>
+ 
+ #include "panel-cell-renderer-separator.h"
+diff --git a/panels/network/panel-cell-renderer-signal.c b/panels/network/panel-cell-renderer-signal.c
+index fbdfcee..82f5ffd 100644
+--- a/panels/network/panel-cell-renderer-signal.c
++++ b/panels/network/panel-cell-renderer-signal.c
+@@ -22,7 +22,9 @@
+ #include "config.h"
+ 
+ #include <glib.h>
+-#include <glib/gi18n.h>
++#undef GETTEXT_PACKAGE
++#define GETTEXT_PACKAGE "unity-control-center-network"
++#include <glib/gi18n-lib.h>
+ #include <gtk/gtk.h>
+ 
+ #include "panel-cell-renderer-signal.h"
+diff --git a/panels/network/panel-cell-renderer-text.c b/panels/network/panel-cell-renderer-text.c
+index 5731da6..4b30029 100644
+--- a/panels/network/panel-cell-renderer-text.c
++++ b/panels/network/panel-cell-renderer-text.c
+@@ -24,7 +24,9 @@
+ #include "config.h"
+ 
+ #include <glib.h>
+-#include <glib/gi18n.h>
++#undef GETTEXT_PACKAGE
++#define GETTEXT_PACKAGE "unity-control-center-network"
++#include <glib/gi18n-lib.h>
+ #include <gtk/gtk.h>
+ 
+ #include "panel-cell-renderer-text.h"
+diff --git a/panels/network/panel-common.c b/panels/network/panel-common.c
+index 37dbcb7..5c182a1 100644
+--- a/panels/network/panel-common.c
++++ b/panels/network/panel-common.c
+@@ -23,7 +23,9 @@
+ #include "config.h"
+ 
+ #include <glib.h>
+-#include <glib/gi18n.h>
++#undef GETTEXT_PACKAGE
++#define GETTEXT_PACKAGE "unity-control-center-network"
++#include <glib/gi18n-lib.h>
+ #include <gtk/gtk.h>
+ #include <NetworkManager.h>
+ 
+diff --git a/panels/network/unity-network-panel.desktop.in.in b/panels/network/unity-network-panel.desktop.in.in
+index f716212..96f36cc 100644
+--- a/panels/network/unity-network-panel.desktop.in.in
++++ b/panels/network/unity-network-panel.desktop.in.in
+@@ -11,3 +11,4 @@ OnlyShowIn=Unity7;
+ X-Unity-Settings-Panel=network
+ # Translators: those are keywords for the network control-center panel
+ _Keywords=Network;Wireless;IP;LAN;Proxy;
++X-GNOME-Gettext-Domain=unity-control-center-network
+diff --git a/panels/network/wireless-security/eap-method-fast.ui b/panels/network/wireless-security/eap-method-fast.ui
+index 36dc75f..752bba7 100644
+--- a/panels/network/wireless-security/eap-method-fast.ui
++++ b/panels/network/wireless-security/eap-method-fast.ui
+@@ -1,5 +1,5 @@
+ <?xml version="1.0" encoding="UTF-8"?>
+-<interface>
++<interface domain="unity-control-center-network">
+   <requires lib="gtk+" version="3.4"/>
+   <object class="GtkListStore" id="model8">
+     <columns>
+diff --git a/panels/network/wireless-security/eap-method-leap.ui b/panels/network/wireless-security/eap-method-leap.ui
+index 93ba959..b596296 100644
+--- a/panels/network/wireless-security/eap-method-leap.ui
++++ b/panels/network/wireless-security/eap-method-leap.ui
+@@ -1,5 +1,5 @@
+ <?xml version="1.0" encoding="UTF-8"?>
+-<interface>
++<interface domain="unity-control-center-network">
+   <requires lib="gtk+" version="3.4"/>
+   <object class="GtkNotebook" id="eap_leap_notebook">
+     <property name="visible">True</property>
+diff --git a/panels/network/wireless-security/eap-method-peap.ui b/panels/network/wireless-security/eap-method-peap.ui
+index 8b8959c..c77aecc 100644
+--- a/panels/network/wireless-security/eap-method-peap.ui
++++ b/panels/network/wireless-security/eap-method-peap.ui
+@@ -1,5 +1,5 @@
+ <?xml version="1.0" encoding="UTF-8"?>
+-<interface>
++<interface domain="unity-control-center-network">
+   <requires lib="gtk+" version="3.4"/>
+   <object class="GtkListStore" id="model8">
+     <columns>
+diff --git a/panels/network/wireless-security/eap-method-simple.ui b/panels/network/wireless-security/eap-method-simple.ui
+index c3b82cf..2b45efb 100644
+--- a/panels/network/wireless-security/eap-method-simple.ui
++++ b/panels/network/wireless-security/eap-method-simple.ui
+@@ -1,5 +1,5 @@
+ <?xml version="1.0" encoding="UTF-8"?>
+-<interface>
++<interface domain="unity-control-center-network">
+   <requires lib="gtk+" version="3.4"/>
+   <object class="GtkNotebook" id="eap_simple_notebook">
+     <property name="visible">True</property>
+diff --git a/panels/network/wireless-security/eap-method-tls.ui b/panels/network/wireless-security/eap-method-tls.ui
+index 886767d..63d9078 100644
+--- a/panels/network/wireless-security/eap-method-tls.ui
++++ b/panels/network/wireless-security/eap-method-tls.ui
+@@ -1,5 +1,5 @@
+ <?xml version="1.0" encoding="UTF-8"?>
+-<interface>
++<interface domain="unity-control-center-network">
+   <requires lib="gtk+" version="3.4"/>
+   <object class="GtkNotebook" id="eap_tls_notebook">
+     <property name="visible">True</property>
+diff --git a/panels/network/wireless-security/eap-method-ttls.ui b/panels/network/wireless-security/eap-method-ttls.ui
+index 4047f9f..d35845d 100644
+--- a/panels/network/wireless-security/eap-method-ttls.ui
++++ b/panels/network/wireless-security/eap-method-ttls.ui
+@@ -1,5 +1,5 @@
+ <?xml version="1.0" encoding="UTF-8"?>
+-<interface>
++<interface domain="unity-control-center-network">
+   <requires lib="gtk+" version="3.4"/>
+   <object class="GtkListStore" id="model6">
+     <columns>
+diff --git a/panels/network/wireless-security/nm-default.h b/panels/network/wireless-security/nm-default.h
+index a6d13b9..2ecf419 100644
+--- a/panels/network/wireless-security/nm-default.h
++++ b/panels/network/wireless-security/nm-default.h
+@@ -56,7 +56,9 @@ nm_clear_g_source (guint *id)
+ 
+ /*****************************************************************************/
+ 
+-#include <glib/gi18n.h>
++#undef GETTEXT_PACKAGE
++#define GETTEXT_PACKAGE "unity-control-center-network"
++#include <glib/gi18n-lib.h>
+ 
+ /*****************************************************************************/
+ 
+diff --git a/panels/network/wireless-security/ws-dynamic-wep.ui b/panels/network/wireless-security/ws-dynamic-wep.ui
+index 33668fe..aa2d53a 100644
+--- a/panels/network/wireless-security/ws-dynamic-wep.ui
++++ b/panels/network/wireless-security/ws-dynamic-wep.ui
+@@ -1,5 +1,5 @@
+ <?xml version="1.0" encoding="UTF-8"?>
+-<interface>
++<interface domain="unity-control-center-network">
+   <requires lib="gtk+" version="3.4"/>
+   <object class="GtkListStore" id="model7">
+     <columns>
+diff --git a/panels/network/wireless-security/ws-leap.ui b/panels/network/wireless-security/ws-leap.ui
+index d8dd0ec..0bf31a4 100644
+--- a/panels/network/wireless-security/ws-leap.ui
++++ b/panels/network/wireless-security/ws-leap.ui
+@@ -1,5 +1,5 @@
+ <?xml version="1.0" encoding="UTF-8"?>
+-<interface>
++<interface domain="unity-control-center-network">
+   <requires lib="gtk+" version="3.4"/>
+   <object class="GtkNotebook" id="leap_notebook">
+     <property name="visible">True</property>
+diff --git a/panels/network/wireless-security/ws-wep-key.ui b/panels/network/wireless-security/ws-wep-key.ui
+index e06a0c8..1c0448a 100644
+--- a/panels/network/wireless-security/ws-wep-key.ui
++++ b/panels/network/wireless-security/ws-wep-key.ui
+@@ -1,5 +1,5 @@
+ <?xml version="1.0" encoding="UTF-8"?>
+-<interface>
++<interface domain="unity-control-center-network">
+   <requires lib="gtk+" version="3.4"/>
+   <object class="GtkListStore" id="model4">
+     <columns>
+diff --git a/panels/network/wireless-security/ws-wpa-eap.ui b/panels/network/wireless-security/ws-wpa-eap.ui
+index 8a2f1cc..cea0b96 100644
+--- a/panels/network/wireless-security/ws-wpa-eap.ui
++++ b/panels/network/wireless-security/ws-wpa-eap.ui
+@@ -1,5 +1,5 @@
+ <?xml version="1.0" encoding="UTF-8"?>
+-<interface>
++<interface domain="unity-control-center-network">
+   <requires lib="gtk+" version="3.4"/>
+   <object class="GtkListStore" id="model5">
+     <columns>
+diff --git a/panels/network/wireless-security/ws-wpa-psk.ui b/panels/network/wireless-security/ws-wpa-psk.ui
+index a38a2de..93ccc96 100644
+--- a/panels/network/wireless-security/ws-wpa-psk.ui
++++ b/panels/network/wireless-security/ws-wpa-psk.ui
+@@ -1,5 +1,5 @@
+ <?xml version="1.0" encoding="UTF-8"?>
+-<interface>
++<interface domain="unity-control-center-network">
+   <requires lib="gtk+" version="3.4"/>
+   <object class="GtkNotebook" id="wpa_psk_notebook">
+     <property name="visible">True</property>
+-- 
+2.56.1
+

@@ -15,5 +15,5 @@ Description: G Unity⁷ desktop translations missing from Ubuntu
  Translations from the gentoo-unity7 overlay that no Ubuntu package or
  language pack installs: Activity Log Manager, Startup Applications
  (unity-session-properties), the appearance and notifications indicators,
- the MATE Screenshot quicklist, the Dash session shortcuts and the Unity Help
- launcher.
+ the MATE Screenshot quicklist, the Dash session shortcuts, the Unity Help
+ launcher and the Network and Sharing panels of the Unity Control Center.
