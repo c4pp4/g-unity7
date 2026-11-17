@@ -215,6 +215,23 @@ class CheckDrift(unittest.TestCase):
         self.assertIn("- `unity`: [1 file since `611f038`]", body)
 
 
+class PromoteRows(unittest.TestCase):
+    def test_kept_row_takes_the_group_of_package_sh(self):
+        old = {"nemo-engrampa": {"source": "nemo-engrampa", "group": "", "staging": "6.6.0-1+gu7.1~26.10",
+                                 "main": "", "state": "ok", "builds": [], "changes": "new package",
+                                 "security": False}}
+        pkgs = {"nemo-engrampa": {"source": "nemo-engrampa", "group": "desktop"}}
+        listings = {"c4pp4/g-unity7-staging": {"nemo-engrampa": {"version": "6.6.0-1+gu7.1~26.10"}},
+                    "c4pp4/g-unity7": {}}
+        with mock.patch.object(lp, "ppa_sources", side_effect=lambda ppa, series: listings[ppa]), \
+                mock.patch.object(lp, "build_state_of", side_effect=AssertionError("no query")), \
+                mock.patch.object(lp, "changelog_data", side_effect=AssertionError("no query")):
+            rows, stale = approve.promote_rows(pkgs, old)
+        self.assertEqual(rows["nemo-engrampa"]["group"], "desktop")
+        self.assertEqual(old["nemo-engrampa"]["group"], "")
+        self.assertEqual(stale, [])
+
+
 class DebianVersion(unittest.TestCase):
     def test_prerelease_left_out(self):
         madison = [{"thunderbird": {"experimental": {"1:132.0~b6-1": {}, "1:131.0-1": {}}}}]

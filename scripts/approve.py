@@ -167,7 +167,8 @@ def promote_rows(pkgs, old=None):
     for. A row from the last update (old) with the same versions is kept
     without queries once its build is ✅, before that only its build state is
     queried. Without old, a Launchpad error is raised. With it, a package keeps
-    its row."""
+    its row. A kept row gets the group and source of package.sh, which may have
+    changed."""
     series = CONFIG["series"]
     old_rows = old or {}
     rows, stale = {}, []
@@ -178,7 +179,7 @@ def promote_rows(pkgs, old=None):
         if old is None:
             raise
         traceback.print_exc()
-        return dict(old_rows), sorted(pkgs)
+        return {name: kept(row, pkgs.get(name)) for name, row in old_rows.items()}, sorted(pkgs)
     failures = 0
     for name, pkg in pkgs.items():
         staging = staging_list.get(pkg["source"])
@@ -190,11 +191,11 @@ def promote_rows(pkgs, old=None):
                 and prev["main"] == main.get("version", "")):
             prev = None
         if prev and prev["state"] == "ok":
-            rows[name] = prev
+            rows[name] = kept(prev, pkg)
             continue
         if old is not None and failures >= LP_FAILURES_MAX:
             if name in old_rows:
-                rows[name] = old_rows[name]
+                rows[name] = kept(old_rows[name], pkg)
             stale.append(name)
             continue
         try:
@@ -206,9 +207,15 @@ def promote_rows(pkgs, old=None):
             traceback.print_exc()
             failures += 1
             if name in old_rows:
-                rows[name] = old_rows[name]
+                rows[name] = kept(old_rows[name], pkg)
             stale.append(name)
     return rows, stale
+
+
+def kept(row, pkg):
+    """Return a row from the last update with the group and source of the
+    package now."""
+    return dict(row, group=pkg["group"], source=pkg["source"]) if pkg else row
 
 
 def security_fix(upstream, since):
