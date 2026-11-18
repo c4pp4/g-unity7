@@ -271,7 +271,7 @@ done
 ## 5. The ebuild's edits (src_edit) as one more patch.
 if declare -F src_edit >/dev/null; then
 	git_tree=( git -c safe.directory='*' -c core.excludesFile=/dev/null -c core.attributesFile=/dev/null
-		-c user.name=g-unity7 -c user.email=g-unity7@localhost )
+		-c user.name=g-unity7 -c user.email=g-unity7@localhost -c maintenance.auto=false -c gc.auto=0 )
 	"${git_tree[@]}" init -q
 	"${git_tree[@]}" add -A -f .
 	"${git_tree[@]}" commit -q -m snapshot
