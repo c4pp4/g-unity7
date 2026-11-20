@@ -46,7 +46,7 @@ root:root 644 /root/.bashrc
 /etc/shadow unchanged
 /root/.bashrc unchanged
 mallory:mallory 700 /home/mallory/.mozilla/
-mallory:mallory 755 /home/mallory/.mozilla/firefox/
+mallory:mallory 700 /home/mallory/.mozilla/firefox/
 mallory:mallory 777 /home/mallory/.mozilla/firefox/installs.ini@
 mallory:mallory 644 /home/mallory/.mozilla/firefox/profiles.ini
 -- snaps: firefox 

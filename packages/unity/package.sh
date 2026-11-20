@@ -59,6 +59,19 @@ debian_edit() {
 		-e "s:install -Dm755 uwidgets/uwidgets-runner.desktop :install -Dm644 uwidgets/uwidgets-runner.desktop :" \
 		debian/rules || return 1
 	grep -Fq "install -Dm644 uwidgets/uwidgets-runner.desktop " debian/rules || return 1
+	# dpkg keeps the mode of an existing conffile on upgrade, so the file #
+	#  that Ubuntu installed executable stays executable #
+	[[ ! -e debian/unity-uwidgets.postinst ]] || return 1
+	printf '%s\n' \
+		'#!/bin/sh' \
+		'set -e' \
+		'' \
+		'if [ "$1" = configure ] && [ -x /etc/xdg/autostart/uwidgets-runner.desktop ]; then' \
+		'	chmod a-x /etc/xdg/autostart/uwidgets-runner.desktop' \
+		'fi' \
+		'' \
+		'#DEBHELPER#' \
+		> debian/unity-uwidgets.postinst || return 1
 }
 
 src_edit() {

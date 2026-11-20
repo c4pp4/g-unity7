@@ -90,7 +90,7 @@ g-unity7.pref
 firefox:
   Candidate: 159.0.1-1+gu7.1~26.10
 alice:alice 700 /home/alice/.mozilla/
-alice:alice 755 /home/alice/.mozilla/firefox/
+alice:alice 700 /home/alice/.mozilla/firefox/
 alice:alice 755 /home/alice/.mozilla/firefox/abc.default/
 alice:alice 644 /home/alice/.mozilla/firefox/abc.default/prefs.js
 alice:alice 600 /home/alice/.mozilla/firefox/installs.ini
@@ -161,7 +161,7 @@ Run g-unity7-cleanup again, or remove the snap with: sudo snap remove thunderbir
 state: firefox firefox-l10n-cs firefox-l10n-pt-br thunderbird thunderbird-l10n-cs thunderbird-l10n-pt-br 
 
 -- snaps: thunderbird 
-alice:alice 755 /home/alice/.thunderbird/
+alice:alice 700 /home/alice/.thunderbird/
 alice:alice 600 /home/alice/.thunderbird/installs.ini
 alice:alice 755 /home/alice/.thunderbird/p.default/
 alice:alice 644 /home/alice/.thunderbird/p.default/prefs.js
@@ -184,7 +184,7 @@ thunderbird removed (test)
 state: firefox firefox-l10n-cs firefox-l10n-pt-br thunderbird thunderbird-l10n-cs thunderbird-l10n-pt-br 
 
 -- snaps: 
-alice:alice 755 /home/alice/.thunderbird/
+alice:alice 700 /home/alice/.thunderbird/
 alice:alice 600 /home/alice/.thunderbird/installs.ini
 alice:alice 755 /home/alice/.thunderbird/p.default-snap/
 alice:alice 644 /home/alice/.thunderbird/p.default-snap/prefs.js

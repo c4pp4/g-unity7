@@ -123,6 +123,9 @@ if [[ -d ${dst} ]]; then
 else
 	mkdir -p "$(dirname "${dst}")" || die "cannot create $(dirname "${dst}")"
 	cp -a "${src}" "${dst}" || die "cannot copy ${src}"
+	## Private, as Firefox and Thunderbird create it. cp keeps the mode of the
+	##  snap directory, which other users can read.
+	chmod go-rwx "${dst}" || die "cannot change the mode of ${dst}"
 fi
 echo "Copied ${src} to ${dst}"
 moz_claim_profile "${dst}" "${hash}" "$(moz_default_profile "${dst}/profiles.ini")"
