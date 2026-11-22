@@ -525,8 +525,7 @@ def last_commit_time():
 ## The issue body.
 
 def render(state, pkgs=None):
-    data = json.dumps(state, ensure_ascii=False, separators=(",", ":"))
-    out = [f"<!-- g-unity7-state\n{data}\n-->", ""]
+    out = [f"<!-- g-unity7-state\n{json.dumps(state, indent=1, ensure_ascii=False)}\n-->", ""]
     out += ["G Unity⁷ packages waiting for the owner's decision. The `review.yml` workflow "
             "updates the tables a few times a day and after each command. Give commands in "
             "comments.", ""]
