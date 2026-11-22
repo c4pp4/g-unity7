@@ -15,3 +15,8 @@
 ##  hoichess engine, which is enough for playing against the computer.
 OVERLAY_PKG="unity-base/unity-meta"
 GROUP="desktop"
+## The approval issue reports the changes of these ebuilds too
+OVERLAY_FOLLOW=(
+	unity-indicators/unity-indicators-meta
+	unity-lens/unity-lens-meta
+)

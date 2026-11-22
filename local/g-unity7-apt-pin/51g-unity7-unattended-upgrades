@@ -1,0 +1,4 @@
+// G Unity⁷: install the updates of ppa:c4pp4/g-unity7 automatically, like the
+// Ubuntu security updates. Without this, unattended-upgrades installs the
+// Ubuntu security update instead of the PPA's rebuild of it, which apt prefers.
+Unattended-Upgrade::Allowed-Origins:: "LP-PPA-c4pp4-g-unity7:${distro_codename}";

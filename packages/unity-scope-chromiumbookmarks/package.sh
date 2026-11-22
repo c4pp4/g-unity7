@@ -2,6 +2,8 @@ OVERLAY_PKG="unity-lens/unity-scope-extras"
 UBUNTU_SRC="unity-scope-chromiumbookmarks"
 ## Removed from Ubuntu after bionic, the source of bionic is used.
 UBUNTU_SERIES="bionic"
+## The SHA256 of the .dsc from Launchpad
+DSC_SHA256="b824cd7cd5ea780249166f0d6d7c8ac3db50cddb5b771e1ebc0b6ff5968f0145"
 GROUP="desktop"
 
 ## snap-profiles.patch in packages/unity-scope-chromiumbookmarks/patches is our own patch for Ubuntu.

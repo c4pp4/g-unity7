@@ -13,6 +13,7 @@
 ##    alternative (recommended), another one, which is installed if needed, or
 ##    all of them. The other alternatives are removed, unless other packages
 ##    would have to be removed with them.
+##  On a system installed from the Ubuntu Unity image, it also:
 ##  - marks these packages as automatically installed if they are manually
 ##    installed and not kept by a choice:
 ##    - ubuntu-unity-desktop
@@ -26,6 +27,12 @@
 ##  - removes the duplicates that apt keeps as an installed alternative of
 ##    another relation (lightdm-gtk-greeter, xfwm4) if nothing else is removed
 ##    with them
+##  - marks the packages of the Ubuntu Unity image that G Unity⁷ does not use
+##    as automatically installed: Fcitx 4 (im-config no longer supports it, and
+##    G Unity⁷ uses IBus) with the KDE Frameworks it pulls in, Kvantum,
+##    GParted and the libraries of the installer, and removes kdialog, which
+##    apt keeps as an alternative and which keeps KDE Frameworks 6
+##  On every system, it then:
 ##  - runs autoremove
 ##  - offers the G Unity⁷ Firefox and Thunderbird packages, which have Unity's
 ##    global menu, instead of the Ubuntu snaps, copies the snap profiles as
@@ -38,11 +45,7 @@
 ##    are not installed, which fail at every boot
 ##  - purges the configuration files of PulseAudio, which installing
 ##    g-unity7-desktop removes for PipeWire, as its autostart file remains
-##  - marks the packages of the Ubuntu Unity image that G Unity⁷ does not use
-##    as automatically installed: Fcitx 4 (im-config no longer supports it, and
-##    G Unity⁷ uses IBus) with the KDE Frameworks it pulls in, Kvantum,
-##    GParted and the libraries of the installer, and removes kdialog, which
-##    apt keeps as an alternative and which keeps KDE Frameworks 6
+##  Packages given with --keep are neither marked nor removed.
 
 set -euo pipefail
 
@@ -55,7 +58,7 @@ apt_lock=( -o DPkg::Lock::Timeout=300 )
 
 usage() {
 	cat <<-EOF
-		Usage: g-unity7-cleanup [-n|--dry-run] [-y|--yes]
+		Usage: g-unity7-cleanup [-n|--dry-run] [-y|--yes] [-k|--keep <package>]...
 
 		Remove the Ubuntu Unity packages that G Unity⁷ replaces: duplicate
 		applications and other installed alternatives of the g-unity7-desktop
@@ -63,17 +66,31 @@ usage() {
 		are installed, or a different one is installed instead of the recommended
 		one, it asks which one to keep.
 
-		  -n, --dry-run  show the changes without making them (no root needed)
-		  -y, --yes      do not ask; keep or install the recommended alternatives
+		  -n, --dry-run         show the changes without making them (no root
+		                        needed)
+		  -y, --yes             do not ask; keep or install the recommended
+		                        alternatives and the G Unity⁷ Firefox and
+		                        Thunderbird packages
+		  -k, --keep <package>  neither mark nor remove the package
 	EOF
 }
 
 dry_run=
 yes=
+declare -A keep_given=()
 while [[ $# -gt 0 ]]; do
 	case $1 in
 		-n|--dry-run) dry_run=1 ;;
 		-y|--yes) yes=1 ;;
+		-k|--keep)
+			[[ $# -ge 2 && $2 =~ ^[a-z0-9][a-z0-9+.-]+$ ]] || { usage >&2; exit 2; }
+			keep_given[$2]=1
+			shift
+			;;
+		--keep=*)
+			[[ ${1#--keep=} =~ ^[a-z0-9][a-z0-9+.-]+$ ]] || { usage >&2; exit 2; }
+			keep_given[${1#--keep=}]=1
+			;;
 		-h|--help) usage; exit 0 ;;
 		*) usage >&2; exit 2 ;;
 	esac
@@ -124,14 +141,22 @@ installed() {
 installed "${meta}" || die "${meta} is not installed"
 spinner_start
 
-## Print the relations in fields $2 of package $1 (the installed version or the
-##  archive candidate), one per line, with alternatives separated by spaces.
+## Print the relations in fields $2 of package $1 (the installed version, or
+##  else the archive candidate), one per line, with alternatives separated by
+##  spaces.
 relations() {
-	apt-cache show --no-all-versions "$1" 2>/dev/null \
-		| awk -v fields="$2" '
-			BEGIN { n = split(fields, f, " "); for (i = 1; i <= n; i++) want[f[i] ":"] = 1 }
-			/^[^ ]/ { take = ($1 in want) }
-			take { sub(/^[^ ]+: /, ""); print }' \
+	local field
+	if installed "$1"; then
+		for field in $2; do
+			dpkg-query -W -f="\${${field}}\n" "$1" 2>/dev/null || true
+		done
+	else
+		apt-cache show --no-all-versions "$1" 2>/dev/null \
+			| awk -v fields="$2" '
+				BEGIN { n = split(fields, f, " "); for (i = 1; i <= n; i++) want[f[i] ":"] = 1 }
+				/^[^ ]/ { take = ($1 in want) }
+				take { sub(/^[^ ]+: /, ""); print }'
+	fi \
 		| tr ',' '\n' \
 		| sed -e 's/([^)]*)//g' -e 's/\[[^]]*\]//g' -e 's/:any//g' -e 's/|/ /g' \
 			-e 's/  */ /g' -e 's/^ *//' -e 's/ *$//' \
@@ -257,6 +282,10 @@ decided() {
 ##  (spared[]) are not marked, installed packages of the other alternatives are
 ##  removed (reason[]). With "change nothing", no package is marked or removed.
 declare -A spared=() reason=()
+## Packages given with --keep are kept like a choice
+for name in "${!keep_given[@]}"; do
+	spared[${name}]=1
+done
 ## Shown after the name of an alternative in the choice: what the G Unity⁷
 ##  package adds to a package that Ubuntu also has (the Breaks of
 ##  g-unity7-desktop keep the installed package at the G Unity⁷ version), or the
@@ -408,6 +437,18 @@ for group in "${groups[@]}"; do
 	esac
 done
 
+## The duplicates of the task and the unused packages of the Ubuntu Unity image
+##  are removed only on a system installed from that image. Installing
+##  g-unity7-desktop already removes the task, which depends on pulseaudio, but
+##  not ubuntu-unity-settings, which only the task installs. The first run that
+##  makes changes remembers it for later runs, as it removes
+##  ubuntu-unity-settings as a duplicate.
+unity_marker=/var/lib/g-unity7/ubuntu-unity
+unity_image=
+if installed "${task}" || installed ubuntu-unity-settings || [[ -e ${unity_marker} ]]; then
+	unity_image=1
+fi
+
 ## Firefox and Thunderbird: the Ubuntu packages install snaps, while the PPA
 ##  provides regular packages with Unity's global menu, built from the Debian
 ##  sources. Their version is lower, so g-unity7-apt-pin keeps the Ubuntu
@@ -432,6 +473,11 @@ snap_installed() {
 	command -v snap >/dev/null && snap list "$1" >/dev/null 2>&1
 }
 
+## Succeed if a program of snap $1 is running.
+snap_running() {
+	pgrep -f "/snap/$1/" >/dev/null
+}
+
 ## Remove the empty revision directories in /var/snap/$1 that snapd does not
 ##  know. The Ubuntu image leaves the directories of the snap revisions it was
 ##  built with, and snapd then cannot remove /var/snap/$1 (directory not empty).
@@ -445,14 +491,36 @@ snap_orphans_remove() {
 	done
 }
 
-## Print "user:home" for each user (UID 1000 to 59999) who has a snap profile
-##  directory ($1, relative to the home directory).
-profiles_to_copy() {
+## Print "user:home" for each home directory that may have snap profiles: those
+##  of the users with a UID from 1000 to 59999, and the directories in /home
+##  with their owner, as snapd also looks there. This finds the users of a
+##  network directory (LDAP, SSSD) too, which may have a higher UID and which
+##  getent may not list.
+homes() {
 	local user uid home
+	local -A seen=()
 	while IFS=: read -r user _ uid _ _ home _; do
-		[[ ${uid} -ge 1000 && ${uid} -lt 60000 && -d ${home} ]] || continue
-		[[ -f ${home}/$1/profiles.ini ]] && echo "${user}:${home}"
+		[[ ${uid} -ge 1000 && ${uid} -lt 60000 && -d ${home} && -z ${seen[${home}]:-} ]] || continue
+		seen[${home}]=1
+		echo "${user}:${home}"
 	done < <(getent passwd)
+	for home in /home/*; do
+		[[ -d ${home} && ! -L ${home} && -z ${seen[${home}]:-} ]] || continue
+		IFS=: read -r user uid < <(stat -c '%U:%u' "${home}")
+		[[ ${uid} -ge 1000 && ${user} != UNKNOWN ]] || continue
+		seen[${home}]=1
+		echo "${user}:${home}"
+	done
+	return 0
+}
+
+## Print "user:home" for each user who has a snap profile directory ($1,
+##  relative to the home directory).
+profiles_to_copy() {
+	local entry
+	while read -r entry; do
+		[[ -f ${entry#*:}/$1/profiles.ini ]] && echo "${entry}"
+	done < <(homes)
 	return 0
 }
 
@@ -492,13 +560,13 @@ moz_l10n() {
 	return 0
 }
 
-## Succeed if the home directory of a user (UID 1000 to 59999) is not
-##  accessible, as those of other users without root (mode 750)
+## Succeed if a home directory (see homes) is not accessible, as those of
+##  other users without root (mode 750)
 homes_hidden() {
-	local uid home
-	while IFS=: read -r _ _ uid _ _ home _; do
-		[[ ${uid} -ge 1000 && ${uid} -lt 60000 && -d ${home} && ! -x ${home} ]] && return 0
-	done < <(getent passwd)
+	local entry
+	while read -r entry; do
+		[[ -x ${entry#*:} ]] || return 0
+	done < <(homes)
 	return 1
 }
 
@@ -512,8 +580,20 @@ moz_choice() {
 	local default=1 i answer u name
 	ppa=$(ppa_version "${pkg}")
 	[[ -n ${ppa} ]] || return 0
+	if [[ -n ${spared[${pkg}]:-} ]]; then
+		moz_lines+=( "${app}: unchanged (--keep ${pkg})" )
+		return 0
+	fi
 	status=$(dpkg-query -W -f='${db:Status-Status} ${Version}' "${pkg}" 2>/dev/null) || true
 	[[ ${status} == "installed "*+gu7* ]] && deb_installed=1
+	## A package from another source, such as Mozilla's APT repository, stays
+	##  as it is: it may be newer than the G Unity⁷ package, which then could not
+	##  open its profile. The Ubuntu package that installs the snap has "snap" in
+	##  its version (1:1snap1-0ubuntu11).
+	if [[ ${status} == "installed "* && -z ${deb_installed} && ${status} != *snap* ]]; then
+		moz_lines+=( "${app}: unchanged; ${pkg} ${status#installed } from another source is installed" )
+		return 0
+	fi
 	snap_installed "${pkg}" && snap=1
 	## Nothing to choose if the G Unity⁷ package is installed and the snap is not
 	[[ -n ${snap} || -z ${deb_installed} ]] || return 0
@@ -530,7 +610,7 @@ moz_choice() {
 		## Do not touch a running snap: a copy of an open profile may be
 		##  inconsistent, and a profile that the package creates in the meantime
 		##  would stop the copy
-		if pgrep -f "/snap/${pkg}/" >/dev/null; then
+		if snap_running "${pkg}"; then
 			moz_lines+=( "${app}: the snap is running; close ${app} and run g-unity7-cleanup again" )
 			return 0
 		fi
@@ -618,7 +698,7 @@ moz_choice() {
 	## The snap's default profile becomes the default, unless the package was
 	##  already installed and has its own default profile
 	for u in "${users[@]}"; do
-		moz_copy+=( "${u%%:*}:${u#*:}/${snap_profile}:${u#*:}/${deb_profile}:${hash}:${deb_installed:-adopt}" )
+		moz_copy+=( "${u%%:*}:${u#*:}/${snap_profile}:${u#*:}/${deb_profile}:${hash}:${deb_installed:-adopt}:${pkg}" )
 		if [[ ! -f ${u#*:}/${deb_profile}/profiles.ini ]]; then
 			moz_lines+=( "${app}: copy ${u#*:}/${snap_profile} to ${u#*:}/${deb_profile}" )
 		elif [[ -n ${deb_installed} ]]; then
@@ -698,11 +778,15 @@ add_mark() {
 	done
 }
 
-## ubuntu-unity-desktop and the duplicates. If ubuntu-unity-desktop is already
-##  removed, its relations come from the archive.
-add_mark "${task}"
-mapfile -t duplicates < <(relations "${task}" "Depends Recommends" | tr ' ' '\n')
-add_mark "${duplicates[@]}"
+## ubuntu-unity-desktop and the duplicates, on a system from the Ubuntu Unity
+##  image. If ubuntu-unity-desktop is already removed, its relations come from
+##  the archive.
+duplicates=()
+if [[ -n ${unity_image} ]]; then
+	add_mark "${task}"
+	mapfile -t duplicates < <(relations "${task}" "Depends Recommends" | tr ' ' '\n')
+	add_mark "${duplicates[@]}"
+fi
 
 ## Task packages that the installed duplicates and the removed alternatives
 ##  depend on or recommend, except those of packages kept by a choice.
@@ -723,8 +807,9 @@ if [[ ${#roots[@]} -gt 0 ]]; then
 	add_mark "${closure_of_task[@]}"
 fi
 
-## Packages of the Ubuntu Unity image that G Unity⁷ does not use. All packages
-##  of the image are manually installed, so autoremove never removes them.
+## Packages of the Ubuntu Unity image that G Unity⁷ does not use, on a system
+##  from that image. All packages of the image are manually installed, so
+##  autoremove never removes them.
 ##  - Fcitx 4 with Japanese (Mozc) and Chinese (Pinyin) input. The installer
 ##    copies the live system and, unlike the Kubuntu installer, does not remove
 ##    Fcitx. im-config no longer supports Fcitx 4, so it is not an input method
@@ -786,7 +871,7 @@ leftovers=(
 	libappstreamqt3 libboost-python1.90.0 libcalamares3.3 libkpmcore13
 	libyaml-cpp0.9 snapd-seed-glue xdelta3
 )
-add_mark "${leftovers[@]}"
+[[ -z ${unity_image} ]] || add_mark "${leftovers[@]}"
 
 ## Apply the marks to a copy of the apt state and find what autoremove then
 ##  removes.
@@ -794,24 +879,43 @@ tmp=$(mktemp -d)
 states=${tmp}/extended_states
 cp /var/lib/apt/extended_states "${states}" 2>/dev/null || : > "${states}"
 [[ ${#mark[@]} -eq 0 ]] || apt-mark -o Dir::State::extended_states="${states}" auto "${mark[@]}" >/dev/null
+## Packages given with --keep that are automatically installed become manually
+##  installed, so that autoremove keeps them
+keep_manual=()
+if [[ ${#keep_given[@]} -gt 0 ]]; then
+	while read -r name; do
+		if installed "${name}" && [[ -z ${manual[${name}]:-} ]]; then
+			keep_manual+=( "${name}" )
+		fi
+	done < <(printf '%s\n' "${!keep_given[@]}" | sort)
+fi
+[[ ${#keep_manual[@]} -eq 0 ]] \
+	|| apt-mark -o Dir::State::extended_states="${states}" manual "${keep_manual[@]}" >/dev/null
 declare -A autoremoved=()
 while read -r name; do
 	autoremoved[${name}]=1
 done < <(apt-get -s -o Dir::State::extended_states="${states}" --purge autoremove 2>/dev/null \
 	| awk '/^Purg / { print $2 }')
 
-## The alternatives to remove, except those that other packages need. Packages
-##  that autoremove removes anyway, such as ubuntu-unity-desktop, do not count.
 install_args=( "${install[@]/%/+}" )
+
+## Print the packages other than $1 that apt removes with it, except those that
+##  autoremove removes anyway, such as ubuntu-unity-desktop, separated by spaces.
+removed_with() {
+	local other others=
+	while read -r other; do
+		[[ ${other} == "$1" || -n ${autoremoved[${other}]:-} ]] || others+="${other} "
+	done < <(apt-get -s -o Dir::State::extended_states="${states}" --purge remove "$1" \
+		"${install_args[@]}" 2>/dev/null | awk '/^(Purg|Remv) / { print $2 }')
+	echo "${others% }"
+}
+
+## The alternatives to remove, except those that other packages need.
 remove=() reasons=() needed_kept=()
 for name in "${candidates_remove[@]}"; do
-	others=
-	while read -r other; do
-		[[ ${other} == "${name}" || -n ${autoremoved[${other}]:-} ]] || others+="${other} "
-	done < <(apt-get -s -o Dir::State::extended_states="${states}" --purge remove "${name}" \
-		"${install_args[@]}" 2>/dev/null | awk '/^(Purg|Remv) / { print $2 }')
+	others=$(removed_with "${name}")
 	if [[ -n ${others} ]]; then
-		needed_kept+=( "${name} (needed by ${others% })" )
+		needed_kept+=( "${name} (needed by ${others})" )
 		continue
 	fi
 	remove+=( "${name}" )
@@ -831,12 +935,7 @@ for name in "${duplicates[@]}"; do
 	[[ -z ${of_meta[${name}]:-} && -z ${spared[${name}]:-} && -z ${autoremoved[${name}]:-} \
 		&& -z ${in_remove[${name}]:-} ]] && installed "${name}" || continue
 	in_remove[${name}]=1
-	others=
-	while read -r other; do
-		[[ ${other} == "${name}" || -n ${autoremoved[${other}]:-} ]] || others+="${other} "
-	done < <(apt-get -s -o Dir::State::extended_states="${states}" --purge remove "${name}" \
-		"${install_args[@]}" 2>/dev/null | awk '/^(Purg|Remv) / { print $2 }')
-	[[ -n ${others} ]] && continue
+	[[ -z $(removed_with "${name}") ]] || continue
 	remove+=( "${name}" )
 	dup_remove+=( "${name}" )
 done
@@ -844,19 +943,14 @@ done
 ## Packages of the image that apt keeps only as an installed alternative of
 ##  another relation: kdialog of "zenity | kdialog" (im-config). It pulls in the
 ##  KIO of KDE Frameworks 6, which suggests systemsettings. It is automatically
-##  installed, so marking does not remove it. It is removed if no other package
-##  would be removed with it.
+##  installed, so marking does not remove it. On a system from the Ubuntu Unity
+##  image, it is removed if no other package would be removed with it.
 leftover_remove=()
 for name in kdialog; do
-	[[ -z ${of_meta[${name}]:-} && -z ${autoremoved[${name}]:-} && -z ${in_remove[${name}]:-} ]] \
-		&& installed "${name}" || continue
+	[[ -n ${unity_image} && -z ${of_meta[${name}]:-} && -z ${spared[${name}]:-} \
+		&& -z ${autoremoved[${name}]:-} && -z ${in_remove[${name}]:-} ]] && installed "${name}" || continue
 	in_remove[${name}]=1
-	others=
-	while read -r other; do
-		[[ ${other} == "${name}" || -n ${autoremoved[${other}]:-} ]] || others+="${other} "
-	done < <(apt-get -s -o Dir::State::extended_states="${states}" --purge remove "${name}" \
-		"${install_args[@]}" 2>/dev/null | awk '/^(Purg|Remv) / { print $2 }')
-	[[ -n ${others} ]] && continue
+	[[ -z $(removed_with "${name}") ]] || continue
 	remove+=( "${name}" )
 	leftover_remove+=( "${name}" )
 done
@@ -930,6 +1024,26 @@ if [[ ${#moz_install[@]} -gt 0 ]]; then
 	mapfile -t moz_removed < <(awk '/^(Remv|Purg) / { print $2 }' <<< "${simulation}")
 fi
 
+## Print what apt does with the marks applied to a new copy ($1) of the apt
+##  state: the changes above and the G Unity⁷ Firefox and Thunderbird
+##  packages, sorted
+plan_of() {
+	cp /var/lib/apt/extended_states "$1" 2>/dev/null || : > "$1"
+	[[ ${#mark[@]} -eq 0 ]] || apt-mark -o Dir::State::extended_states="$1" auto "${mark[@]}" >/dev/null || true
+	[[ ${#keep_manual[@]} -eq 0 ]] \
+		|| apt-mark -o Dir::State::extended_states="$1" manual "${keep_manual[@]}" >/dev/null || true
+	{
+		if [[ ${#mark[@]} -gt 0 || ${#remove[@]} -gt 0 || ${#install[@]} -gt 0 ]]; then
+			apt-get -s -o Dir::State::extended_states="$1" "${apt_args[@]}" 2>&1 || true
+		fi
+		if [[ ${#moz_install[@]} -gt 0 ]]; then
+			apt-get -s -o Dir::State::extended_states="$1" --allow-downgrades install "${moz_install[@]}" 2>&1 || true
+		fi
+	} | awk '/^(Inst|Remv|Purg) / { print $1, $2 }' | sort
+}
+plan=
+[[ -n ${dry_run} ]] || plan=$(plan_of "${tmp}"/extended_states.plan)
+
 if [[ ${#mark[@]} -eq 0 && ${#remove[@]} -eq 0 && ${#install[@]} -eq 0 \
 	&& ${#moz_install[@]} -eq 0 && ${#moz_snap_remove[@]} -eq 0 \
 	&& ${#snap_desktop_remove[@]} -eq 0 && ${#snap_mount_remove[@]} -eq 0 \
@@ -979,6 +1093,7 @@ list_lines "Firefox and Thunderbird" "${moz_lines[@]}"
 list_lines "Desktop files of snaps that are not installed, to be removed" "${snap_desktop_remove[@]}"
 list_lines "Mount units of snap revisions that are not installed, to be removed" "${snap_mount_lines[@]}"
 list_words "Configuration files of removed packages, to be purged" "${conf_purge[@]}"
+list_words "Kept with --keep and marked as manually installed" "${keep_manual[@]}"
 list_words "Packages apt will install" "${installs[@]}"
 list_words "Packages apt will upgrade" "${upgrades[@]}"
 list_words "Packages apt will downgrade" "${downgrades[@]}"
@@ -989,7 +1104,7 @@ else
 	echo "Packages apt will remove: none"
 	echo
 fi
-echo "To keep a package, mark it as manually installed first: sudo apt-mark manual <package>"
+echo "To keep a package, run: sudo g-unity7-cleanup --keep <package>"
 
 [[ -z ${dry_run} ]] || exit 0
 
@@ -1003,6 +1118,16 @@ fi
 ## apt-mark does not wait for another apt, which would write back its own marks
 ##  when it finishes. apt-get check waits until it has finished.
 apt-get -qq "${apt_lock[@]}" check
+## That apt, such as unattended-upgrades, may have changed the package lists or
+##  the marks since the preview
+[[ $(plan_of "${tmp}"/extended_states.now) == "${plan}" ]] \
+	|| die "apt would now make other changes than shown, as another apt changed the package lists or marks in the meantime; no changes were made; run g-unity7-cleanup again"
+## Later runs remember that the system comes from the Ubuntu Unity image
+if [[ -n ${unity_image} && ! -e ${unity_marker} ]]; then
+	mkdir -p "${unity_marker%/*}"
+	touch "${unity_marker}"
+fi
+[[ ${#keep_manual[@]} -eq 0 ]] || apt-mark manual "${keep_manual[@]}" >/dev/null
 [[ ${#mark[@]} -eq 0 ]] || apt-mark auto "${mark[@]}" >/dev/null
 if [[ ${#mark[@]} -gt 0 || ${#remove[@]} -gt 0 || ${#install[@]} -gt 0 ]]; then
 	if [[ ${main_downgrades} -gt 0 ]]; then
@@ -1043,24 +1168,43 @@ fi
 ## The users own their home directories and can replace any path in them with
 ##  a link, so the profiles of each user are copied as that user (setpriv is
 ##  part of util-linux, which is essential).
+## A snap that was started after the analysis keeps its profiles and stays
+##  installed: a copy of an open profile may be inconsistent.
 cd /
+declare -A moz_running=()
+for name in "${moz_snap_remove[@]}"; do
+	if snap_running "${name}"; then
+		moz_running[${name}]=1
+	fi
+done
 for entry in "${moz_copy[@]}"; do
-	IFS=: read -r user src dst hash adopt <<< "${entry}"
+	IFS=: read -r user src dst hash adopt name <<< "${entry}"
+	[[ -z ${moz_running[${name}]:-} ]] || continue
 	setpriv --reuid="${user}" --regid="$(id -g "${user}")" --init-groups --reset-env \
 		"${copy_profiles}" "${src}" "${dst}" "${hash}" "${adopt}" \
 		|| die "cannot copy the profiles of ${user}; no snap has been removed"
 done
-moz_failed=()
+moz_failed=() moz_left=()
 for name in "${moz_snap_remove[@]}"; do
+	if [[ -n ${moz_running[${name}]:-} ]]; then
+		echo "g-unity7-cleanup: the ${name} snap was started; close it and run g-unity7-cleanup again" >&2
+		moz_left+=( "${name}" )
+		continue
+	fi
+	## Copying a large profile takes a while
+	if snap_running "${name}"; then
+		echo "g-unity7-cleanup: the ${name} snap was started after its profiles were copied; close it and remove it with: sudo snap remove ${name}" >&2
+		moz_left+=( "${name}" )
+		continue
+	fi
 	snap_orphans_remove "${name}"
 	snap remove "${name}" || moz_failed+=( "${name}" )
 done
-if [[ ${#moz_failed[@]} -gt 0 ]]; then
-	if [[ ${#moz_failed[@]} -gt 1 ]]; then
-		echo "g-unity7-cleanup: cannot remove the $(and_list "${moz_failed[@]}") snaps; the profiles have been copied" >&2
-	else
-		echo "g-unity7-cleanup: cannot remove the ${moz_failed[0]} snap; the profiles have been copied" >&2
-	fi
-	echo "Run g-unity7-cleanup again, or remove the snap with: sudo snap remove ${moz_failed[*]}" >&2
-	exit 1
+## Running the script again would copy the profiles once more
+if [[ ${#moz_failed[@]} -gt 1 ]]; then
+	echo "g-unity7-cleanup: cannot remove the $(and_list "${moz_failed[@]}") snaps; the profiles have been copied" >&2
+elif [[ ${#moz_failed[@]} -eq 1 ]]; then
+	echo "g-unity7-cleanup: cannot remove the ${moz_failed[0]} snap; the profiles have been copied" >&2
 fi
+[[ ${#moz_failed[@]} -eq 0 ]] || echo "Remove the snap with: sudo snap remove ${moz_failed[*]}" >&2
+[[ ${#moz_failed[@]} -eq 0 && ${#moz_left[@]} -eq 0 ]] || exit 1

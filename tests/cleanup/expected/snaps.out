@@ -4,7 +4,7 @@ Configuration files of removed packages, to be purged (1):
 
 Packages apt will remove: none
 
-To keep a package, mark it as manually installed first: sudo apt-mark manual <package>
+To keep a package, run: sudo g-unity7-cleanup --keep <package>
 state: g-unity7-desktop pulseaudio(c) 
 
 ### --dry-run
@@ -20,7 +20,7 @@ Configuration files of removed packages, to be purged (1):
 
 Packages apt will remove: none
 
-To keep a package, mark it as manually installed first: sudo apt-mark manual <package>
+To keep a package, run: sudo g-unity7-cleanup --keep <package>
 state: g-unity7-desktop pulseaudio(c) 
 
 ### --yes
@@ -36,7 +36,7 @@ Configuration files of removed packages, to be purged (1):
 
 Packages apt will remove: none
 
-To keep a package, mark it as manually installed first: sudo apt-mark manual <package>
+To keep a package, run: sudo g-unity7-cleanup --keep <package>
 state: g-unity7-desktop 
 
 -- units

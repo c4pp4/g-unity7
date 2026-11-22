@@ -28,9 +28,21 @@ pkg=$1
 
 base_dir="${BUILD_DIR:-${REPO_ROOT}/build}/${series}/${pkg}"
 [[ -f ${base_dir}/result.env ]] || die "Run build-source.sh ${pkg} first."
-source "${base_dir}"/result.env
+## The KEY=VALUE lines of result.env, read without running them: in CI, it
+##  comes from the artifact of another job
+declare -A result=()
+while IFS= read -r line; do
+	if [[ ${line} == *=* ]]; then
+		result[${line%%=*}]=${line#*=}
+	fi
+done < "${base_dir}"/result.env
+STATUS=${result[STATUS]:-}
+SOURCE=${result[SOURCE]:-}
+VERSION=${result[VERSION]:-}
 [[ ${STATUS} == built ]] || die "${pkg} was not built (${STATUS})."
-changes="${base_dir}/${CHANGES}"
+[[ -z ${result[DIRTY]:-} || -n ${simulate} ]] \
+	|| die "${pkg} was built from uncommitted changes (see the changelog); commit them and build it again."
+changes="${base_dir}/${result[CHANGES]:-}"
 [[ -f ${changes} ]] || die "${changes} not found."
 
 debsign_args=()

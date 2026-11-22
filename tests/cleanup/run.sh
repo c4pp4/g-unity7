@@ -16,7 +16,7 @@ if [[ ${1:-} == --update ]]; then
 	shift
 fi
 groups=( "$@" )
-[[ ${#groups[@]} -gt 0 ]] || groups=( alternatives mozilla links snaps )
+[[ ${#groups[@]} -gt 0 ]] || groups=( alternatives mozilla links snaps pin )
 engine=$(command -v podman || command -v docker) || { echo "run.sh: podman or docker is needed" >&2; exit 1; }
 mode=ro
 [[ -z ${update} ]] || mode=rw

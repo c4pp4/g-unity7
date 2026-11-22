@@ -57,7 +57,10 @@ work="${base_dir}/work"
 rm -rf "${base_dir}"
 mkdir -p "${work}" "${base_dir}"/out "${base_dir}"/review
 
-repo_commit=$(git_commit "${REPO_ROOT}" "${PKG_DIR#"${REPO_ROOT}"/}")
+## The build uses the package directory, the scripts, config.sh and the
+##  branding. A build with uncommitted changes in them or in the overlay files
+##  it uses is marked dirty, and upload.sh refuses it.
+repo_commit=$(git_commit "${REPO_ROOT}" "${PKG_DIR#"${REPO_ROOT}"/}" scripts config.sh branding)
 [[ -n ${OVERLAY_REF[${series}]:-} ]] && einfo "Series ${series} is built from overlay ${OVERLAY_REF[${series}]}."
 tree="${work}/tree"
 
@@ -86,17 +89,27 @@ apt_download() {
 		-o Debug::NoLocking=true -o APT::Sandbox::User=root
 	)
 	## A mirror that is syncing serves indexes that do not match the Release
-	##  file for minutes
-	for try in 1 2 3; do
-		apt-get "${apt_opts[@]}" -qq update >&2 && break
-		[[ ${try} -lt 3 ]] || die "apt-get update of ${url} failed."
-		ewarn "apt-get update of ${url} failed, trying again in a minute."
-		sleep 60
+	##  file for minutes, and it may not have the version that the archive's
+	##  API names yet
+	for pause in 60 300 900 ""; do
+		if apt-get "${apt_opts[@]}" -qq update >&2 \
+			&& (cd "${work}" && apt-get "${apt_opts[@]}" -qq source --download-only "${source}=${version}" >&2); then
+			break
+		fi
+		[[ -n ${pause} ]] || die "Download of ${source} ${version} from ${url} failed."
+		ewarn "Download of ${source} ${version} from ${url} failed, trying again in $(( pause / 60 )) min."
+		sleep "${pause}"
 	done
-	(cd "${work}" && apt-get "${apt_opts[@]}" -qq source --download-only "${source}=${version}" >&2) \
-		|| die "Download of ${source} ${version} from ${url} failed."
 	rm -rf "${apt_dir}"
 	dsc_sha256=$(sha256sum "${work}/${source}_${version#*:}.dsc" | cut -d" " -f1)
+}
+
+## Check the files of a .dsc ($1) against its SHA256 checksums
+dsc_check_files() {
+	local dsc=$1
+	(cd "$(dirname "${dsc}")" && awk '/^Checksums-Sha256:/ { take = 1; next } /^[^ ]/ { take = 0 }
+		take && NF == 3 { print $1 "  " $3 }' "${dsc##*/}" | sha256sum --quiet -c -) \
+		|| die "The files of ${dsc##*/} do not match its checksums."
 }
 
 ## Check the signature of a Debian .dsc against the keys of the Debian
@@ -154,11 +167,16 @@ else
 	elif [[ -n ${UBUNTU_SERIES:-} ]]; then
 		## Older series are signed only with the 2012 archive keys, whose
 		##  bindings use SHA-1, which apt rejects since 2026. Their sources do not
-		##  change, so take them from Launchpad over HTTPS.
+		##  change, so take them from Launchpad over HTTPS and check the .dsc
+		##  against DSC_SHA256 in package.sh, and its files against the .dsc.
 		ubuntu_suite="${UBUNTU_SERIES} (Launchpad)"
+		[[ -n ${DSC_SHA256:-} ]] || die "UBUNTU_SERIES needs DSC_SHA256 (the SHA256 of the .dsc) in package.sh."
 		(cd "${work}" && pull-lp-source --download-only "${UBUNTU_SRC}" "${ubuntu_version}" >&2) \
 			|| die "Download of ${UBUNTU_SRC} ${ubuntu_version} failed."
 		dsc_sha256=$(sha256sum "${work}/${UBUNTU_SRC}_${ubuntu_version#*:}.dsc" | cut -d" " -f1)
+		[[ ${dsc_sha256} == "${DSC_SHA256}" ]] \
+			|| die "${UBUNTU_SRC}_${ubuntu_version#*:}.dsc has the SHA256 ${dsc_sha256}, not DSC_SHA256 ${DSC_SHA256}."
+		dsc_check_files "${work}/${UBUNTU_SRC}_${ubuntu_version#*:}.dsc"
 	else
 		ubuntu_suite=${series}
 		case ${ubuntu_pocket} in
@@ -211,8 +229,12 @@ resolve_overlay_pkg "${OVERLAY_DIR}" "${ubuntu_version}"
 [[ ${OVERLAY_PKG:-} != "${OVERLAY_PKG_DECLARED:-${OVERLAY_PKG:-}}" ]] \
 	&& einfo "Overlay ${OVERLAY_PKG} for ${ubuntu_version} (instead of ${OVERLAY_PKG_DECLARED})."
 FILESDIR="${OVERLAY_DIR}/${OVERLAY_PKG:-}/files"
-overlay_commit=$(git_commit "${OVERLAY_DIR}" ${OVERLAY_PKG:+"${OVERLAY_PKG}"})
-[[ -n ${OVERLAY_PKG:-} && ${overlay_commit} == *-dirty ]] && ewarn "${OVERLAY_PKG} has uncommitted changes in the overlay."
+overlay_paths=( ${OVERLAY_PKG:+"${OVERLAY_PKG}"} "${OVERLAY_FILES[@]}" )
+[[ -n ${OVERLAY_PKG_DECLARED:-} && ${OVERLAY_PKG_DECLARED} != "${OVERLAY_PKG:-}" ]] \
+	&& overlay_paths+=( "${OVERLAY_PKG_DECLARED}" )
+overlay_commit=$(git_commit "${OVERLAY_DIR}" "${overlay_paths[@]}")
+[[ ${overlay_commit} == *-dirty ]] && ewarn "The overlay files of ${pkg} have uncommitted changes."
+[[ ${repo_commit} == *-dirty ]] && ewarn "${pkg}, the scripts or the branding have uncommitted changes."
 
 cd "${tree}"
 
@@ -406,10 +428,10 @@ entry="${work}/changelog.entry"
 	echo "${SOURCE_NAME} (${version}) ${series}; urgency=medium"
 	echo
 	if [[ -n ${OVERLAY_PKG:-} ]]; then
-		echo "  * G Unity⁷ patches from c4pp4/gentoo-unity7@${overlay_commit:0:12},"
-		echo "    built from c4pp4/g-unity7@${repo_commit:0:12}."
+		echo "  * G Unity⁷ patches from c4pp4/gentoo-unity7@$(short_commit "${overlay_commit}"),"
+		echo "    built from c4pp4/g-unity7@$(short_commit "${repo_commit}")."
 	else
-		echo "  * G Unity⁷ package from c4pp4/g-unity7@${repo_commit:0:12}."
+		echo "  * G Unity⁷ package from c4pp4/g-unity7@$(short_commit "${repo_commit}")."
 	fi
 	## A Debian source: show where it comes from and that only our changes were
 	##  added. Launchpad cannot diff Firefox and Thunderbird.
@@ -476,6 +498,8 @@ einfo "Patches apply without fuzz."
 	--package "${pkg}" --overlay-pkg "${OVERLAY_PKG:-}" --overlay-commit "${overlay_commit}" -- "${patch_names[@]}"
 
 printf '%s\n' "${patch_lines[@]}" > "${base_dir}"/patches.txt
+dirty=
+[[ ${repo_commit}${overlay_commit} == *-dirty* ]] && dirty=1
 cat > "${base_dir}"/result.env <<-EOF
 	STATUS=built
 	PACKAGE=${pkg}
@@ -488,6 +512,7 @@ cat > "${base_dir}"/result.env <<-EOF
 	CHANGES=out/${changes##*/}
 	STAGING_VERSION=${staging_version}
 	MAIN_VERSION=${main_version}
+	DIRTY=${dirty}
 EOF
 remove_trees
 einfo "Done: ${base_dir}/out/${changes##*/}$([[ -n ${needs_review} ]] && echo ", review needed")"

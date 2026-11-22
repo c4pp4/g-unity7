@@ -1,6 +1,7 @@
 ## Build the source packages whose Ubuntu version or input changed. Upload
 ##  those with unchanged patches to the staging PPA, and add the others to the
-##  approval issue for review (/upload).
+##  approval issue for review (/upload). Then check that g-unity7-desktop
+##  installs from staging as intended.
 name: PPA
 
 on:
@@ -17,9 +18,12 @@ on:
         type: boolean
         default: false
 
+## queue: max keeps all waiting runs; by default, a new run would cancel the
+##  waiting one, such as a manual run with force.
 concurrency:
   group: ppa
   cancel-in-progress: false
+  queue: max
 
 permissions:
   contents: read
@@ -46,6 +50,8 @@ jobs:
           for i in 1 2 3; do apt-get update -qq && break; [ "$i" -lt 3 ] || exit 1; sleep 60; done
           apt-get install -y -qq --no-install-recommends git ca-certificates >/dev/null
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - id: setup
         uses: ./.github/actions/setup
       - id: plan
@@ -77,6 +83,8 @@ jobs:
           for i in 1 2 3; do apt-get update -qq && break; [ "$i" -lt 3 ] || exit 1; sleep 60; done
           apt-get install -y -qq --no-install-recommends git ca-certificates >/dev/null
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup
       - run: scripts/build-source.sh ${{ inputs.force && '--force' || '' }} ${{ matrix.package }}
       - if: always()
@@ -127,7 +135,11 @@ jobs:
           for i in 1 2 3; do apt-get update -qq && break; [ "$i" -lt 3 ] || exit 1; sleep 60; done
           apt-get install -y -qq --no-install-recommends git ca-certificates >/dev/null
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup
+        with:
+          overlay-fetch-depth: 0
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: source-*
@@ -136,6 +148,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          PLANNED: ${{ needs.plan.outputs.packages }}
         run: |
           # A single artifact is extracted into artifacts/ itself, not into
           #  artifacts/source-<package>/
@@ -152,15 +165,17 @@ jobs:
             pkg=${dir#artifacts/source-}
             mkdir -p build/"$SERIES"
             mv "$dir" build/"$SERIES"/"$pkg"
-            NEEDS_REVIEW=
-            source build/"$SERIES"/"$pkg"/result.env
+            # result.env comes from another job: read its values, do not run it
+            result=build/"$SERIES"/"$pkg"/result.env
+            status=$(sed -n 's/^STATUS=//p' "$result")
+            needs_review=$(sed -n 's/^NEEDS_REVIEW=//p' "$result")
             # Remember an up-to-date result, so that plan.sh does not build it again
-            if [ "$STATUS" = uptodate ]; then
+            if [ "$status" = uptodate ]; then
               review+=( build/"$SERIES"/"$pkg" )
               continue
             fi
-            [ "$STATUS" = built ] || continue
-            if [ -n "$NEEDS_REVIEW" ]; then
+            [ "$status" = built ] || continue
+            if [ -n "$needs_review" ]; then
               review+=( build/"$SERIES"/"$pkg" )
             else
               scripts/upload.sh "$pkg" || failed=1
@@ -168,7 +183,22 @@ jobs:
               sleep 60
             fi
           done
-          if [ ${#review[@]} -gt 0 ]; then
-            scripts/approve.py add-review --run-id "$GITHUB_RUN_ID" "${review[@]}"
-          fi
+          # Also shows the planned packages whose build failed in the issue
+          scripts/approve.py add-review --run-id "$GITHUB_RUN_ID" --planned "$PLANNED" "${review[@]}"
           [ -z "$failed" ]
+
+  ## g-unity7-desktop must install from staging without PulseAudio or build
+  ##  tools, and with the G Unity⁷ versions of the packages in staging
+  staging:
+    needs: [plan, upload]
+    if: always()
+    runs-on: ubuntu-latest
+    container: ubuntu:26.10
+    steps:
+      - run: |
+          for i in 1 2 3; do apt-get update -qq && break; [ "$i" -lt 3 ] || exit 1; sleep 60; done
+          apt-get install -y -qq --no-install-recommends git ca-certificates >/dev/null
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: tests/staging/check.sh

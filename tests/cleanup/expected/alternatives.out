@@ -39,7 +39,7 @@ Alternatives kept because other packages need them (1):
 Packages apt will remove (6):
   a2* a2dep* ubuntu-unity-desktop* dup1* dupdep* eapp*
 
-To keep a package, mark it as manually installed first: sudo apt-mark manual <package>
+To keep a package, run: sudo g-unity7-cleanup --keep <package>
 state: g-unity7-desktop ubuntu-unity-desktop dup1 dupdep tool a1(a) a2 a2dep b1(a) b2(a) c2 c3 d2(a) needs-b2 eapp(a) 
 
 dry-run changed nothing
@@ -88,7 +88,7 @@ Packages apt will install (1):
 Packages apt will remove (8):
   a1* b1* c3* d2* ubuntu-unity-desktop* dup1* dupdep* eapp*
 
-To keep a package, mark it as manually installed first: sudo apt-mark manual <package>
+To keep a package, run: sudo g-unity7-cleanup --keep <package>
 state: g-unity7-desktop ubuntu-unity-desktop dup1 dupdep tool a1(a) a2 a2dep b1(a) b2(a) c2 c3 d2(a) needs-b2 eapp(a) 
 
 ### dry-run: invalid answers x 9 0, then 4 3 3 2
@@ -131,7 +131,7 @@ Left unchanged by your choice (3):
 Packages apt will remove (4):
   ubuntu-unity-desktop* dup1* dupdep* eapp*
 
-To keep a package, mark it as manually installed first: sudo apt-mark manual <package>
+To keep a package, run: sudo g-unity7-cleanup --keep <package>
 state: g-unity7-desktop ubuntu-unity-desktop dup1 dupdep tool a1(a) a2 a2dep b1(a) b2(a) c2 c3 d2(a) needs-b2 eapp(a) 
 
 ### dry-run: no answer
@@ -188,7 +188,7 @@ Packages apt will install (1):
 Packages apt will remove (7):
   a2* a2dep* d2* ubuntu-unity-desktop* dup1* dupdep* eapp*
 
-To keep a package, mark it as manually installed first: sudo apt-mark manual <package>
+To keep a package, run: sudo g-unity7-cleanup --keep <package>
 state: g-unity7-desktop ubuntu-unity-desktop dup1 dupdep tool a1(a) a2 a2dep b1(a) b2(a) c2 c3 d2(a) needs-b2 eapp(a) 
 
 ### --yes
@@ -230,7 +230,7 @@ Packages apt will install (1):
 Packages apt will remove (7):
   a2* a2dep* d2* ubuntu-unity-desktop* dup1* dupdep* eapp*
 
-To keep a package, mark it as manually installed first: sudo apt-mark manual <package>
+To keep a package, run: sudo g-unity7-cleanup --keep <package>
 The following packages will be REMOVED:
   a2* a2dep* d2* dup1* dupdep* eapp* ubuntu-unity-desktop*
 The following NEW packages will be installed:
@@ -296,7 +296,7 @@ Alternatives kept because other packages need them (1):
 Packages apt will remove (6):
   a2* a2dep* ubuntu-unity-desktop* dup1* dupdep* eapp*
 
-To keep a package, mark it as manually installed first: sudo apt-mark manual <package>
+To keep a package, run: sudo g-unity7-cleanup --keep <package>
 No changes were made.
 state: g-unity7-desktop ubuntu-unity-desktop dup1 dupdep tool a1(a) a2 a2dep b1(a) b2(a) c2 c3 d2(a) needs-b2 eapp(a) 
 
@@ -341,7 +341,7 @@ Alternatives kept because other packages need them (1):
 Packages apt will remove (6):
   a2* a2dep* ubuntu-unity-desktop* dup1* dupdep* eapp*
 
-To keep a package, mark it as manually installed first: sudo apt-mark manual <package>
+To keep a package, run: sudo g-unity7-cleanup --keep <package>
 No changes were made.
 state: g-unity7-desktop ubuntu-unity-desktop dup1 dupdep tool a1(a) a2 a2dep b1(a) b2(a) c2 c3 d2(a) needs-b2 eapp(a) 
 
@@ -374,7 +374,7 @@ Packages apt will install (1):
 Packages apt will remove (3):
   a2* a2dep* a3*
 
-To keep a package, mark it as manually installed first: sudo apt-mark manual <package>
+To keep a package, run: sudo g-unity7-cleanup --keep <package>
 The following packages will be REMOVED:
   a2* a2dep* a3*
 The following NEW packages will be installed:
@@ -433,7 +433,7 @@ Packages apt will install (1):
 Packages apt will remove (1):
   a3*
 
-To keep a package, mark it as manually installed first: sudo apt-mark manual <package>
+To keep a package, run: sudo g-unity7-cleanup --keep <package>
 The following packages will be REMOVED:
   a3*
 The following NEW packages will be installed:
@@ -458,7 +458,7 @@ Replaced by G Unity⁷ or not used by it, to be removed (4):
 Packages apt will remove (4):
   ubuntu-unity-desktop* dup1* dupdep* eapp*
 
-To keep a package, mark it as manually installed first: sudo apt-mark manual <package>
+To keep a package, run: sudo g-unity7-cleanup --keep <package>
 The following packages will be REMOVED:
   dup1* dupdep* eapp* ubuntu-unity-desktop*
 0 upgraded, 0 newly installed, 4 to remove and 0 not upgraded.
@@ -490,7 +490,7 @@ Packages apt will install (1):
 Packages apt will remove (5):
   ubuntu-unity-desktop* dup1* dupdep* e2* eapp2*
 
-To keep a package, mark it as manually installed first: sudo apt-mark manual <package>
+To keep a package, run: sudo g-unity7-cleanup --keep <package>
 The following packages will be REMOVED:
   dup1* dupdep* e2* eapp2* ubuntu-unity-desktop*
 The following NEW packages will be installed:
@@ -522,7 +522,7 @@ Packages apt will install (1):
 Packages apt will remove (1):
   d2*
 
-To keep a package, mark it as manually installed first: sudo apt-mark manual <package>
+To keep a package, run: sudo g-unity7-cleanup --keep <package>
 state: g-unity7-desktop d2(a) 
 
 ### terminal: 1 1, confirmation n
@@ -546,7 +546,7 @@ Alternatives to remove (1):
 Packages apt will remove (1):
   f2*
 
-To keep a package, mark it as manually installed first: sudo apt-mark manual <package>
+To keep a package, run: sudo g-unity7-cleanup --keep <package>
 The following packages will be REMOVED:
   f2*
 0 upgraded, 0 newly installed, 1 to remove and 0 not upgraded.
@@ -576,7 +576,7 @@ Packages apt will install (2):
 Packages apt will remove (1):
   f1*
 
-To keep a package, mark it as manually installed first: sudo apt-mark manual <package>
+To keep a package, run: sudo g-unity7-cleanup --keep <package>
 The following packages will be REMOVED:
   f1*
 The following NEW packages will be installed:
@@ -606,7 +606,7 @@ Packages apt will install (1):
 Packages apt will remove (2):
   f2* f3*
 
-To keep a package, mark it as manually installed first: sudo apt-mark manual <package>
+To keep a package, run: sudo g-unity7-cleanup --keep <package>
 The following packages will be REMOVED:
   f2* f3*
 The following NEW packages will be installed:
@@ -633,7 +633,7 @@ Packages apt will install (1):
 
 Packages apt will remove: none
 
-To keep a package, mark it as manually installed first: sudo apt-mark manual <package>
+To keep a package, run: sudo g-unity7-cleanup --keep <package>
 The following NEW packages will be installed:
   f4
 0 upgraded, 1 newly installed, 0 to remove and 0 not upgraded.
@@ -665,7 +665,7 @@ Packages apt will install (1):
 Packages apt will remove (3):
   a1* a2* a2dep*
 
-To keep a package, mark it as manually installed first: sudo apt-mark manual <package>
+To keep a package, run: sudo g-unity7-cleanup --keep <package>
 The following packages will be REMOVED:
   a1* a2* a2dep*
 The following NEW packages will be installed:
@@ -697,7 +697,7 @@ Packages apt will install (1):
 Packages apt will remove (2):
   a2* a2dep*
 
-To keep a package, mark it as manually installed first: sudo apt-mark manual <package>
+To keep a package, run: sudo g-unity7-cleanup --keep <package>
 The following packages will be REMOVED:
   a2* a2dep*
 The following NEW packages will be installed:
@@ -758,7 +758,7 @@ Packages apt will downgrade (1):
 Packages apt will remove (1):
   g2*
 
-To keep a package, mark it as manually installed first: sudo apt-mark manual <package>
+To keep a package, run: sudo g-unity7-cleanup --keep <package>
 The following additional packages will be installed:
   glib
 The following packages will be REMOVED:
@@ -771,4 +771,69 @@ The following packages will be DOWNGRADED:
 After this operation, 0 B of additional disk space will be used.
 dpkg: warning: downgrading glib (2) to (1)
 state: g-unity7-desktop g1(a) glib 
+
+### another flavor (no task, no ubuntu-unity-settings): --yes
+Nothing to do. No Ubuntu Unity packages replaced by G Unity⁷ are left.
+state: g-unity7-desktop dup1 dupdep(a) gparted im-config zenity kdialog(a) 
+
+### Ubuntu Unity without the task: --yes
+Replaced by G Unity⁷ or not used by it, to be removed (4):
+  kdialog dup1 ubuntu-unity-settings gparted
+
+Packages apt will remove (5):
+  dup1* dupdep* gparted* kdialog* ubuntu-unity-settings*
+
+To keep a package, run: sudo g-unity7-cleanup --keep <package>
+The following packages will be REMOVED:
+  dup1* dupdep* gparted* kdialog* ubuntu-unity-settings*
+0 upgraded, 0 newly installed, 5 to remove and 0 not upgraded.
+After this operation, 0 B of additional disk space will be used.
+state: g-unity7-desktop im-config zenity 
+
+ubuntu-unity
+
+### again, without ubuntu-unity-settings: --yes --dry-run
+Replaced by G Unity⁷ or not used by it, to be removed (2):
+  dup1 gparted
+
+Packages apt will remove (3):
+  dup1* dupdep* gparted*
+
+To keep a package, run: sudo g-unity7-cleanup --keep <package>
+state: g-unity7-desktop dup1 dupdep(a) gparted im-config zenity 
+
+### --keep gparted --keep dupdep --keep=kdialog, --yes
+Replaced by G Unity⁷ or not used by it, to be removed (2):
+  dup1 ubuntu-unity-settings
+
+Kept with --keep and marked as manually installed (2):
+  dupdep kdialog
+
+Packages apt will remove (2):
+  dup1* ubuntu-unity-settings*
+
+To keep a package, run: sudo g-unity7-cleanup --keep <package>
+The following packages will be REMOVED:
+  dup1* ubuntu-unity-settings*
+0 upgraded, 0 newly installed, 2 to remove and 0 not upgraded.
+After this operation, 0 B of additional disk space will be used.
+state: g-unity7-desktop dupdep gparted im-config zenity kdialog 
+
+### --keep without a package
+Usage: g-unity7-cleanup [-n|--dry-run] [-y|--yes] [-k|--keep <package>]...
+
+Remove the Ubuntu Unity packages that G Unity⁷ replaces: duplicate
+applications and other installed alternatives of the g-unity7-desktop
+applications, like Gentoo's "emerge --depclean". When several alternatives
+are installed, or a different one is installed instead of the recommended
+one, it asks which one to keep.
+
+  -n, --dry-run         show the changes without making them (no root
+                        needed)
+  -y, --yes             do not ask; keep or install the recommended
+                        alternatives and the G Unity⁷ Firefox and
+                        Thunderbird packages
+  -k, --keep <package>  neither mark nor remove the package
+[exit 2]
+state: g-unity7-desktop dupdep gparted im-config zenity kdialog 
 

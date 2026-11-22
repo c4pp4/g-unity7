@@ -5,6 +5,8 @@
 OVERLAY_PKG="unity-base/ubuntu-docs"
 UBUNTU_SRC="ubuntu-docs"
 UBUNTU_SERIES="xenial"
+## The SHA256 of the .dsc from Launchpad
+DSC_SHA256="ad233a5d26fcc198d01e42d8f8c2c638869a3cc5c0283d702c4f6d8bdbc3f1f8"
 SOURCE_NAME="unity-docs"
 GROUP="desktop"
 

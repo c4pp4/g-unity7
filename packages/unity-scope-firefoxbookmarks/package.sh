@@ -2,6 +2,8 @@ OVERLAY_PKG="unity-lens/unity-scope-extras"
 UBUNTU_SRC="unity-scope-firefoxbookmarks"
 ## Removed from Ubuntu after bionic, so the bionic source is used.
 UBUNTU_SERIES="bionic"
+## The SHA256 of the .dsc from Launchpad
+DSC_SHA256="a4bcca4df363a823b5b77ce66a2c79230a96ee3f3c96a188761d5ba37e5935eb"
 GROUP="desktop"
 
 ## snap-profiles.patch in packages/unity-scope-firefoxbookmarks/patches is our own patch for Ubuntu.

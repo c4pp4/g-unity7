@@ -8,6 +8,12 @@ OVERLAY_FILES=(
 	unity-base/unity-greeter/files/ubuntu-unity-greeter.gsettings-override
 	media-fonts/fonts-ubuntu/files/fonts-ubuntu.gsettings-override
 )
+## The approval issue reports the changes of their ebuilds, which apply the
+##  overrides
+OVERLAY_FOLLOW=(
+	unity-base/unity-greeter
+	media-fonts/fonts-ubuntu
+)
 
 local_prepare() {
 	local unity=90_g-unity7.gschema.override greeter=90_g-unity7-greeter.gschema.override

@@ -12,7 +12,9 @@
 ##  profile of the package. Otherwise each snap profile is added to it, with
 ##  "(snap)" after its name, and no profile is replaced; the snap's default
 ##  profile becomes the default profile of the package only if <adopt> is
-##  "adopt". The install hash belongs to the package directory
+##  "adopt". A directory without profiles.ini that already has a file or
+##  directory of the snap profile directory, such as a profile left behind, is
+##  given an empty profiles.ini, and the snap profiles are added to it. The install hash belongs to the package directory
 ##  (/usr/lib/firefox) in profiles.ini and installs.ini; if it is empty, the
 ##  default profile does not change.
 
@@ -119,6 +121,16 @@ if [[ -f ${dst}/profiles.ini ]]; then
 	exit 0
 fi
 if [[ -d ${dst} ]]; then
+	## Copied into the directory as they are only if no name is taken
+	for path in "${src}"/* "${src}"/.[!.]* "${src}"/..?*; do
+		[[ -e ${path} || -L ${path} ]] || continue
+		if [[ -e ${dst}/${path##*/} || -L ${dst}/${path##*/} ]]; then
+			printf '[General]\nStartWithLastProfile=1\nVersion=2\n' > "${dst}/profiles.ini" \
+				|| die "cannot write ${dst}/profiles.ini"
+			moz_merge_profiles "${src}" "${dst}" "${hash}" adopt
+			exit 0
+		fi
+	done
 	cp -a "${src}/." "${dst}/" || die "cannot copy ${src}"
 else
 	mkdir -p "$(dirname "${dst}")" || die "cannot create $(dirname "${dst}")"

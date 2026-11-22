@@ -82,7 +82,9 @@ for pkg in "${packages[@]}"; do
 	done
 	## The last build found the staging version up to date with this input:
 	##  the same fingerprint, only the input hash changed (approve.py add-review).
-	if [[ -n ${staging_version} && $(json_get "${state_json}" uptodate "${pkg}" version) == "${staging_version}" \
+	##  A new base version is built.
+	if [[ -n ${staging_version} && ${staging_base} == "${base}" \
+		&& $(json_get "${state_json}" uptodate "${pkg}" version) == "${staging_version}" \
 		&& $(json_get "${state_json}" uptodate "${pkg}" input) == "${input}" ]]; then
 		einfo "${pkg}: up to date (${staging_version}, the same fingerprint with this input)"
 		continue

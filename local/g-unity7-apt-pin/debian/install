@@ -1,3 +1,4 @@
 g-unity7.pref etc/apt/preferences.d/
 firefox.pref usr/share/g-unity7-apt-pin/
 thunderbird.pref usr/share/g-unity7-apt-pin/
+51g-unity7-unattended-upgrades etc/apt/apt.conf.d/

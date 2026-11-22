@@ -5,6 +5,7 @@
 import argparse
 import datetime
 import functools
+import http.client
 import json
 import re
 import subprocess
@@ -25,8 +26,9 @@ UBUNTU_POCKETS = ("Release", "Updates", "Security")
 HEADERS = {"Accept": "application/json", "Cache-Control": "no-cache"}
 
 
-## Launchpad sometimes answers 503 or times out, so a request is tried again
-##  after these pauses (in seconds). A 4xx error is final.
+## Launchpad sometimes answers 503, times out or breaks off a response, so a
+##  request is tried again after these pauses (in seconds). A 4xx error is
+##  final.
 RETRY_PAUSES = (10, 30, 60)
 
 
@@ -40,18 +42,27 @@ def fetch(request):
             if error.code < 500 and error.code != 429 or pause is None:
                 raise
             reason = f"HTTP {error.code}"
-        except (urllib.error.URLError, TimeoutError, ConnectionError) as error:
+        except (urllib.error.URLError, http.client.HTTPException, TimeoutError, ConnectionError) as error:
             if pause is None:
                 raise
-            reason = str(error)
+            reason = f"{type(error).__name__}: {error}"
         print(f"lp.py: {request.full_url}: {reason}, trying again in {pause} s", file=sys.stderr)
         time.sleep(pause)
 
 
 def get(url, params=None):
+    """Return the JSON of a request, trying again after an incomplete answer."""
     if params:
         url += "?" + urllib.parse.urlencode(params)
-    return json.loads(fetch(urllib.request.Request(url, headers=HEADERS)))
+    for pause in (*RETRY_PAUSES, None):
+        body = fetch(urllib.request.Request(url, headers=HEADERS))
+        try:
+            return json.loads(body)
+        except ValueError:
+            if pause is None:
+                raise
+        print(f"lp.py: {url}: the answer is not valid JSON, trying again in {pause} s", file=sys.stderr)
+        time.sleep(pause)
 
 
 def get_text(url):
@@ -106,7 +117,7 @@ def parse_changelog(text):
     fingerprint, input), and the version of each following entry with whether
     it names a CVE or a Mozilla security advisory (upstream)."""
     entry = re.split(r"\n(?=\S)", text.strip())
-    head = "\n".join(entry[:2])
+    head = entry[0]
     data = {"patches": {}, "upstream": []}
     for key in ("Fingerprint", "Input"):
         match = re.search(rf"G-Unity7-{key}: (\S+)", head)

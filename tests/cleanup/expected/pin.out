@@ -1,0 +1,16 @@
+## Without 51g-unity7-unattended-upgrades
+
+### Ubuntu has 1.0-0ubuntu2 in stonking-security, the PPA has no rebuild yet
+foo 1.0-0ubuntu1+gu7.2~26.10
+
+### The PPA has its rebuild 1.0-0ubuntu2+gu7.1~26.10
+foo 1.0-0ubuntu2
+
+## With 51g-unity7-unattended-upgrades
+
+### Ubuntu has 1.0-0ubuntu2 in stonking-security, the PPA has no rebuild yet
+foo 1.0-0ubuntu1+gu7.2~26.10
+
+### The PPA has its rebuild 1.0-0ubuntu2+gu7.1~26.10
+foo 1.0-0ubuntu2+gu7.1~26.10
+

@@ -1,7 +1,8 @@
 #!/bin/bash
-## Tests of g-unity7-cleanup with dummy packages, a fake snap and a fake
-##  systemctl. Run one group of scenarios as root in an Ubuntu container with
-##  the repository, for example in /work:
+## Tests of g-unity7-cleanup and of the apt configuration of g-unity7-apt-pin
+##  with dummy packages, a fake snap and a fake systemctl. Run one group of
+##  scenarios as root in an Ubuntu container with the repository, for example
+##  in /work:
 ##
 ##    podman run --rm -v "$PWD":/work:ro,Z docker.io/library/ubuntu:26.10 \
 ##      /work/tests/cleanup/test.sh <group>
@@ -18,6 +19,8 @@
 ##                not follow
 ##  snaps         desktop files and mount units of snaps that are not
 ##                installed, and the configuration files of PulseAudio
+##  pin           unattended-upgrades with the pins of g-unity7-apt-pin, when
+##                Ubuntu publishes a security update and the PPA its rebuild
 
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive LC_ALL=C.UTF-8
@@ -66,11 +69,12 @@ mkdeb() {
 	rm -rf "${dir}"
 }
 
-## index <repository> [<origin>]: write its Packages file, and a Release file
-##  with the origin, which the apt pins of g-unity7-apt-pin use
+## index <repository> [<origin> [<suite>]]: write its Packages file, and a
+##  Release file with the origin, which the apt pins of g-unity7-apt-pin use,
+##  and the suite (default: stonking)
 index() {
 	(cd "$1" && apt-ftparchive packages . > Packages 2>/dev/null)
-	[[ -z ${2:-} ]] || printf 'Origin: %s\nSuite: stonking\n' "$2" > "$1"/Release
+	[[ -z ${2:-} ]] || printf 'Origin: %s\nSuite: %s\n' "$2" "${3:-stonking}" > "$1"/Release
 }
 
 ## use_repositories <repository>...: make them the only package sources
@@ -190,7 +194,16 @@ group_alternatives() {
 			/usr/share/locale/cs/LC_MESSAGES/apt.mo)
 
 	mkdeb "${repo}" g-unity7-desktop 1 "Recommends: a1 | a2 | a3, b1 | b2, c1 | c2 | c3, d1 | d2, e1 | e2, f1 | f2, f1 | f3, f1 | f4, g1 | g2"
-	mkdeb "${repo}" ubuntu-unity-desktop 1 "Depends: dup1, eapp" "Recommends: a2, a3, b2, c2, c3" "Task: ubuntu-unity-desktop"
+	mkdeb "${repo}" ubuntu-unity-desktop 1 "Depends: dup1, eapp" \
+		"Recommends: a2, a3, b2, c2, c3, ubuntu-unity-settings" "Task: ubuntu-unity-desktop"
+	## Only the Ubuntu Unity image installs it
+	mkdeb "${repo}" ubuntu-unity-settings 1 "Task: ubuntu-unity-desktop"
+	## gparted of the image, and kdialog, which apt keeps as an alternative of
+	##  "zenity | kdialog" (im-config)
+	mkdeb "${repo}" gparted 1
+	mkdeb "${repo}" im-config 1 "Depends: zenity | kdialog"
+	mkdeb "${repo}" zenity 1
+	mkdeb "${repo}" kdialog 1
 	mkdeb "${repo}" dup1 1 "Depends: dupdep" "Task: ubuntu-unity-desktop"
 	mkdeb "${repo}" dupdep 1 "Task: ubuntu-unity-desktop"
 	mkdeb "${repo}" tool 1 "Task: ubuntu-unity-desktop"
@@ -216,13 +229,14 @@ group_alternatives() {
 	index "${repo}" Test
 	use_repositories "${repo}"
 
-	all=( g-unity7-desktop ubuntu-unity-desktop dup1 dupdep tool a1 a2 a2dep a3 b1 b2 c2 c3 d1 d2
-		needs-b2 e1 e2 eapp eapp2 f1 f2 f3 f4 g1 g2 glib )
+	all=( g-unity7-desktop ubuntu-unity-desktop ubuntu-unity-settings dup1 dupdep tool a1 a2 a2dep a3 b1 b2
+		c2 c3 d1 d2 needs-b2 e1 e2 eapp eapp2 f1 f2 f3 f4 g1 g2 glib gparted im-config zenity kdialog )
 	state_packages=( "${all[@]}" )
 	## setup <manual packages> -- <automatic packages>
 	setup() {
 		local manual=() auto=()
 		apt-get -y -qq purge "${all[@]}" >/dev/null 2>&1 || true
+		rm -rf /var/lib/g-unity7
 		while [[ $1 != -- ]]; do
 			manual+=( "$1" )
 			shift
@@ -317,6 +331,23 @@ group_alternatives() {
 	dpkg -i /tmp/other/glib_2_all.deb >/dev/null
 	run "the same with glib pinned to the repository: 1 (install g1), confirm" bash -c "printf '1\ny\n' | ${cleanup}"
 	rm /etc/apt/preferences.d/test.pref
+
+	## The packages of the Ubuntu Unity image are removed only on a system from
+	##  it. Installing g-unity7-desktop has removed the task there, but not
+	##  ubuntu-unity-settings, and the first run remembers it.
+	unity=( g-unity7-desktop dup1 gparted im-config zenity -- dupdep kdialog )
+	setup "${unity[@]}"
+	run "another flavor (no task, no ubuntu-unity-settings): --yes" "${cleanup}" --yes
+	setup ubuntu-unity-settings "${unity[@]}"
+	run "Ubuntu Unity without the task: --yes" "${cleanup}" --yes
+	ls /var/lib/g-unity7
+	echo
+	apt-get install -y -qq --no-install-recommends dup1 gparted >/dev/null 2>&1
+	apt-mark manual dup1 gparted >/dev/null
+	run "again, without ubuntu-unity-settings: --yes --dry-run" "${cleanup}" --yes --dry-run
+	setup ubuntu-unity-settings "${unity[@]}"
+	run "--keep gparted --keep dupdep --keep=kdialog, --yes" "${cleanup}" --keep gparted --keep dupdep --keep=kdialog --yes
+	run "--keep without a package" "${cleanup}" --keep
 }
 
 ## The Ubuntu Firefox and Thunderbird packages (versions of the snap
@@ -375,6 +406,8 @@ group_mozilla() {
 	setup_mozilla
 	useradd -m -u 1001 alice
 	useradd -m -u 1002 bob
+	## A user of a network directory may have a UID above 59999
+	useradd -m -u 60001 carol 2>/dev/null
 	printf '[User]\nLanguage=pt_BR.UTF-8\n' > /var/lib/AccountsService/users/bob
 	printf '159.0.1-1 6000\n' > /tmp/snaps/firefox
 	printf '160.0-1 400\n' > /tmp/snaps/thunderbird
@@ -389,6 +422,13 @@ group_mozilla() {
 		> "${alice}"/snap/thunderbird/common/.thunderbird/profiles.ini
 	chown -R alice:alice "${alice}"
 	chown -R bob:bob "${bob}"
+	mkdir -p /home/carol/snap/firefox/common/.mozilla/firefox/c.default
+	printf '[Profile0]\nName=default\nIsRelative=1\nPath=c.default\nDefault=1\n' \
+		> /home/carol/snap/firefox/common/.mozilla/firefox/profiles.ini
+	chown -R carol:carol /home/carol
+	## The directory of a revision that snapd does not know, which the image
+	##  leaves, and that of the installed revision
+	mkdir -p /var/snap/firefox/5000 /var/snap/firefox/6000
 
 	run "dry-run as alice, without root: Enter" bash -c "printf '\n' | setpriv --reuid=alice --regid=alice --init-groups --reset-env ${cleanup} --dry-run"
 	run "dry-run: Enter (Firefox; the Thunderbird snap is newer)" bash -c "printf '\n' | ${cleanup} --dry-run"
@@ -402,6 +442,8 @@ group_mozilla() {
 	echo "-- installs.ini"
 	cat "${alice}"/.mozilla/firefox/installs.ini
 	echo "-- snaps: $(ls /tmp/snaps | tr '\n' ' ')"
+	echo "-- /var/snap/firefox: $(ls /var/snap/firefox | tr '\n' ' ')"
+	files /home/carol/.mozilla
 	apt-get -s upgrade 2>&1 | grep -E '^(Inst|Remv)' || echo "apt upgrade keeps the packages"
 	echo
 
@@ -412,6 +454,17 @@ group_mozilla() {
 	run "Thunderbird snap 159.0 running: Enter, confirm" bash -c "printf '\ny\n' | ${cleanup}"
 	kill "${sleeper}" 2>/dev/null || true
 	wait "${sleeper}" 2>/dev/null || true
+
+	## The snap is started while apt installs the package, after the analysis.
+	##  apt runs the hook with sh, which has no exec -a.
+	echo "DPkg::Pre-Invoke { \"bash -c '(exec -a /snap/thunderbird/410/thunderbird sleep 300) >/dev/null 2>&1 &'\"; };" \
+		> /etc/apt/apt.conf.d/99test-start-snap
+	run "Thunderbird snap started during the changes: 1, confirm" bash -c "printf '1\ny\n' | ${cleanup}"
+	rm /etc/apt/apt.conf.d/99test-start-snap
+	pkill -f /snap/thunderbird/ || true
+	echo "-- snaps: $(ls /tmp/snaps | tr '\n' ' ')"
+	files "${alice}"/.thunderbird
+	echo
 
 	touch /tmp/snap-fail-thunderbird
 	run "Thunderbird snap stopped, snap remove fails: 1, confirm" bash -c "printf '1\ny\n' | ${cleanup}"
@@ -428,6 +481,27 @@ group_mozilla() {
 	echo
 
 	run "nothing left: --dry-run" "${cleanup}" --dry-run
+
+	## Firefox from another source, such as Mozilla's APT repository, stays
+	mkdeb /tmp/mozilla firefox 161.0~build1
+	apt-get -y -qq purge firefox-l10n-cs firefox-l10n-de firefox-l10n-pt-br firefox-l10n-pt-pt >/dev/null 2>&1
+	dpkg -i /tmp/mozilla/firefox_161.0~build1_all.deb >/dev/null 2>&1
+	run "Firefox from another source: --yes" "${cleanup}" --yes
+
+	## copy-snap-profiles into a directory without profiles.ini, with a profile
+	##  of the same name left behind: the snap profiles are added
+	mkdir -p "${alice}"/src/p.default "${alice}"/dst/p.default
+	echo snap > "${alice}"/src/p.default/prefs.js
+	echo old > "${alice}"/dst/p.default/prefs.js
+	printf '[Profile0]\nName=default\nIsRelative=1\nPath=p.default\nDefault=1\n' > "${alice}"/src/profiles.ini
+	chown -R alice:alice "${alice}"/src "${alice}"/dst
+	run "copy-snap-profiles: a profile left behind without profiles.ini" setpriv --reuid=alice --regid=alice \
+		--init-groups --reset-env /usr/libexec/g-unity7/copy-snap-profiles "${alice}"/src "${alice}"/dst \
+		FDC34C9F024745EB adopt
+	files "${alice}"/dst
+	echo "-- p.default/prefs.js: $(cat "${alice}"/dst/p.default/prefs.js)"
+	echo "-- profiles.ini"
+	cat "${alice}"/dst/profiles.ini
 }
 
 ## Snap profiles with links that point outside the profile of the user. The
@@ -567,6 +641,54 @@ group_snaps() {
 	run "again: --yes" "${cleanup}" --yes
 }
 
+## unattended-upgrades with the pins of g-unity7-apt-pin: Ubuntu publishes a
+##  security update of a package that the PPA has, and the PPA then publishes
+##  its rebuild, without and with 51g-unity7-unattended-upgrades
+group_pin() {
+	local ppa=${repos}/pin-ppa security=${repos}/pin-security conf=51g-unity7-unattended-upgrades
+	apt-get install -y -qq --no-install-recommends unattended-upgrades >/dev/null 2>&1
+	install -D -m 644 -t /etc/apt/preferences.d "${work}"/local/g-unity7-apt-pin/g-unity7.pref
+	## release <repository> <origin> <suite>: index it with a Release file that
+	##  has the checksums, so that apt-get update reads a changed Packages file
+	release() {
+		(cd "$1" && apt-ftparchive packages . > Packages 2>/dev/null \
+			&& apt-ftparchive -o APT::FTPArchive::Release::Origin="$2" \
+				-o APT::FTPArchive::Release::Suite="$3" release . > Release)
+	}
+	## uu <title>: run unattended-upgrades and show the installed version
+	uu() {
+		echo "### $1"
+		unattended-upgrade >/dev/null 2>&1 || echo "[unattended-upgrade failed]"
+		dpkg-query -W -f='foo ${Version}\n' foo
+		echo
+	}
+	for with_conf in "" 1; do
+		rm -rf "${ppa}" "${security}"
+		mkdir -p "${security}"
+		mkdeb "${ppa}" foo 1.0-0ubuntu1+gu7.2~26.10
+		release "${ppa}" LP-PPA-c4pp4-g-unity7 stonking
+		release "${security}" Ubuntu stonking-security
+		use_repositories "${ppa}" "${security}"
+		apt-get install -y -qq --allow-downgrades foo=1.0-0ubuntu1+gu7.2~26.10 >/dev/null 2>&1
+		if [[ -n ${with_conf} ]]; then
+			install -D -m 644 -t /etc/apt/apt.conf.d "${work}"/local/g-unity7-apt-pin/"${conf}"
+			echo "## With ${conf}"
+		else
+			rm -f /etc/apt/apt.conf.d/"${conf}"
+			echo "## Without ${conf}"
+		fi
+		echo
+		mkdeb "${security}" foo 1.0-0ubuntu2
+		release "${security}" Ubuntu stonking-security
+		apt-get update -qq 2>/dev/null
+		uu "Ubuntu has 1.0-0ubuntu2 in stonking-security, the PPA has no rebuild yet"
+		mkdeb "${ppa}" foo 1.0-0ubuntu2+gu7.1~26.10
+		release "${ppa}" LP-PPA-c4pp4-g-unity7 stonking
+		apt-get update -qq 2>/dev/null
+		uu "The PPA has its rebuild 1.0-0ubuntu2+gu7.1~26.10"
+	done
+}
+
 setup_common
 out=$(mktemp)
 case ${group} in
@@ -574,6 +696,7 @@ case ${group} in
 	mozilla) group_mozilla ;;
 	links) group_links ;;
 	snaps) group_snaps ;;
+	pin) group_pin ;;
 	*) echo "test.sh: unknown group ${group}" >&2; exit 2 ;;
 esac > "${out}"
 

@@ -70,14 +70,24 @@ changed_lines() {
 	grep -a '^[+-]' | grep -av '^\(+++\|---\) ' || true
 }
 
-## Print the git commit of repository $1, with -dirty if the paths $2... (or
-##  any path, if none are given) have uncommitted changes.
+## Print the git commit of repository $1, with -dirty if the paths $2... have
+##  uncommitted changes, also new files. Without paths, it is never dirty.
 git_commit() {
 	local repo=$1 commit
 	shift
 	commit=$(git -c safe.directory='*' -C "${repo}" rev-parse HEAD 2>/dev/null) || { echo "unknown"; return; }
-	[[ -n $(git -c safe.directory='*' -C "${repo}" status --porcelain -- "$@" 2>/dev/null) ]] && commit+="-dirty"
+	[[ $# -gt 0 && -n $(git -c safe.directory='*' -C "${repo}" status --porcelain -- "$@" 2>/dev/null) ]] \
+		&& commit+="-dirty"
 	echo "${commit}"
+}
+
+## Print the first 12 digits of commit $1, with its -dirty suffix
+short_commit() {
+	if [[ $1 == *-dirty ]]; then
+		echo "${1:0:12}-dirty"
+	else
+		echo "${1:0:12}"
+	fi
 }
 
 ## Versioned ehooks directories, as the overlay looks them up (docs/ehooks.md):
@@ -136,29 +146,30 @@ resolve_overlay_pkg() {
 
 ## Print the input hash of a loaded package ($1: the overlay directory). It
 ##  covers everything the build uses besides the Ubuntu source. A package whose
-##  input hash and Ubuntu version match the staging PPA is not built again.
+##  input hash and Ubuntu version match the staging PPA is not built again. The
+##  files are sorted in the C locale, as in CI.
 input_hash() {
 	local overlay=$1
 	{
 		echo "format ${FORMAT_VERSION}"
-		(cd "${PKG_DIR}" && find . -type f -print0 | sort -z | xargs -0 sha256sum)
+		(cd "${PKG_DIR}" && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum)
 		local declared=${OVERLAY_PKG_DECLARED:-${OVERLAY_PKG:-}} dir
 		if [[ -n ${declared} && -d ${overlay}/${declared}/files ]]; then
-			(cd "${overlay}/${declared}"/files && find . -type f -print0 | sort -z | xargs -0 sha256sum)
+			(cd "${overlay}/${declared}"/files && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum)
 		fi
 		## The versioned ehooks directories that resolve_overlay_pkg may pick. A new
 		##  or changed one changes the input hash, so the package is built again.
 		while read -r dir; do
 			echo "${dir}"
 			if [[ -d ${overlay}/${dir}/files ]]; then
-				(cd "${overlay}/${dir}"/files && find . -type f -print0 | sort -z | xargs -0 sha256sum)
+				(cd "${overlay}/${dir}"/files && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum)
 			fi
 		done < <(versioned_ehooks_dirs "${overlay}")
 		if [[ ${#OVERLAY_FILES[@]} -gt 0 ]]; then
 			(cd "${overlay}" && sha256sum "${OVERLAY_FILES[@]}")
 		fi
 		if [[ -d ${REPO_ROOT}/branding ]]; then
-			(cd "${REPO_ROOT}"/branding && find . -type f -print0 | sort -z | xargs -0 -r sha256sum)
+			(cd "${REPO_ROOT}"/branding && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 -r sha256sum)
 		fi
 	} | sha256sum | cut -c1-32
 }
@@ -179,9 +190,11 @@ list_packages() {
 load_package() {
 	local pkg=$1 file
 
-	unset OVERLAY_PKG OVERLAY_PKG_DECLARED UBUNTU_SRC UBUNTU_SERIES DEBIAN_SUITE SOURCE_NAME GROUP PATCH_MODE LOCAL HOLD
+	unset OVERLAY_PKG OVERLAY_PKG_DECLARED UBUNTU_SRC UBUNTU_SERIES DEBIAN_SUITE SOURCE_NAME GROUP PATCH_MODE LOCAL HOLD \
+		DSC_SHA256
 	PATCHES=()
 	OVERLAY_FILES=()
+	OVERLAY_FOLLOW=()
 	unset -f debian_edit src_edit local_prepare
 
 	if [[ -f ${REPO_ROOT}/local/${pkg}/package.sh ]]; then

@@ -1,6 +1,6 @@
 ## The approval issue: update it (the cron asks for every hour, GitHub runs it
 ##  a few times a day) and run the commands that the repository owner gives in
-##  its comments (/upload, /reject, /promote, /retry).
+##  its comments (/upload, /reject, /promote, /retry, /ported).
 name: Review
 
 on:
@@ -26,14 +26,42 @@ defaults:
     shell: bash
 
 jobs:
-  review:
+  ## Updating the issue needs neither the signing key nor the Launchpad
+  ##  credentials, so it runs outside the launchpad environment
+  refresh:
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.command == '')
+    ## One at a time with the command job and the upload job of ppa.yml, which
+    ##  also rewrite the approval issue; queue: max keeps all waiting runs and
+    ##  their commands.
+    concurrency:
+      group: approve
+      queue: max
+    runs-on: ubuntu-latest
+    container: ubuntu:26.10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - run: |
+          for i in 1 2 3; do apt-get update -qq && break; [ "$i" -lt 3 ] || exit 1; sleep 60; done
+          apt-get install -y -qq --no-install-recommends git ca-certificates >/dev/null
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          overlay-fetch-depth: 0
+      - env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: scripts/approve.py refresh
+
+  command:
     if: >-
-      github.event_name != 'issue_comment' ||
-      (contains(github.event.issue.labels.*.name, 'approve') &&
+      (github.event_name == 'workflow_dispatch' && inputs.command != '') ||
+      (github.event_name == 'issue_comment' &&
+       contains(github.event.issue.labels.*.name, 'approve') &&
        github.event.comment.author_association == 'OWNER' &&
        startsWith(github.event.comment.body, '/'))
-    ## One at a time with the upload job of ppa.yml, which also rewrites the
-    ##  approval issue; queue: max keeps all waiting runs and their commands.
     concurrency:
       group: approve
       queue: max
@@ -53,7 +81,11 @@ jobs:
           for i in 1 2 3; do apt-get update -qq && break; [ "$i" -lt 3 ] || exit 1; sleep 60; done
           apt-get install -y -qq --no-install-recommends git ca-certificates >/dev/null
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup
+        with:
+          overlay-fetch-depth: 0
       - env:
           GITHUB_TOKEN: ${{ github.token }}
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
@@ -64,8 +96,4 @@ jobs:
           export LP_CREDENTIALS_FILE=$(mktemp)
           trap 'rm -f "$LP_CREDENTIALS_FILE"' EXIT
           printf '%s\n' "$LP_CREDENTIALS" > "$LP_CREDENTIALS_FILE"
-          if [ -n "$COMMAND" ]; then
-            scripts/approve.py comment "$COMMAND"
-          else
-            scripts/approve.py refresh
-          fi
+          scripts/approve.py comment "$COMMAND"

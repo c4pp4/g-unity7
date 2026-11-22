@@ -5,6 +5,8 @@ g-unity7-cleanup \- remove the Ubuntu Unity packages that G Unity7 replaces
 .B g-unity7-cleanup
 .RB [ \-n | \-\-dry\-run ]
 .RB [ \-y | \-\-yes ]
+.RB [ \-k | \-\-keep
+.IR package ]...
 .SH DESCRIPTION
 .B g-unity7-cleanup
 removes duplicate Ubuntu Unity applications and other installed alternatives
@@ -40,7 +42,7 @@ automatically installed, and any other kept alternative stays manually
 installed. The other installed alternatives are removed, including those you
 installed yourself, unless other packages need them.
 .PP
-The script then marks
+On a system installed from the Ubuntu Unity image, the script then marks
 .BR ubuntu-unity-desktop ,
 the packages it depends on or recommends that
 .B g-unity7-desktop
@@ -62,6 +64,21 @@ of another relation, such as
 for
 .BR lightdm-greeter ,
 are removed directly if no other package is removed with them.
+The script recognizes such a system by
+.B ubuntu-unity-desktop
+or
+.BR ubuntu-unity-settings ,
+which only the image installs. Installing
+.B g-unity7-desktop
+already removes
+.BR ubuntu-unity-desktop ,
+which depends on
+.BR pulseaudio .
+The first run that makes changes writes
+.I /var/lib/g-unity7/ubuntu-unity
+for later runs, because it removes
+.B ubuntu-unity-settings
+as a duplicate. On other systems, these packages are left as they are.
 .PP
 The Ubuntu Firefox and Thunderbird packages install snaps. The G Unity⁷ PPA
 provides them as regular packages with Unity's global menu, built from the
@@ -79,8 +96,11 @@ and the language that each user chose).
 It then copies the snap profiles
 .RI ( ~/snap/firefox/common/.mozilla/firefox ,
 .IR ~/snap/thunderbird/common/.thunderbird )
-of every user with a UID from 1000 to 59999 whose home directory is
-accessible to the profile directory of the package
+of every user with a UID from 1000 to 59999 and of the owner of each
+directory in
+.I /home
+(which finds the users of a network directory too), if the home directory is
+accessible, to the profile directory of the package
 .RI ( ~/.mozilla/firefox ,
 .IR ~/.thunderbird ),
 as that user, so that a link in a home directory cannot make it change
@@ -93,13 +113,22 @@ becomes the default profile of the package, unless the package was installed
 before; then its default profile stays, and the snap profiles can be opened
 from
 .BR about:profiles .
+If the package directory already exists without profiles.ini and has a file
+or directory of the same name as the snap profile directory, such as a
+profile left behind, the snap profiles are added in the same way.
 Finally, the script removes the snap. snapd saves a snapshot of the snap
 data, but when the removal fails, it drops the snapshot after it has already
-deleted the data; the copied profiles stay. While the snap is running, the
-script offers nothing for it. Close the application and run the script again.
-Run it again also if removing the snap fails. A G Unity⁷ package older than
+deleted the data; the copied profiles stay. Then remove the snap with
+.BR "sudo snap remove" ;
+running the script again would copy the profiles once more. While the snap is
+running, the script offers nothing for it. Close the application and run the
+script again. If the snap is started while the script runs, the script
+leaves it installed and says what to do. A G Unity⁷ package older than
 the snap is not offered, because Firefox and Thunderbird do not open a profile
 that a newer version used. Run the script again after the package is updated.
+A Firefox or Thunderbird package from another source, such as Mozilla's APT
+repository, stays as it is, because it may be newer than the G Unity⁷
+package.
 If the snap is not installed, the script also offers the G Unity⁷ package
 with its language packages, and recommends it. It mentions Evolution if it is
 installed instead of Thunderbird; the choice between them is part of this
@@ -123,7 +152,9 @@ replaces PulseAudio with PipeWire, and apt removes
 without its configuration files. Its autostart file then starts a program
 that no longer exists. The script purges these configuration files.
 .PP
-The Ubuntu Unity installer copies the live system, which has Fcitx 4 with
+On a system from the Ubuntu Unity image, the script also removes the
+packages that the installer leaves. The installer copies the live system,
+which has Fcitx 4 with
 Japanese and Chinese input, and does not remove it.
 .B im-config
 no longer supports Fcitx 4, so it cannot be selected as an input method, but
@@ -144,9 +175,11 @@ of the image directly, because apt keeps it as an alternative of
 and it keeps the KDE Frameworks 6, unless other packages would be removed
 with it.
 .PP
-The script shows all changes and asks for confirmation. To keep a package,
-mark it as manually installed first:
-.BI "sudo apt-mark manual " package
+The script shows all changes and asks for confirmation. It stops without
+changes if apt would then make other changes than shown, for example after
+unattended-upgrades updated the package lists in the meantime. To keep a
+package, give it with
+.BR \-\-keep .
 .SH OPTIONS
 .TP
 .BR \-n ", " \-\-dry\-run
@@ -155,8 +188,25 @@ alternatives, so that the list shows the result of your answers. Root is not
 needed, but without it, the snap profiles of other users are not shown.
 .TP
 .BR \-y ", " \-\-yes
-Do not ask. Keep or install the recommended alternative of each relation and
-make the changes without confirmation.
+Do not ask. Keep or install the recommended alternative of each relation,
+install the G Unity⁷ Firefox and Thunderbird packages instead of the snaps,
+with the copies of the snap profiles, remove the snaps, and make the changes
+without confirmation.
+.TP
+.BR \-k ", " \-\-keep " \fIpackage\fR"
+Neither mark nor remove the package. An automatically installed package is
+marked as manually installed, so that autoremove keeps it.
+.B \-\-keep firefox
+or
+.B \-\-keep thunderbird
+leaves Firefox or Thunderbird as it is. The option can be given more than
+once.
+.SH FILES
+.TP
+.I /var/lib/g-unity7/ubuntu-unity
+The system comes from the Ubuntu Unity image. Purging
+.B g-unity7-desktop
+removes it.
 .SH SEE ALSO
 .BR apt (8),
 .BR apt-mark (8)

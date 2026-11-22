@@ -1,6 +1,7 @@
-## Test g-unity7-cleanup with dummy packages in Ubuntu containers
-##  (tests/cleanup), test lp.py and approve.py (tests/scripts), and check the
-##  shell scripts for errors.
+## Test g-unity7-cleanup and the apt configuration of g-unity7-apt-pin with
+##  dummy packages in Ubuntu containers (tests/cleanup), test lp.py, approve.py
+##  and plan.sh (tests/scripts), and check the shell and Python scripts for
+##  errors.
 name: Tests
 
 on:
@@ -9,6 +10,7 @@ on:
       - '**.sh'
       - 'scripts/**'
       - 'local/g-unity7-meta/**'
+      - 'local/g-unity7-apt-pin/**'
       - 'tests/**'
       - '.github/workflows/tests.yml'
   pull_request:
@@ -16,6 +18,7 @@ on:
       - '**.sh'
       - 'scripts/**'
       - 'local/g-unity7-meta/**'
+      - 'local/g-unity7-apt-pin/**'
       - 'tests/**'
       - '.github/workflows/tests.yml'
   workflow_dispatch:
@@ -37,12 +40,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        group: [alternatives, mozilla, links, snaps]
+        group: [alternatives, mozilla, links, snaps, pin]
     steps:
       - run: |
           for i in 1 2 3; do apt-get update -qq && break; [ "$i" -lt 3 ] || exit 1; sleep 60; done
           apt-get install -y -qq --no-install-recommends git ca-certificates >/dev/null
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - run: tests/cleanup/test.sh ${{ matrix.group }}
 
   scripts:
@@ -51,14 +56,19 @@ jobs:
     steps:
       - run: |
           for i in 1 2 3; do apt-get update -qq && break; [ "$i" -lt 3 ] || exit 1; sleep 60; done
-          apt-get install -y -qq --no-install-recommends git ca-certificates python3 >/dev/null
+          apt-get install -y -qq --no-install-recommends git ca-certificates python3 python3-pyflakes >/dev/null
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - run: python3 -m unittest discover -s tests/scripts -v
+      - run: python3 -m pyflakes scripts tests/scripts
 
   shellcheck:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       # Errors only: the warnings are about the variables of package.sh, which
       #  build-source.sh uses, and other intended code
       - run: |

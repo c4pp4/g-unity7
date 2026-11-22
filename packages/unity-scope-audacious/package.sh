@@ -2,6 +2,8 @@ OVERLAY_PKG="unity-lens/unity-scope-extras"
 UBUNTU_SRC="unity-scope-audacious"
 ## Removed from Ubuntu after xenial, so the xenial source is used.
 UBUNTU_SERIES="xenial"
+## The SHA256 of the .dsc from Launchpad
+DSC_SHA256="d1b272987cbcac27ab45da5de6d71a717778111c08d74535cc118466817a03ad"
 GROUP="desktop"
 
 PATCHES=(

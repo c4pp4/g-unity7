@@ -19,3 +19,8 @@ Description: apt pin for the G Unity⁷ PPA
  .
  The PPA's Firefox and Thunderbird packages are kept only after
  g-unity7-cleanup has installed them instead of the Ubuntu snaps.
+ .
+ It also lets unattended-upgrades install the updates of the PPA, like the
+ Ubuntu security updates. Without it, unattended-upgrades would install the
+ Ubuntu security update of a G Unity⁷ package instead of its rebuild in the
+ PPA.

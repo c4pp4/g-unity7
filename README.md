@@ -31,6 +31,10 @@ packages to the Ubuntu ones. `apt install` only upgrades the packages that
 `g-unity7-desktop` needs. `apt full-upgrade` upgrades the other installed
 packages that G Unity⁷ changes, such as Compiz and GTK 3.
 
+An Ubuntu security update of a package that G Unity⁷ changes arrives with its
+rebuild in the PPA. unattended-upgrades installs the updates of the PPA
+automatically, like the Ubuntu security updates.
+
 Then run:
 
 ```
@@ -57,7 +61,8 @@ mount units of snap revisions that are not installed, which fail at every
 boot, and the configuration files of PulseAudio, which PipeWire replaces
 and whose autostart file remains. Other desktops, such as GNOME, are not
 removed. `g-unity7-cleanup` shows all changes and asks
-before making them. `g-unity7-cleanup --dry-run` only shows them.
+before making them. `g-unity7-cleanup --dry-run` only shows them. To keep a
+package that it would remove, run `sudo g-unity7-cleanup --keep <package>`.
 
 Ubuntu installs Firefox and Thunderbird as snaps. `g-unity7-cleanup` offers the
 PPA packages with Unity's global menu instead, built from the Debian sources. It
@@ -66,7 +71,8 @@ language packages of the system's languages and removes the snaps. It does not
 offer a package older than the snap, because Firefox and Thunderbird do not
 open a profile that a newer version used. If you keep the snaps,
 `g-unity7-apt-pin` keeps them too. If the snap is not installed,
-`g-unity7-cleanup` offers the PPA package as well.
+`g-unity7-cleanup` offers the PPA package as well. A Firefox or Thunderbird
+package from another source, such as Mozilla's APT repository, stays.
 
 Finally, restart the computer:
 
@@ -78,13 +84,28 @@ The running session still uses the old versions of Unity, Compiz and GTK 3.
 The login screen and services such as PipeWire, which replaces PulseAudio on
 Ubuntu Unity, start with the new packages only after a restart.
 
+### Going back to Ubuntu
+
+`ppa-purge` reinstalls the Ubuntu versions of the packages from the PPA and
+removes the packages that only the PPA has, such as `g-unity7-desktop`:
+
+```
+sudo apt install ppa-purge
+sudo ppa-purge ppa:c4pp4/g-unity7
+```
+
+Firefox and Thunderbird go back to the Ubuntu packages, which install the
+snaps. The configuration files of `g-unity7-apt-pin` stay until
+`sudo apt purge g-unity7-apt-pin`; without the PPA, they change nothing.
+
 ## Layout
 
 ```
 config.sh                 series, PPAs, version tag
 packages/<package>/
   package.sh              the port (see below)
-  patches/                Ubuntu variants of overlay patches (a file with the same name wins)
+  patches/                Ubuntu variants of overlay patches (a file with the same name wins;
+                          the approval issue reports changes of the overlay patch)
   debian/                 files copied over debian/
 scripts/
   build-source.sh         build the source package of one package
@@ -141,13 +162,16 @@ Optional settings:
 - `GROUP` names packages that are promoted together.
 - `OVERLAY_FILES` lists other overlay files the package is made from. They are
   part of its input hash.
+- `OVERLAY_FOLLOW` lists other overlay packages whose ebuild changes the
+  approval issue reports for the package, such as the indicator and lens
+  metapackages for `g-unity7-meta`.
 - `SOURCE_NAME` builds a source package derived from `UBUNTU_SRC` under another
   name, such as nemo-engrampa from nemo-fileroller.
 - `HOLD` stops building the package and keeps its latest version in the
   staging PPA. Its value says why, such as an overlay patch that does not
   apply to a new version yet.
 - `UBUNTU_SERIES` takes the source from an older Ubuntu release when Ubuntu
-  has removed it.
+  has removed it. `DSC_SHA256` is then the SHA256 of its `.dsc`.
 - `DEBIAN_SUITE` takes the source from Debian (`sid`, `experimental`, or both
   separated by a space) instead of the Ubuntu archive, such as Firefox from sid
   and Thunderbird from experimental. The `.dsc` must also have a valid
@@ -156,8 +180,11 @@ Optional settings:
 apt downloads the sources from the Ubuntu or Debian archive with its archive
 key, which signs the checksums of every file. The older series of
 `UBUNTU_SERIES` are signed only with keys that apt no longer accepts, so their
-sources come from Launchpad over HTTPS. The changelog records where the source
-comes from, the SHA256 of its `.dsc` and, for Debian, the signer.
+sources come from Launchpad over HTTPS. The build checks their `.dsc` against
+`DSC_SHA256` and the files against the `.dsc`. The changelog records where the
+source comes from, the SHA256 of its `.dsc` and, for Debian, the signer. A
+build from uncommitted changes says `-dirty` after the commit, and
+`upload.sh` refuses it.
 
 Own packages can set `local_prepare()` to create their source from overlay
 files.
@@ -195,15 +222,23 @@ Nothing reaches users without the owner's approval:
 1. `ppa.yml` (daily) builds the changed packages. A version with the same
    fingerprint as in the staging PPA (a new Ubuntu revision) is uploaded to
    `ppa:c4pp4/g-unity7-staging` right away. Any other version waits for review
-   in the approval issue: `/upload` or `/reject`.
-2. `review.yml` (hourly) lists the staging versions that are newer than in
-   `ppa:c4pp4/g-unity7`, with their build state. `/promote` copies them with
-   their binaries. Packages of the same `GROUP` are promoted only together.
-   `/retry` retries failed builds.
+   in the approval issue: `/upload` or `/reject`. Then `ppa.yml` checks that
+   `g-unity7-desktop` installs from staging as intended.
+2. `review.yml` (a few times a day) lists the staging versions that are newer
+   than in `ppa:c4pp4/g-unity7`, with their build state. `/promote` copies them
+   with their binaries, and `/promote --dry-run` only shows what it would copy.
+   Packages of the same `GROUP` are promoted only together, the `desktop` group
+   before the `mozilla` group, whose packages need it. `/retry` retries failed
+   builds.
 3. `g-unity7-apt-pin` keeps the PPA versions on users' systems until a newer
    version is promoted.
 
-`pr.yml` checks on every push that all patches still apply.
+The approval issue also lists the packages whose build failed or that are
+behind Ubuntu or Debian for more than a day, and the overlay changes that the
+ports may need, which `/ported` records as checked.
+
+`pr.yml` checks on every push that the patches of the changed packages still
+apply, those of all packages when the scripts change, and every week.
 
 A local upload signs with the gpg-agent outside the container:
 
