@@ -93,11 +93,8 @@ and
 in
 .IR /etc/default/locale ,
 and the language that each user chose).
-It then copies the snap profiles
-.RI ( ~/snap/firefox/common/.mozilla/firefox ,
-.IR ~/snap/thunderbird/common/.thunderbird )
-of every user with a UID from 1000 to 59999 and of the owner of each
-directory in
+It then copies the snap profiles of every user with a UID from 1000 to 59999
+and of the owner of each directory in
 .I /home
 (which finds the users of a network directory too), if the home directory is
 accessible, to the profile directory of the package
@@ -105,14 +102,32 @@ accessible, to the profile directory of the package
 .IR ~/.thunderbird ),
 as that user, so that a link in a home directory cannot make it change
 anything else.
-If the user already has profiles there, for example from the Ubuntu package
-used before the snap, the snap profiles are added to them with
+The snap profiles are taken from where Firefox and Thunderbird look for them:
+.I ~/snap/firefox/common/.mozilla/firefox
+if
+.I ~/snap/firefox/common/.mozilla
+exists, and
+.I ~/snap/thunderbird/common/.thunderbird
+if it exists, or else from the directory of the installed snap revision,
+.I ~/snap/firefox/<revision>/.config/mozilla/firefox
+and
+.IR ~/snap/thunderbird/<revision>/.config/thunderbird ,
+where Thunderbird 160 creates new profiles.
+If the user already has profiles in the package directory, for example from
+the Ubuntu package used before the snap, the snap profiles are added to them
+with
 .B (snap)
 after their names, and no profile is replaced. The snap's default profile
 becomes the default profile of the package, unless the package was installed
 before; then its default profile stays, and the snap profiles can be opened
 from
 .BR about:profiles .
+If the snap profile directory is a link to the package directory, which the
+Thunderbird snap makes when
+.I ~/.thunderbird
+has profiles from the Ubuntu package used before the snap, nothing is copied,
+and the snap's default profile becomes the default profile of the package in
+the same way.
 If the package directory already exists without profiles.ini and has a file
 or directory of the same name as the snap profile directory, such as a
 profile left behind, the snap profiles are added in the same way.

@@ -1,0 +1,130 @@
+### dry-run: Enter, Enter
+Firefox is installed as an Ubuntu snap.
+G Unity⁷ provides a Firefox package with Unity's global menu:
+  1) Install the G Unity⁷ package, copy the snap profile for dave and remove the snap (recommended)
+  2) Keep the Ubuntu snap
+
+Thunderbird is installed as an Ubuntu snap.
+G Unity⁷ provides a Thunderbird package with Unity's global menu:
+  1) Install the G Unity⁷ package, copy the snap profiles for dave and erin and remove the snap (recommended)
+  2) Keep the Ubuntu snap
+
+Firefox and Thunderbird (10):
+  Firefox: install firefox 159.0.1-1+gu7.1~26.10 from G Unity⁷
+  Firefox: install firefox-l10n-cs 159.0.1-1+gu7.1~26.10 from G Unity⁷
+  Firefox: copy /home/dave/snap/firefox/6000/.config/mozilla/firefox to /home/dave/.mozilla/firefox
+  Firefox: remove the snap (snapd saves a snapshot of its data)
+  Thunderbird: install thunderbird 1:159.0-1+gu7.1~26.10 from G Unity⁷
+  Thunderbird: install thunderbird-l10n-cs 1:159.0-1+gu7.1~26.10 from G Unity⁷
+  Thunderbird: copy /home/dave/snap/thunderbird/1333/.config/thunderbird to /home/dave/.thunderbird
+  Thunderbird: copy /home/erin/snap/thunderbird/common/.thunderbird to /home/erin/.thunderbird
+  Thunderbird: the snap uses /home/frank/.thunderbird, nothing to copy; make the snap's default profile the default
+  Thunderbird: remove the snap (snapd saves a snapshot of its data)
+
+Packages apt will install (2):
+  firefox-l10n-cs thunderbird-l10n-cs
+
+Packages apt will downgrade (2):
+  firefox thunderbird
+
+Packages apt will remove: none
+
+To keep a package, run: sudo g-unity7-cleanup --keep <package>
+state: firefox thunderbird 
+
+### --yes
+Firefox is installed as an Ubuntu snap.
+G Unity⁷ provides a Firefox package with Unity's global menu:
+  Install the G Unity⁷ package, copy the snap profile for dave and remove the snap (recommended)
+
+Thunderbird is installed as an Ubuntu snap.
+G Unity⁷ provides a Thunderbird package with Unity's global menu:
+  Install the G Unity⁷ package, copy the snap profiles for dave and erin and remove the snap (recommended)
+
+Firefox and Thunderbird (10):
+  Firefox: install firefox 159.0.1-1+gu7.1~26.10 from G Unity⁷
+  Firefox: install firefox-l10n-cs 159.0.1-1+gu7.1~26.10 from G Unity⁷
+  Firefox: copy /home/dave/snap/firefox/6000/.config/mozilla/firefox to /home/dave/.mozilla/firefox
+  Firefox: remove the snap (snapd saves a snapshot of its data)
+  Thunderbird: install thunderbird 1:159.0-1+gu7.1~26.10 from G Unity⁷
+  Thunderbird: install thunderbird-l10n-cs 1:159.0-1+gu7.1~26.10 from G Unity⁷
+  Thunderbird: copy /home/dave/snap/thunderbird/1333/.config/thunderbird to /home/dave/.thunderbird
+  Thunderbird: copy /home/erin/snap/thunderbird/common/.thunderbird to /home/erin/.thunderbird
+  Thunderbird: the snap uses /home/frank/.thunderbird, nothing to copy; make the snap's default profile the default
+  Thunderbird: remove the snap (snapd saves a snapshot of its data)
+
+Packages apt will install (2):
+  firefox-l10n-cs thunderbird-l10n-cs
+
+Packages apt will downgrade (2):
+  firefox thunderbird
+
+Packages apt will remove: none
+
+To keep a package, run: sudo g-unity7-cleanup --keep <package>
+The following NEW packages will be installed:
+  firefox-l10n-cs thunderbird-l10n-cs
+The following packages will be DOWNGRADED:
+  firefox thunderbird
+0 upgraded, 2 newly installed, 2 downgraded, 0 to remove and 0 not upgraded.
+After this operation, 0 B of additional disk space will be used.
+dpkg: warning: downgrading firefox (1:1snap1) to (159.0.1-1+gu7.1~26.10)
+dpkg: warning: downgrading thunderbird (2:1snap1) to (1:159.0-1+gu7.1~26.10)
+Copied /home/dave/snap/firefox/6000/.config/mozilla/firefox to /home/dave/.mozilla/firefox
+Set /home/dave/.mozilla/firefox/f.default as the default profile
+Copied /home/dave/snap/thunderbird/1333/.config/thunderbird to /home/dave/.thunderbird
+Set /home/dave/.thunderbird/new.default as the default profile
+Copied /home/erin/snap/thunderbird/common/.thunderbird to /home/erin/.thunderbird
+Set /home/erin/.thunderbird/legacy.default as the default profile
+/home/frank/snap/thunderbird/common/.thunderbird is /home/frank/.thunderbird, nothing to copy
+Set /home/frank/.thunderbird/snap.default as the default profile
+firefox removed (test)
+thunderbird removed (test)
+state: firefox firefox-l10n-cs thunderbird thunderbird-l10n-cs 
+
+-- snaps: 
+dave:dave 700 /home/dave/.mozilla/
+dave:dave 700 /home/dave/.mozilla/firefox/
+dave:dave 755 /home/dave/.mozilla/firefox/f.default/
+dave:dave 644 /home/dave/.mozilla/firefox/f.default/prefs.js
+dave:dave 600 /home/dave/.mozilla/firefox/installs.ini
+dave:dave 644 /home/dave/.mozilla/firefox/profiles.ini
+dave:dave 700 /home/dave/.thunderbird/
+dave:dave 600 /home/dave/.thunderbird/installs.ini
+dave:dave 755 /home/dave/.thunderbird/new.default/
+dave:dave 644 /home/dave/.thunderbird/new.default/prefs.js
+dave:dave 644 /home/dave/.thunderbird/profiles.ini
+erin:erin 700 /home/erin/.thunderbird/
+erin:erin 600 /home/erin/.thunderbird/installs.ini
+erin:erin 755 /home/erin/.thunderbird/legacy.default/
+erin:erin 644 /home/erin/.thunderbird/legacy.default/prefs.js
+erin:erin 644 /home/erin/.thunderbird/profiles.ini
+frank:frank 755 /home/frank/.thunderbird/
+frank:frank 755 /home/frank/.thunderbird/deb.default/
+frank:frank 600 /home/frank/.thunderbird/installs.ini
+frank:frank 644 /home/frank/.thunderbird/profiles.ini
+frank:frank 755 /home/frank/.thunderbird/snap.default/
+-- profiles.ini of frank
+[Profile0]
+Name=default
+IsRelative=1
+Path=deb.default
+Default=1
+
+[Profile1]
+Name=default-release
+IsRelative=1
+Path=snap.default
+
+[InstallFDC34C9F024745EB]
+Default=snap.default
+Locked=1
+
+[Install1F2E3D4C5B6A7980]
+Default=snap.default
+Locked=1
+-- installs.ini of frank
+
+[FDC34C9F024745EB]
+Default=snap.default
+Locked=1

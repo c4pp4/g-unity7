@@ -514,12 +514,29 @@ homes() {
 	return 0
 }
 
-## Print "user:home" for each user who has a snap profile directory ($1,
-##  relative to the home directory).
-profiles_to_copy() {
-	local entry
+## Print "user:home:directory" for each user who has a profile directory of
+##  snap $1 with profiles.ini, where Firefox and Thunderbird look for it
+##  (nsXREDirProvider): the legacy directory $2 in $SNAP_USER_COMMON
+##  (~/snap/<snap>/common) if its first directory (.mozilla, .thunderbird)
+##  exists, or else the XDG directory $3 in $SNAP_USER_DATA, where the snap
+##  points XDG_CONFIG_HOME. $SNAP_USER_DATA is the directory of the installed
+##  revision $4 (~/snap/<snap>/<revision>), which snapd copies to each new
+##  revision. The "current" link in ~/snap/<snap> may point to an older or a
+##  removed revision, as only snap run updates it. The Firefox snap forces the
+##  legacy directory (MOZ_LEGACY_HOME), while Thunderbird 160 creates new
+##  profiles in the XDG directory.
+snap_profiles() {
+	local snap=$1 legacy=$2 xdg=$3 rev=$4 entry home dir
 	while read -r entry; do
-		[[ -f ${entry#*:}/$1/profiles.ini ]] && echo "${entry}"
+		home=${entry#*:}
+		if [[ -d ${home}/snap/${snap}/common/${legacy%%/*} ]]; then
+			dir=${home}/snap/${snap}/common/${legacy}
+		elif [[ -n ${rev} ]]; then
+			dir=${home}/snap/${snap}/${rev}/${xdg}
+		else
+			continue
+		fi
+		[[ -f ${dir}/profiles.ini ]] && echo "${entry}:${dir}"
 	done < <(homes)
 	return 0
 }
@@ -570,14 +587,18 @@ homes_hidden() {
 	return 1
 }
 
-## moz_choice <package> <snap profile> <package profile> <name> <install hash> [<alternative>]
-##  The install hash belongs to the package directory (/usr/lib/<package>) in
-##  profiles.ini. Leave it empty if it is not known. The alternative is the
-##  other package of the g-unity7-desktop relation, mentioned if installed.
+## moz_choice <package> <legacy snap profile> <XDG snap profile> <package profile> <name> <install hash> [<alternative>]
+##  The snap profile directories are relative to $SNAP_USER_COMMON and
+##  $SNAP_USER_DATA (see snap_profiles), the package profile directory to the
+##  home directory. The install hash belongs to the package directory
+##  (/usr/lib/<package>) in profiles.ini. Leave it empty if it is not known.
+##  The alternative is the other package of the g-unity7-desktop relation,
+##  mentioned if installed.
 moz_choice() {
-	local pkg=$1 snap_profile=$2 deb_profile=$3 app=$4 hash=$5 alt=${6:-}
-	local ppa status deb_installed= snap= snap_version upstream users=() copy_text options=() actions=()
-	local default=1 i answer u name
+	local pkg=$1 legacy=$2 xdg=$3 deb_profile=$4 app=$5 hash=$6 alt=${7:-}
+	local ppa status deb_installed= snap= snap_version= snap_rev= upstream users=() copy_users=()
+	local copy_text options=() actions=() default=1 i answer entry user home src name
+	local -A shared=()
 	ppa=$(ppa_version "${pkg}")
 	[[ -n ${ppa} ]] || return 0
 	if [[ -n ${spared[${pkg}]:-} ]]; then
@@ -600,7 +621,7 @@ moz_choice() {
 
 	## A profile that a newer version used does not open in an older one
 	if [[ -n ${snap} ]]; then
-		snap_version=$(snap list "${pkg}" 2>/dev/null | awk 'NR == 2 { print $2 }')
+		read -r snap_version snap_rev < <(snap list "${pkg}" 2>/dev/null | awk 'NR == 2 { print $2, $3 }') || true
 		upstream=${ppa#*:}
 		upstream=${upstream%-*}
 		if [[ -n ${snap_version} ]] && dpkg --compare-versions "${snap_version%-*}" gt "${upstream}"; then
@@ -614,7 +635,19 @@ moz_choice() {
 			moz_lines+=( "${app}: the snap is running; close ${app} and run g-unity7-cleanup again" )
 			return 0
 		fi
-		mapfile -t users < <(profiles_to_copy "${snap_profile}")
+		mapfile -t users < <(snap_profiles "${pkg}" "${legacy}" "${xdg}" "${snap_rev}")
+		## The Thunderbird snap links its profile directory to ~/.thunderbird
+		##  if that has profiles when the snap starts for the first time
+		##  (Ubuntu's package before 24.04). The package then uses the same
+		##  profiles, so there is nothing to copy.
+		for entry in "${users[@]}"; do
+			IFS=: read -r user home src <<< "${entry}"
+			if [[ $(readlink -f -- "${src}") == "$(readlink -f -- "${home}/${deb_profile}")" ]]; then
+				shared[${entry}]=1
+			else
+				copy_users+=( "${user}" )
+			fi
+		done
 		if [[ ${EUID} -ne 0 && -z ${homes_noted} ]] && homes_hidden; then
 			moz_lines+=( "Without root, the snap profiles of other users are not shown (sudo g-unity7-cleanup --dry-run shows them)" )
 			homes_noted=1
@@ -622,10 +655,10 @@ moz_choice() {
 	fi
 
 	copy_text=
-	if [[ ${#users[@]} -gt 1 ]]; then
-		copy_text="copy the snap profiles for $(and_list "${users[@]%%:*}")"
-	elif [[ ${#users[@]} -eq 1 ]]; then
-		copy_text="copy the snap profile for ${users[0]%%:*}"
+	if [[ ${#copy_users[@]} -gt 1 ]]; then
+		copy_text="copy the snap profiles for $(and_list "${copy_users[@]}")"
+	elif [[ ${#copy_users[@]} -eq 1 ]]; then
+		copy_text="copy the snap profile for ${copy_users[0]}"
 	fi
 	if [[ -z ${snap} ]]; then
 		options=( "Install the G Unity⁷ package (recommended)" "Do not install it" )
@@ -697,14 +730,19 @@ moz_choice() {
 	[[ -n ${snap} ]] || return 0
 	## The snap's default profile becomes the default, unless the package was
 	##  already installed and has its own default profile
-	for u in "${users[@]}"; do
-		moz_copy+=( "${u%%:*}:${u#*:}/${snap_profile}:${u#*:}/${deb_profile}:${hash}:${deb_installed:-adopt}:${pkg}" )
-		if [[ ! -f ${u#*:}/${deb_profile}/profiles.ini ]]; then
-			moz_lines+=( "${app}: copy ${u#*:}/${snap_profile} to ${u#*:}/${deb_profile}" )
+	for entry in "${users[@]}"; do
+		IFS=: read -r user home src <<< "${entry}"
+		moz_copy+=( "${user}:${src}:${home}/${deb_profile}:${hash}:${deb_installed:-adopt}:${pkg}" )
+		if [[ -n ${shared[${entry}]:-} && -n ${deb_installed} ]]; then
+			moz_lines+=( "${app}: the snap uses ${home}/${deb_profile}, nothing to copy" )
+		elif [[ -n ${shared[${entry}]:-} ]]; then
+			moz_lines+=( "${app}: the snap uses ${home}/${deb_profile}, nothing to copy; make the snap's default profile the default" )
+		elif [[ ! -f ${home}/${deb_profile}/profiles.ini ]]; then
+			moz_lines+=( "${app}: copy ${src} to ${home}/${deb_profile}" )
 		elif [[ -n ${deb_installed} ]]; then
-			moz_lines+=( "${app}: add the profiles in ${u#*:}/${snap_profile} to ${u#*:}/${deb_profile}; the default profile stays" )
+			moz_lines+=( "${app}: add the profiles in ${src} to ${home}/${deb_profile}; the default profile stays" )
 		else
-			moz_lines+=( "${app}: add the profiles in ${u#*:}/${snap_profile} to ${u#*:}/${deb_profile} and make the snap's default profile the default" )
+			moz_lines+=( "${app}: add the profiles in ${src} to ${home}/${deb_profile} and make the snap's default profile the default" )
 		fi
 	done
 	moz_snap_remove+=( "${pkg}" )
@@ -714,8 +752,8 @@ moz_choice() {
 ## The install hashes are CityHash64 (version 1.0.2) of the UTF-16 path of
 ##  /usr/lib/firefox and /usr/lib/thunderbird. The Firefox hash is the one that
 ##  the G Unity⁷ Firefox wrote.
-moz_choice firefox snap/firefox/common/.mozilla/firefox .mozilla/firefox Firefox 4F96D1932A9F858E
-moz_choice thunderbird snap/thunderbird/common/.thunderbird .thunderbird Thunderbird FDC34C9F024745EB evolution
+moz_choice firefox .mozilla/firefox .config/mozilla/firefox .mozilla/firefox Firefox 4F96D1932A9F858E
+moz_choice thunderbird .thunderbird .config/thunderbird .thunderbird Thunderbird FDC34C9F024745EB evolution
 
 ## Desktop files of snaps that are not installed. The Ubuntu image leaves those
 ##  of the snaps that the installer does not install, such as Thunderbird, and

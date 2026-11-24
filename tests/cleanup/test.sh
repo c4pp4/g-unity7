@@ -15,7 +15,9 @@
 ##  alternatives  questions about the alternatives, marking and removal
 ##  mozilla       the G Unity⁷ Firefox and Thunderbird packages and the copy of
 ##                the snap profiles
-##  links         snap profiles with links to other files, which the copy must
+##  locations     snap profiles in the XDG directory of the installed revision,
+##                in the legacy directory, and linked to the package profiles
+##  links        snap profiles with links to other files, which the copy must
 ##                not follow
 ##  snaps         desktop files and mount units of snaps that are not
 ##                installed, and the configuration files of PulseAudio
@@ -504,6 +506,52 @@ group_mozilla() {
 	cat "${alice}"/dst/profiles.ini
 }
 
+## Where the snap profiles are: the XDG directory of the installed revision,
+##  where Thunderbird 160 creates new profiles (the "current" link still points
+##  to the previous revision), the legacy directory, which Firefox and
+##  Thunderbird use if it exists, and the link that the Thunderbird snap makes
+##  to the profiles of Ubuntu's package from before the snap
+group_locations() {
+	local dave=/home/dave erin=/home/erin frank=/home/frank
+	setup_mozilla
+	useradd -m -u 1004 dave
+	useradd -m -u 1005 erin
+	useradd -m -u 1006 frank
+	printf '159.0.1-1 6000\n' > /tmp/snaps/firefox
+	printf '159.0-1 1331\n159.0-1 1333\n' > /tmp/snaps/thunderbird
+	## profile <directory> <profile>: a profile directory with one profile
+	profile() {
+		mkdir -p "$1/$2"
+		echo prefs > "$1/$2"/prefs.js
+		printf '[General]\nStartWithLastProfile=1\nVersion=2\n\n[Profile0]\nName=default\nIsRelative=1\nPath=%s\nDefault=1\n' \
+			"$2" > "$1"/profiles.ini
+	}
+	profile "${dave}"/snap/firefox/6000/.config/mozilla/firefox f.default
+	mkdir -p "${dave}"/snap/firefox/common
+	profile "${dave}"/snap/thunderbird/1331/.config/thunderbird old.default
+	profile "${dave}"/snap/thunderbird/1333/.config/thunderbird new.default
+	ln -s 1331 "${dave}"/snap/thunderbird/current
+	profile "${erin}"/snap/thunderbird/common/.thunderbird legacy.default
+	profile "${erin}"/snap/thunderbird/1333/.config/thunderbird xdg.default
+	mkdir -p "${frank}"/.thunderbird/deb.default "${frank}"/.thunderbird/snap.default \
+		"${frank}"/snap/thunderbird/common
+	printf '[Profile0]\nName=default\nIsRelative=1\nPath=deb.default\nDefault=1\n\n[Profile1]\nName=default-release\nIsRelative=1\nPath=snap.default\n\n[InstallFDC34C9F024745EB]\nDefault=deb.default\nLocked=1\n\n[Install1F2E3D4C5B6A7980]\nDefault=snap.default\nLocked=1\n' \
+		> "${frank}"/.thunderbird/profiles.ini
+	ln -s "${frank}"/.thunderbird "${frank}"/snap/thunderbird/common/.thunderbird
+	chown -hR dave:dave "${dave}"
+	chown -hR erin:erin "${erin}"
+	chown -hR frank:frank "${frank}"
+
+	run "dry-run: Enter, Enter" bash -c "printf '\n\n' | ${cleanup} --dry-run"
+	run "--yes" "${cleanup}" --yes
+	echo "-- snaps: $(ls /tmp/snaps | tr '\n' ' ')"
+	files "${dave}"/.mozilla "${dave}"/.thunderbird "${erin}"/.thunderbird "${frank}"/.thunderbird
+	echo "-- profiles.ini of frank"
+	cat "${frank}"/.thunderbird/profiles.ini
+	echo "-- installs.ini of frank"
+	cat "${frank}"/.thunderbird/installs.ini
+}
+
 ## Snap profiles with links that point outside the profile of the user. The
 ##  copy runs as the user, so it fails and no snap is removed, and no file
 ##  outside the home directory changes.
@@ -694,6 +742,7 @@ out=$(mktemp)
 case ${group} in
 	alternatives) group_alternatives ;;
 	mozilla) group_mozilla ;;
+	locations) group_locations ;;
 	links) group_links ;;
 	snaps) group_snaps ;;
 	pin) group_pin ;;

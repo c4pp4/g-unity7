@@ -14,7 +14,10 @@
 ##  profile becomes the default profile of the package only if <adopt> is
 ##  "adopt". A directory without profiles.ini that already has a file or
 ##  directory of the snap profile directory, such as a profile left behind, is
-##  given an empty profiles.ini, and the snap profiles are added to it. The install hash belongs to the package directory
+##  given an empty profiles.ini, and the snap profiles are added to it. If the
+##  snap profile directory is the package profile directory (a link), nothing
+##  is copied, and the snap's default profile becomes the default profile of
+##  the package with <adopt>. The install hash belongs to the package directory
 ##  (/usr/lib/firefox) in profiles.ini and installs.ini; if it is empty, the
 ##  default profile does not change.
 
@@ -31,16 +34,22 @@ die() {
 src=$1 dst=$2 hash=$3 adopt=$4
 [[ -f ${src}/profiles.ini ]] || die "cannot read ${src}/profiles.ini"
 
-## Print the path of the default profile in profiles.ini $1: the one in its
-##  install section, or else the profile with Default=1. The snap uses one
-##  profile for all installs.
+## Print the path of the default profile of the snap in profiles.ini $1: the
+##  one in its first install section other than that of the package (install
+##  hash $2), or else the one in the section of the package, or else the
+##  profile with Default=1. The snap uses one profile for all installs. A snap
+##  profile directory may also have the section of Ubuntu's package from before
+##  the snap, whose directory had the same hash as the G Unity⁷ package.
 moz_default_profile() {
-	awk -F= '
+	awk -F= -v own="[Install${2:-}]" '
 		/^\[/ { section = $0; next }
-		section ~ /^\[Install/ && $1 == "Default" && install == "" { install = $2 }
+		section ~ /^\[Install/ && $1 == "Default" {
+			if (section == own) { if (pkg == "") pkg = $2 }
+			else if (snap == "") snap = $2
+		}
 		section ~ /^\[Profile/ && $1 == "Path" { path[section] = $2 }
 		section ~ /^\[Profile/ && $1 == "Default" && $2 == "1" { def = section }
-		END { if (install != "") print install; else if (def != "") print path[def] }
+		END { if (snap != "") print snap; else if (pkg != "") print pkg; else if (def != "") print path[def] }
 	' "$1" 2>/dev/null || true
 }
 
@@ -84,7 +93,7 @@ moz_claim_profile() {
 moz_merge_profiles() {
 	local src=$1 dst=$2 hash=$3 adopt=$4
 	local def def_new='' n name path rel new i
-	def=$(moz_default_profile "${src}/profiles.ini")
+	def=$(moz_default_profile "${src}/profiles.ini" "${hash}")
 	n=$(sed -n 's/^\[Profile\([0-9]*\)\]$/\1/p' "${dst}/profiles.ini" | sort -n | tail -n 1) || true
 	n=$(( ${n:--1} + 1 ))
 	## Fields separated by \x1f, which keeps an empty name as a field
@@ -115,8 +124,16 @@ moz_merge_profiles() {
 	[[ -z ${adopt} ]] || moz_claim_profile "${dst}" "${hash}" "${def_new}"
 }
 
+[[ ${adopt} == adopt ]] || adopt=
+## The Thunderbird snap links its profile directory to ~/.thunderbird if that
+##  has profiles when the snap starts for the first time (Ubuntu's package
+##  before 24.04). The package then uses the same profiles.
+if [[ -d ${dst} && $(readlink -f -- "${src}") == "$(readlink -f -- "${dst}")" ]]; then
+	echo "${src} is ${dst}, nothing to copy"
+	[[ -z ${adopt} ]] || moz_claim_profile "${dst}" "${hash}" "$(moz_default_profile "${dst}/profiles.ini" "${hash}")"
+	exit 0
+fi
 if [[ -f ${dst}/profiles.ini ]]; then
-	[[ ${adopt} == adopt ]] || adopt=
 	moz_merge_profiles "${src}" "${dst}" "${hash}" "${adopt}"
 	exit 0
 fi
@@ -140,4 +157,4 @@ else
 	chmod go-rwx "${dst}" || die "cannot change the mode of ${dst}"
 fi
 echo "Copied ${src} to ${dst}"
-moz_claim_profile "${dst}" "${hash}" "$(moz_default_profile "${dst}/profiles.ini")"
+moz_claim_profile "${dst}" "${hash}" "$(moz_default_profile "${dst}/profiles.ini" "${hash}")"
