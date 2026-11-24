@@ -4,6 +4,11 @@ OVERLAY_PKG="x11-libs/dee-qt"
 UBUNTU_SRC="dee-qt"
 SOURCE_NAME="dee-qt6"
 GROUP="desktop"
+## The Qt 6 packaging replaces the Qt 5 control and rules of dee-qt
+DEBIAN_REPLACES=(
+	debian/control
+	debian/rules
+)
 
 PATCHES=(
 	Qt6-migration.patch

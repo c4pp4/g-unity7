@@ -239,8 +239,15 @@ overlay_commit=$(git_commit "${OVERLAY_DIR}" "${overlay_paths[@]}")
 cd "${tree}"
 
 ## 3. debian/ changes, made before the Ubuntu patches are applied, because they
-##  may change them (debian/patches/series).
+##  may change them (debian/patches/series). A file of the port replaces a
+##  file of the Ubuntu source only if package.sh lists it in DEBIAN_REPLACES,
+##  so that a file that Ubuntu adds later is not lost unnoticed.
 if [[ -z ${LOCAL:-} && -d ${PKG_DIR}/debian ]]; then
+	while IFS= read -r -d '' file; do
+		file=${file#"${PKG_DIR}"/}
+		[[ -e ${file} && " ${DEBIAN_REPLACES[*]:-} " != *" ${file} "* ]] || continue
+		die "packages/${pkg}/${file} would replace ${file} of the Ubuntu source. Check it and add it to DEBIAN_REPLACES in package.sh."
+	done < <(find "${PKG_DIR}"/debian -type f -print0)
 	cp -a "${PKG_DIR}"/debian/. debian/
 fi
 if declare -F local_prepare >/dev/null; then
@@ -354,7 +361,7 @@ fi
 input=$(input_hash "${OVERLAY_DIR}")
 fingerprint=$( { echo "format ${FORMAT_VERSION}"; printf '%s\n' "${patch_lines[@]}"; } | sha256sum | cut -c1-32)
 
-## 8. Version: <ubuntu version>+gu7.<N>~<series version>.
+## 8. Version: <ubuntu version><mark>+gu7.<N>~<series version>.
 staging_json=$(python3 -I "${REPO_ROOT}"/scripts/lp.py ppa-latest "${SOURCE_NAME}" \
 	--ppa "${PPA_STAGING}" --series "${series}")
 main_json=$(python3 -I "${REPO_ROOT}"/scripts/lp.py ppa-latest "${SOURCE_NAME}" \
@@ -365,6 +372,13 @@ json_get() {
 staging_version=$(json_get "${staging_json}" version)
 staging_fingerprint=$(json_get "${staging_json}" fingerprint)
 
+## The mark between the Ubuntu version and +gu7 (see version_mark). Own
+##  packages, the Debian sources of Firefox and Thunderbird, whose next versions
+##  are higher anyway, and the sources of an older series, which do not change,
+##  have none.
+mark=
+[[ -n ${LOCAL:-} || -n ${DEBIAN_SUITE:-} || -n ${UBUNTU_SERIES:-} ]] || mark=$(version_mark "${ubuntu_version}")
+marked=${ubuntu_version}${mark}
 suffix_re="^(.*)\+${VERSION_TAG}\.([0-9]+)~[0-9.]+$"
 n=1
 needs_review=1
@@ -372,7 +386,9 @@ if [[ ${staging_version} =~ ${suffix_re} ]]; then
 	staging_base=${BASH_REMATCH[1]}
 	staging_n=${BASH_REMATCH[2]}
 	[[ ${staging_fingerprint} == "${fingerprint}" ]] && needs_review=
-	if [[ ${staging_base} == "${ubuntu_version}" ]]; then
+	## A version from before the mark stays up to date until it is deleted;
+	##  Launchpad refuses the lower version with the mark until then
+	if [[ ${staging_base} == "${marked}" || ( -n ${mark} && ${staging_base} == "${ubuntu_version}" ) ]]; then
 		if [[ -z ${needs_review} && -z ${force} ]]; then
 			einfo "${SOURCE_NAME} ${staging_version} in ${PPA_STAGING} is up to date."
 			cat > "${base_dir}"/result.env <<-EOF
@@ -380,21 +396,22 @@ if [[ ${staging_version} =~ ${suffix_re} ]]; then
 				PACKAGE=${pkg}
 				SOURCE=${SOURCE_NAME}
 				VERSION=${staging_version}
+				BASE=${ubuntu_version}
 				FINGERPRINT=${fingerprint}
 				INPUT=${input}
 			EOF
 			remove_trees
 			exit 0
 		fi
-		n=$(( staging_n + 1 ))
+		[[ ${staging_base} != "${marked}" ]] || n=$(( staging_n + 1 ))
 	fi
 fi
 ## Launchpad refuses a version that the staging PPA had, also a deleted one,
-##  which ppa-latest does not show
+##  which ppa-latest does not show. N counts across the series.
 used_n=$(python3 -I "${REPO_ROOT}"/scripts/lp.py ppa-max-n "${SOURCE_NAME}" --ppa "${PPA_STAGING}" \
-	--series "${series}" --base "${ubuntu_version}" --tag "${VERSION_TAG}")
+	--base "${marked}" --tag "${VERSION_TAG}")
 [[ ${used_n} -lt ${n} ]] || n=$(( used_n + 1 ))
-version="${ubuntu_version}+${VERSION_TAG}.${n}~${series_version}"
+version="${marked}+${VERSION_TAG}.${n}~${series_version}"
 
 ## "Changes since" compares with the version that users have from the main PPA.
 changes_since=()
@@ -457,6 +474,7 @@ entry="${work}/changelog.entry"
 	done
 	echo "  * G-Unity7-Fingerprint: ${fingerprint}"
 	echo "  * G-Unity7-Input: ${input}"
+	echo "  * G-Unity7-Base: ${ubuntu_version}"
 	echo
 	echo " -- ${DEBFULLNAME} <${DEBEMAIL}>  $(date -R)"
 	echo
@@ -505,6 +523,7 @@ cat > "${base_dir}"/result.env <<-EOF
 	PACKAGE=${pkg}
 	SOURCE=${SOURCE_NAME}
 	VERSION=${version}
+	BASE=${ubuntu_version}
 	FINGERPRINT=${fingerprint}
 	INPUT=${input}
 	NEEDS_REVIEW=${needs_review}

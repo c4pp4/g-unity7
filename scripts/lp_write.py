@@ -1,7 +1,7 @@
 #!/usr/bin/python3 -I
 """Make Launchpad changes for the G Unity⁷ scripts (authenticated, with
-launchpadlib): copy a version from the staging PPA to the main PPA and retry
-failed builds.
+launchpadlib): copy a version from the staging PPA to the main PPA (and wait
+for copies) and retry failed builds.
 
 Create the credentials file once with scripts/lp_login.py.
 """
@@ -51,14 +51,33 @@ def cmd_copy(args):
     main.copyPackage(source_name=args.source, version=args.version, from_archive=staging,
                      to_series=args.series, to_pocket="Release", include_binaries=True)
     print(f"Copying {args.source} {args.version} to {args.to_ppa}", file=sys.stderr)
+    if args.no_wait:
+        return
+    wait_for(lp, main, [(args.source, args.version)], args.to_ppa, args.series)
+
+
+def wait_for(lp, arch, versions, ppa, series):
+    """Wait until each (source, version) is in the PPA (Pending or Published),
+    print "<source> <status>" for each, and fail with those that did not
+    appear in COPY_TIMEOUT."""
+    missing = list(versions)
     deadline = time.time() + COPY_TIMEOUT
-    while time.time() < deadline:
-        copied = source_of(main, lp, args.source, args.version, args.series)
-        if copied:
-            print(copied.status)
-            return
-        time.sleep(30)
-    sys.exit(f"lp_write.py: {args.source} {args.version} did not appear in {args.to_ppa} in time")
+    while missing and time.time() < deadline:
+        for source, version in list(missing):
+            copied = source_of(arch, lp, source, version, series)
+            if copied:
+                print(source, copied.status, flush=True)
+                missing.remove((source, version))
+        if missing:
+            time.sleep(30)
+    if missing:
+        sys.exit(f"lp_write.py: not in {ppa} in time: {' '.join(f'{s} {v}' for s, v in missing)}")
+
+
+def cmd_wait(args):
+    lp = login(args)
+    versions = [tuple(item.split("=", 1)) for item in args.versions]
+    wait_for(lp, archive(lp, args.ppa), versions, args.ppa, args.series)
 
 
 def cmd_retry(args):
@@ -89,7 +108,14 @@ def main():
     p.add_argument("--from", dest="from_ppa", required=True)
     p.add_argument("--to", dest="to_ppa", required=True)
     p.add_argument("--series", required=True)
+    p.add_argument("--no-wait", action="store_true", help="only ask for the copy (see wait)")
     p.set_defaults(func=cmd_copy)
+
+    p = sub.add_parser("wait", help="wait until copied versions are in a PPA")
+    p.add_argument("versions", nargs="+", metavar="source=version")
+    p.add_argument("--ppa", required=True)
+    p.add_argument("--series", required=True)
+    p.set_defaults(func=cmd_wait)
 
     p = sub.add_parser("retry", help="retry the failed builds of a version")
     p.add_argument("source")

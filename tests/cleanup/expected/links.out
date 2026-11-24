@@ -10,7 +10,7 @@ G Unity⁷ provides a Thunderbird package with Unity's global menu:
 Firefox and Thunderbird (6):
   Firefox: install firefox 159.0.1-1+gu7.1~26.10 from G Unity⁷
   Firefox: install firefox-l10n-cs 159.0.1-1+gu7.1~26.10 from G Unity⁷
-  Firefox: copy /home/mallory/snap/firefox/common/.mozilla/firefox to /home/mallory/.mozilla/firefox
+  Firefox: copy /home/mallory/snap/firefox/common/.mozilla/firefox to /home/mallory/.mozilla/firefox (1 MB)
   Firefox: remove the snap (snapd saves a snapshot of its data)
   Thunderbird: install thunderbird 1:159.0-1+gu7.1~26.10 from G Unity⁷
   Thunderbird: install thunderbird-l10n-cs 1:159.0-1+gu7.1~26.10 from G Unity⁷
@@ -34,9 +34,10 @@ dpkg: warning: downgrading firefox (1:1snap1) to (159.0.1-1+gu7.1~26.10)
 dpkg: warning: downgrading thunderbird (2:1snap1) to (1:159.0-1+gu7.1~26.10)
 Copied /home/mallory/snap/firefox/common/.mozilla/firefox to /home/mallory/.mozilla/firefox
 grep: /home/mallory/.mozilla/firefox/installs.ini: Permission denied
-/usr/libexec/g-unity7/copy-snap-profiles: line 62: /home/mallory/.mozilla/firefox/installs.ini: Permission denied
+/usr/libexec/g-unity7/copy-snap-profiles: line 89: /home/mallory/.mozilla/firefox/installs.ini: Permission denied
 copy-snap-profiles: cannot write /home/mallory/.mozilla/firefox/installs.ini
-g-unity7-cleanup: cannot copy the profiles of mallory; no snap has been removed
+g-unity7-cleanup: cannot copy the firefox profiles of mallory
+g-unity7-cleanup: the firefox snap stays installed, because a copy of its profiles failed; fix the error, such as a full disk, and run g-unity7-cleanup again
 [exit 1]
 state: firefox firefox-l10n-cs thunderbird thunderbird-l10n-cs 
 
@@ -59,7 +60,7 @@ G Unity⁷ provides a Firefox package with Unity's global menu:
 Firefox and Thunderbird (4):
   Firefox: install firefox 159.0.1-1+gu7.1~26.10 from G Unity⁷
   Firefox: install firefox-l10n-cs 159.0.1-1+gu7.1~26.10 from G Unity⁷
-  Firefox: copy /home/mallory/snap/firefox/common/.mozilla/firefox to /home/mallory/.mozilla/firefox
+  Firefox: copy /home/mallory/snap/firefox/common/.mozilla/firefox to /home/mallory/.mozilla/firefox (1 MB)
   Firefox: remove the snap (snapd saves a snapshot of its data)
 
 Packages apt will install (1):
@@ -78,9 +79,9 @@ The following packages will be DOWNGRADED:
 0 upgraded, 1 newly installed, 1 downgraded, 0 to remove and 0 not upgraded.
 After this operation, 0 B of additional disk space will be used.
 dpkg: warning: downgrading firefox (1:1snap1) to (159.0.1-1+gu7.1~26.10)
-cp: (error)
-copy-snap-profiles: cannot copy /home/mallory/snap/firefox/common/.mozilla/firefox
-g-unity7-cleanup: cannot copy the profiles of mallory; no snap has been removed
+copy-snap-profiles: cannot create a temporary directory in /home/mallory/.mozilla
+g-unity7-cleanup: cannot copy the firefox profiles of mallory
+g-unity7-cleanup: the firefox snap stays installed, because a copy of its profiles failed; fix the error, such as a full disk, and run g-unity7-cleanup again
 [exit 1]
 state: firefox firefox-l10n-cs thunderbird thunderbird-l10n-cs 
 
@@ -100,7 +101,7 @@ G Unity⁷ provides a Firefox package with Unity's global menu:
 Firefox and Thunderbird (4):
   Firefox: install firefox 159.0.1-1+gu7.1~26.10 from G Unity⁷
   Firefox: install firefox-l10n-cs 159.0.1-1+gu7.1~26.10 from G Unity⁷
-  Firefox: add the profiles in /home/mallory/snap/firefox/common/.mozilla/firefox to /home/mallory/.mozilla/firefox and make the snap's default profile the default
+  Firefox: add the profiles in /home/mallory/snap/firefox/common/.mozilla/firefox to /home/mallory/.mozilla/firefox (1 MB) and make the snap's default profile the default
   Firefox: remove the snap (snapd saves a snapshot of its data)
 
 Packages apt will install (1):
@@ -119,9 +120,10 @@ The following packages will be DOWNGRADED:
 0 upgraded, 1 newly installed, 1 downgraded, 0 to remove and 0 not upgraded.
 After this operation, 0 B of additional disk space will be used.
 dpkg: warning: downgrading firefox (1:1snap1) to (159.0.1-1+gu7.1~26.10)
-/usr/libexec/g-unity7/copy-snap-profiles: line 141: /home/mallory/.mozilla/firefox/profiles.ini: Permission denied
+/usr/libexec/g-unity7/copy-snap-profiles: line 185: /home/mallory/.mozilla/firefox/profiles.ini: Permission denied
 copy-snap-profiles: cannot write /home/mallory/.mozilla/firefox/profiles.ini
-g-unity7-cleanup: cannot copy the profiles of mallory; no snap has been removed
+g-unity7-cleanup: cannot copy the firefox profiles of mallory
+g-unity7-cleanup: the firefox snap stays installed, because a copy of its profiles failed; fix the error, such as a full disk, and run g-unity7-cleanup again
 [exit 1]
 state: firefox firefox-l10n-cs thunderbird thunderbird-l10n-cs 
 
@@ -143,7 +145,7 @@ G Unity⁷ provides a Firefox package with Unity's global menu:
 Firefox and Thunderbird (4):
   Firefox: install firefox 159.0.1-1+gu7.1~26.10 from G Unity⁷
   Firefox: install firefox-l10n-cs 159.0.1-1+gu7.1~26.10 from G Unity⁷
-  Firefox: copy /home/mallory/snap/firefox/common/.mozilla/firefox to /home/mallory/.mozilla/firefox
+  Firefox: copy /home/mallory/snap/firefox/common/.mozilla/firefox to /home/mallory/.mozilla/firefox (1 MB)
   Firefox: remove the snap (snapd saves a snapshot of its data)
 
 Packages apt will install (1):
@@ -162,9 +164,9 @@ The following packages will be DOWNGRADED:
 0 upgraded, 1 newly installed, 1 downgraded, 0 to remove and 0 not upgraded.
 After this operation, 0 B of additional disk space will be used.
 dpkg: warning: downgrading firefox (1:1snap1) to (159.0.1-1+gu7.1~26.10)
-cp: (error)
-copy-snap-profiles: cannot copy /home/mallory/snap/firefox/common/.mozilla/firefox
-g-unity7-cleanup: cannot copy the profiles of mallory; no snap has been removed
+copy-snap-profiles: cannot create a temporary directory in /home/mallory/.mozilla/firefox
+g-unity7-cleanup: cannot copy the firefox profiles of mallory
+g-unity7-cleanup: the firefox snap stays installed, because a copy of its profiles failed; fix the error, such as a full disk, and run g-unity7-cleanup again
 [exit 1]
 state: firefox firefox-l10n-cs thunderbird thunderbird-l10n-cs 
 
@@ -185,7 +187,7 @@ G Unity⁷ provides a Firefox package with Unity's global menu:
 Firefox and Thunderbird (4):
   Firefox: install firefox 159.0.1-1+gu7.1~26.10 from G Unity⁷
   Firefox: install firefox-l10n-cs 159.0.1-1+gu7.1~26.10 from G Unity⁷
-  Firefox: copy /home/mallory/snap/firefox/common/.mozilla/firefox to /home/mallory/.mozilla/firefox
+  Firefox: copy /home/mallory/snap/firefox/common/.mozilla/firefox to /home/mallory/.mozilla/firefox (1 MB)
   Firefox: remove the snap (snapd saves a snapshot of its data)
 
 Packages apt will install (1):
@@ -205,7 +207,8 @@ The following packages will be DOWNGRADED:
 After this operation, 0 B of additional disk space will be used.
 dpkg: warning: downgrading firefox (1:1snap1) to (159.0.1-1+gu7.1~26.10)
 copy-snap-profiles: cannot read /home/mallory/snap/firefox/common/.mozilla/firefox/profiles.ini
-g-unity7-cleanup: cannot copy the profiles of mallory; no snap has been removed
+g-unity7-cleanup: cannot copy the firefox profiles of mallory
+g-unity7-cleanup: the firefox snap stays installed, because a copy of its profiles failed; fix the error, such as a full disk, and run g-unity7-cleanup again
 [exit 1]
 state: firefox firefox-l10n-cs thunderbird thunderbird-l10n-cs 
 
@@ -226,7 +229,7 @@ G Unity⁷ provides a Firefox package with Unity's global menu:
 Firefox and Thunderbird (4):
   Firefox: install firefox 159.0.1-1+gu7.1~26.10 from G Unity⁷
   Firefox: install firefox-l10n-cs 159.0.1-1+gu7.1~26.10 from G Unity⁷
-  Firefox: add the profiles in /home/mallory/snap/firefox/common/.mozilla/firefox to /home/mallory/.mozilla/firefox and make the snap's default profile the default
+  Firefox: add the profiles in /home/mallory/snap/firefox/common/.mozilla/firefox to /home/mallory/.mozilla/firefox (1 MB) and make the snap's default profile the default
   Firefox: remove the snap (snapd saves a snapshot of its data)
 
 Packages apt will install (1):
@@ -257,6 +260,7 @@ root:root 644 /root/.bashrc
 /root/.bashrc unchanged
 mallory:mallory 755 /home/mallory/.mozilla/
 mallory:mallory 755 /home/mallory/.mozilla/firefox/
+mallory:mallory 600 /home/mallory/.mozilla/firefox/.g-unity7-snap-copy
 mallory:mallory 600 /home/mallory/.mozilla/firefox/installs.ini
 mallory:mallory 755 /home/mallory/.mozilla/firefox/own.default/
 mallory:mallory 644 /home/mallory/.mozilla/firefox/profiles.ini

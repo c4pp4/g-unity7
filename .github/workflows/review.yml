@@ -1,6 +1,9 @@
 ## The approval issue: update it (the cron asks for every hour, GitHub runs it
 ##  a few times a day) and run the commands that the repository owner gives in
-##  its comments (/upload, /reject, /promote, /retry, /ported).
+##  its comments (/upload, /reject, /promote, /retry, /ported). Each command
+##  gets only the secrets that it needs: /upload the signing key (environment
+##  launchpad), /promote and /retry the Launchpad credentials (environment
+##  launchpad-api), the others none.
 name: Review
 
 on:
@@ -53,15 +56,18 @@ jobs:
           overlay-fetch-depth: 0
       - env:
           GITHUB_TOKEN: ${{ github.token }}
+          STAGING_FROZEN: ${{ vars.STAGING_FROZEN }}
         run: scripts/approve.py refresh
 
+  ## /upload signs the source packages
   command:
     if: >-
-      (github.event_name == 'workflow_dispatch' && inputs.command != '') ||
-      (github.event_name == 'issue_comment' &&
-       contains(github.event.issue.labels.*.name, 'approve') &&
-       github.event.comment.author_association == 'OWNER' &&
-       startsWith(github.event.comment.body, '/'))
+      ((github.event_name == 'workflow_dispatch' && inputs.command != '') ||
+       (github.event_name == 'issue_comment' &&
+        contains(github.event.issue.labels.*.name, 'approve') &&
+        github.event.comment.author_association == 'OWNER' &&
+        startsWith(github.event.comment.body, '/'))) &&
+      startsWith((github.event.comment.body || inputs.command), '/upload')
     concurrency:
       group: approve
       queue: max
@@ -90,10 +96,80 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          STAGING_FROZEN: ${{ vars.STAGING_FROZEN }}
+          COMMAND: ${{ github.event.comment.body || inputs.command }}
+        run: scripts/approve.py comment "$COMMAND"
+
+  ## /promote copies to the main PPA and /retry starts a build, both with the
+  ##  Launchpad credentials of the owner
+  command-launchpad-api:
+    if: >-
+      ((github.event_name == 'workflow_dispatch' && inputs.command != '') ||
+       (github.event_name == 'issue_comment' &&
+        contains(github.event.issue.labels.*.name, 'approve') &&
+        github.event.comment.author_association == 'OWNER' &&
+        startsWith(github.event.comment.body, '/'))) &&
+      (startsWith((github.event.comment.body || inputs.command), '/promote') || startsWith((github.event.comment.body || inputs.command), '/retry'))
+    concurrency:
+      group: approve
+      queue: max
+    runs-on: ubuntu-latest
+    container: ubuntu:26.10
+    environment: launchpad-api
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - run: |
+          for i in 1 2 3; do apt-get update -qq && break; [ "$i" -lt 3 ] || exit 1; sleep 60; done
+          apt-get install -y -qq --no-install-recommends git ca-certificates >/dev/null
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          overlay-fetch-depth: 0
+      - env:
+          GITHUB_TOKEN: ${{ github.token }}
           LP_CREDENTIALS: ${{ secrets.LP_CREDENTIALS }}
+          STAGING_FROZEN: ${{ vars.STAGING_FROZEN }}
           COMMAND: ${{ github.event.comment.body || inputs.command }}
         run: |
           export LP_CREDENTIALS_FILE=$(mktemp)
           trap 'rm -f "$LP_CREDENTIALS_FILE"' EXIT
           printf '%s\n' "$LP_CREDENTIALS" > "$LP_CREDENTIALS_FILE"
           scripts/approve.py comment "$COMMAND"
+
+  ## /reject, /ported and unknown commands only change the issue
+  command-issue:
+    if: >-
+      ((github.event_name == 'workflow_dispatch' && inputs.command != '') ||
+       (github.event_name == 'issue_comment' &&
+        contains(github.event.issue.labels.*.name, 'approve') &&
+        github.event.comment.author_association == 'OWNER' &&
+        startsWith(github.event.comment.body, '/'))) &&
+      !startsWith((github.event.comment.body || inputs.command), '/upload') && !startsWith((github.event.comment.body || inputs.command), '/promote') &&
+      !startsWith((github.event.comment.body || inputs.command), '/retry')
+    concurrency:
+      group: approve
+      queue: max
+    runs-on: ubuntu-latest
+    container: ubuntu:26.10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - run: |
+          for i in 1 2 3; do apt-get update -qq && break; [ "$i" -lt 3 ] || exit 1; sleep 60; done
+          apt-get install -y -qq --no-install-recommends git ca-certificates >/dev/null
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          overlay-fetch-depth: 0
+      - env:
+          GITHUB_TOKEN: ${{ github.token }}
+          STAGING_FROZEN: ${{ vars.STAGING_FROZEN }}
+          COMMAND: ${{ github.event.comment.body || inputs.command }}
+        run: scripts/approve.py comment "$COMMAND"

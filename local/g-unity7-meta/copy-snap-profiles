@@ -5,7 +5,7 @@
 ##  in them with a link, so the copy must not have more rights than the user.
 ##
 ## Usage: copy-snap-profiles <snap profile directory> <package profile directory>
-##          <install hash> <adopt>
+##          <install hash> <adopt> [<switch id>]
 ##
 ##  If the package profile directory has no profiles.ini, the snap profiles are
 ##  copied as they are, and the snap's default profile becomes the default
@@ -20,6 +20,14 @@
 ##  the package with <adopt>. The install hash belongs to the package directory
 ##  (/usr/lib/firefox) in profiles.ini and installs.ini; if it is empty, the
 ##  default profile does not change.
+##
+##  Each copy goes to a temporary directory next to the package profile
+##  directory first and is moved into place when it is complete, so that an
+##  error, such as a full disk, leaves no part of a profile behind. With
+##  <switch id> (g-unity7-cleanup gives one for each switch from a snap to the
+##  package), a copy that was completed in the same switch is not made again,
+##  such as when the copy of another user stopped the run, unless the snap
+##  changed the profiles since then.
 
 set -euo pipefail
 umask 077
@@ -30,9 +38,28 @@ die() {
 }
 
 [[ ${EUID} -ne 0 ]] || die "run it as the user whose profiles they are, not as root"
-[[ $# -eq 4 ]] || die "usage: copy-snap-profiles <snap profile directory> <package profile directory> <install hash> <adopt>"
-src=$1 dst=$2 hash=$3 adopt=$4
+[[ $# -eq 4 || $# -eq 5 ]] \
+	|| die "usage: copy-snap-profiles <snap profile directory> <package profile directory> <install hash> <adopt> [<switch id>]"
+src=$1 dst=$2 hash=$3 adopt=$4 switch=${5:-}
 [[ -f ${src}/profiles.ini ]] || die "cannot read ${src}/profiles.ini"
+## Written to the package profile directory when the copy of a switch is done
+marker=.g-unity7-snap-copy
+
+## The temporary directory of the copies, removed on exit
+tmp=
+trap '[[ -z ${tmp} ]] || rm -rf -- "${tmp}"' EXIT
+
+## Create the temporary directory in directory $1, on the file system of the
+##  package profile directory, so that a complete copy is only renamed.
+make_tmp() {
+	tmp=$(mktemp -d "$1/.g-unity7-copy.XXXXXX" 2>/dev/null) || die "cannot create a temporary directory in $1"
+}
+
+## Record that the copy of this switch is done
+mark_done() {
+	[[ -z ${switch} ]] || printf '%s %s\n' "${switch}" "${src}" > "${dst}/${marker}" \
+		|| die "cannot write ${dst}/${marker}"
+}
 
 ## Print the path of the default profile of the snap in profiles.ini $1: the
 ##  profile with Default=1, or else the only profile. In a snap, Firefox and
@@ -85,30 +112,29 @@ moz_claim_profile() {
 ##  default profile becomes the default profile of the package (install hash
 ##  $3); otherwise the default stays. Only profiles in a directory of their own
 ##  in the snap profile directory are copied, as Firefox and Thunderbird create
-##  them, not those with an absolute path or a path with "/".
+##  them, not those with an absolute path or a path with "/". All profiles are
+##  copied to the temporary directory before the first one is moved into
+##  place, so that an error leaves the package profile directory as it was.
 moz_merge_profiles() {
 	local src=$1 dst=$2 hash=$3 adopt=$4
-	local def def_new='' n name path rel new i
+	local def def_new='' n name path rel new i entry entries=()
 	def=$(moz_default_profile "${src}/profiles.ini")
 	n=$(sed -n 's/^\[Profile\([0-9]*\)\]$/\1/p' "${dst}/profiles.ini" | sort -n | tail -n 1) || true
 	n=$(( ${n:--1} + 1 ))
+	make_tmp "${dst}"
 	## Fields separated by \x1f, which keeps an empty name as a field
 	while IFS=$'\x1f' read -r name path rel; do
 		[[ ${rel} == 1 && -n ${path} && ${path} != */* && ${path} != . && ${path} != .. \
 			&& -d ${src}/${path} ]] || continue
 		new=${path}
-		[[ ! -e ${dst}/${new} ]] || new=${path}-snap
+		[[ ! -e ${dst}/${new} && ! -e ${tmp}/${new} ]] || new=${path}-snap
 		i=2
-		while [[ -e ${dst}/${new} ]]; do
+		while [[ -e ${dst}/${new} || -e ${tmp}/${new} ]]; do
 			new=${path}-snap${i}
 			i=$(( i + 1 ))
 		done
-		cp -a "${src}/${path}" "${dst}/${new}" || die "cannot copy ${src}/${path}"
-		printf '\n[Profile%s]\nName=%s (snap)\nIsRelative=1\nPath=%s\n' "${n}" "${name}" "${new}" \
-			>> "${dst}/profiles.ini" || die "cannot write ${dst}/profiles.ini"
-		echo "Copied ${src}/${path} to ${dst}/${new}"
-		n=$(( n + 1 ))
-		[[ ${path} != "${def}" ]] || def_new=${new}
+		cp -a "${src}/${path}" "${tmp}/${new}" || die "cannot copy ${src}/${path}"
+		entries+=( "${name}"$'\x1f'"${path}"$'\x1f'"${new}" )
 	done < <(awk '
 		function out() { if (sec ~ /^\[Profile[0-9]+\]$/ && path != "") printf "%s\037%s\037%s\n", name, path, rel }
 		/^\[/ { out(); sec = $0; name = path = rel = ""; next }
@@ -117,10 +143,27 @@ moz_merge_profiles() {
 		k == "Path" { path = v }
 		k == "IsRelative" { rel = v }
 		END { out() }' "${src}/profiles.ini")
+	for entry in "${entries[@]}"; do
+		IFS=$'\x1f' read -r name path new <<< "${entry}"
+		mv -T -- "${tmp}/${new}" "${dst}/${new}" || die "cannot move the copy of ${src}/${path} to ${dst}/${new}"
+		printf '\n[Profile%s]\nName=%s (snap)\nIsRelative=1\nPath=%s\n' "${n}" "${name}" "${new}" \
+			>> "${dst}/profiles.ini" || die "cannot write ${dst}/profiles.ini"
+		echo "Copied ${src}/${path} to ${dst}/${new}"
+		n=$(( n + 1 ))
+		[[ ${path} != "${def}" ]] || def_new=${new}
+	done
 	[[ -z ${adopt} ]] || moz_claim_profile "${dst}" "${hash}" "${def_new}"
 }
 
 [[ ${adopt} == adopt ]] || adopt=
+## A copy of this switch is not made again, unless the snap changed the
+##  profiles since then
+if [[ -n ${switch} && -f ${dst}/${marker} && ! -L ${dst}/${marker} \
+	&& $(< "${dst}/${marker}") == "${switch} ${src}" \
+	&& -z $(find "${src}/" -newer "${dst}/${marker}" -print -quit 2>/dev/null) ]]; then
+	echo "${src} was copied to ${dst} before, nothing to copy"
+	exit 0
+fi
 ## The Thunderbird snap links its profile directory to ~/.thunderbird if that
 ##  has profiles when the snap starts for the first time (Ubuntu's package
 ##  before 24.04). The package then uses the same profiles.
@@ -131,6 +174,7 @@ if [[ -d ${dst} && $(readlink -f -- "${src}") == "$(readlink -f -- "${dst}")" ]]
 fi
 if [[ -f ${dst}/profiles.ini ]]; then
 	moz_merge_profiles "${src}" "${dst}" "${hash}" "${adopt}"
+	mark_done
 	exit 0
 fi
 if [[ -d ${dst} ]]; then
@@ -141,16 +185,28 @@ if [[ -d ${dst} ]]; then
 			printf '[General]\nStartWithLastProfile=1\nVersion=2\n' > "${dst}/profiles.ini" \
 				|| die "cannot write ${dst}/profiles.ini"
 			moz_merge_profiles "${src}" "${dst}" "${hash}" adopt
+			mark_done
 			exit 0
 		fi
 	done
-	cp -a "${src}/." "${dst}/" || die "cannot copy ${src}"
+	make_tmp "${dst}"
+	cp -a "${src}/." "${tmp}/" || die "cannot copy ${src}"
+	## profiles.ini last: without it, the directory is not a profile directory
+	for path in "${tmp}"/* "${tmp}"/.[!.]* "${tmp}"/..?*; do
+		[[ -e ${path} || -L ${path} ]] || continue
+		[[ ${path##*/} != profiles.ini ]] || continue
+		mv -T -- "${path}" "${dst}/${path##*/}" || die "cannot move the copy of ${src}/${path##*/} to ${dst}"
+	done
+	mv -T -- "${tmp}/profiles.ini" "${dst}/profiles.ini" || die "cannot move the copy of ${src}/profiles.ini to ${dst}"
 else
 	mkdir -p "$(dirname "${dst}")" || die "cannot create $(dirname "${dst}")"
-	cp -a "${src}" "${dst}" || die "cannot copy ${src}"
+	make_tmp "$(dirname "${dst}")"
+	cp -a "${src}" "${tmp}/copy" || die "cannot copy ${src}"
 	## Private, as Firefox and Thunderbird create it. cp keeps the mode of the
 	##  snap directory, which other users can read.
-	chmod go-rwx "${dst}" || die "cannot change the mode of ${dst}"
+	chmod go-rwx "${tmp}/copy" || die "cannot change the mode of the copy of ${src}"
+	mv -T -- "${tmp}/copy" "${dst}" || die "cannot move the copy of ${src} to ${dst}"
 fi
 echo "Copied ${src} to ${dst}"
 moz_claim_profile "${dst}" "${hash}" "$(moz_default_profile "${dst}/profiles.ini")"
+mark_done

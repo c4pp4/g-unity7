@@ -1,0 +1,11 @@
+## Pull requests that update the actions, which the workflows pin to the commit
+##  of a version with the version in a comment, once a week. The composite
+##  action in .github/actions/setup pins actions/checkout too.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directories:
+      - /
+      - /.github/actions/setup
+    schedule:
+      interval: weekly

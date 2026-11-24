@@ -1,8 +1,8 @@
 #!/bin/sh
 set -e
 
-## The note of g-unity7-cleanup that the system comes from the Ubuntu Unity
-##  image
+## The notes of g-unity7-cleanup: the system comes from the Ubuntu Unity image,
+##  and the switches from a snap to the package that have not finished
 if [ "$1" = purge ]; then
 	rm -rf /var/lib/g-unity7
 fi

@@ -1,12 +1,15 @@
 ## Build the source packages whose Ubuntu version or input changed. Upload
 ##  those with unchanged patches to the staging PPA, and add the others to the
-##  approval issue for review (/upload). Then check that g-unity7-desktop
-##  installs from staging as intended.
+##  approval issue for review (/upload). With the repository variable
+##  STAGING_FROZEN, all of them wait for review, such as during the test before
+##  a promotion. Then check that g-unity7-desktop installs from staging as
+##  intended. GitHub starts the scheduled runs hours late, so there are two.
 name: PPA
 
 on:
   schedule:
     - cron: '17 3 * * *'
+    - cron: '17 15 * * *'
   workflow_dispatch:
     inputs:
       packages:
@@ -44,6 +47,8 @@ jobs:
       issues: read
     outputs:
       packages: ${{ steps.plan.outputs.packages }}
+      result: ${{ steps.plan.outputs.result }}
+      record: ${{ steps.plan.outputs.record }}
       series: ${{ steps.setup.outputs.series }}
     steps:
       - run: |
@@ -61,9 +66,19 @@ jobs:
           FORCE: ${{ inputs.force && '--force' || '' }}
         run: |
           scripts/approve.py state > state.json
-          # An assignment fails the step when plan.sh fails, an echo argument does not
-          packages=$(scripts/plan.sh $FORCE --state state.json $PACKAGES)
+          # An assignment fails the step when plan.sh fails, an echo argument does not.
+          #  plan.sh fails only when no package could be checked.
+          packages=$(scripts/plan.sh $FORCE --state state.json --errors plan.json $PACKAGES)
           echo "packages=$packages" >> "$GITHUB_OUTPUT"
+          echo "result=$(cat plan.json)" >> "$GITHUB_OUTPUT"
+          # The upload job also runs without builds to show the packages that
+          #  could not be checked in the issue, or to drop them once they can be
+          record=$(python3 -I -c '
+          import json
+          plan, state = json.load(open("plan.json")), json.load(open("state.json"))
+          known = state.get("plan_errors", {})
+          print("true" if plan["errors"] or any(n in known for n in plan["checked"]) else "false")')
+          echo "record=$record" >> "$GITHUB_OUTPUT"
 
   build:
     needs: plan
@@ -110,7 +125,8 @@ jobs:
 
   upload:
     needs: [plan, build]
-    if: always() && needs.build.result != 'skipped'
+    ## !cancelled(): a cancelled run uploads nothing (always() would run it)
+    if: ${{ !cancelled() && needs.plan.result == 'success' && (needs.build.result != 'skipped' || needs.plan.outputs.record == 'true') }}
     ## This job and review.yml both rewrite the approval issue after minutes of
     ##  Launchpad queries, so they run one at a time, or one would drop the
     ##  changes of the other. queue: max keeps all waiting runs; by default, a
@@ -140,7 +156,8 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           overlay-fetch-depth: 0
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      - if: needs.build.result != 'skipped'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: source-*
           path: artifacts
@@ -149,6 +166,8 @@ jobs:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
           PLANNED: ${{ needs.plan.outputs.packages }}
+          PLAN_RESULT: ${{ needs.plan.outputs.result }}
+          STAGING_FROZEN: ${{ vars.STAGING_FROZEN }}
         run: |
           # A single artifact is extracted into artifacts/ itself, not into
           #  artifacts/source-<package>/
@@ -159,6 +178,7 @@ jobs:
             find artifacts -mindepth 1 -maxdepth 1 ! -name source-"$pkg" -exec mv -t artifacts/source-"$pkg" {} +
           fi
           review=()
+          uploaded=()
           failed=
           for dir in artifacts/source-*; do
             [ -d "$dir" ] || continue
@@ -175,25 +195,36 @@ jobs:
               continue
             fi
             [ "$status" = built ] || continue
-            if [ -n "$needs_review" ]; then
+            if [ -n "$needs_review" ] || [ -n "$STAGING_FROZEN" ]; then
               review+=( build/"$SERIES"/"$pkg" )
             else
-              scripts/upload.sh "$pkg" || failed=1
+              if scripts/upload.sh "$pkg"; then
+                uploaded+=( --uploaded build/"$SERIES"/"$pkg" )
+              else
+                failed=1
+              fi
               # Launchpad refuses uploads that follow each other closely
               sleep 60
             fi
           done
-          # Also shows the planned packages whose build failed in the issue
-          scripts/approve.py add-review --run-id "$GITHUB_RUN_ID" --planned "$PLANNED" "${review[@]}"
+          # Also shows the planned packages whose build failed, and those that
+          #  plan.sh could not check, in the issue
+          scripts/approve.py add-review --run-id "$GITHUB_RUN_ID" --planned "$PLANNED" \
+            --plan "$PLAN_RESULT" "${uploaded[@]}" "${review[@]}"
           [ -z "$failed" ]
 
-  ## g-unity7-desktop must install from staging without PulseAudio or build
-  ##  tools, and with the G Unity⁷ versions of the packages in staging
+  ## g-unity7-desktop must install from staging, and from the main PPA once it
+  ##  has it, without PulseAudio or build tools, and with the G Unity⁷ versions
+  ##  of the packages in the PPA
   staging:
     needs: [plan, upload]
-    if: always()
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     container: ubuntu:26.10
+    strategy:
+      fail-fast: false
+      matrix:
+        ppa: [staging, main]
     steps:
       - run: |
           for i in 1 2 3; do apt-get update -qq && break; [ "$i" -lt 3 ] || exit 1; sleep 60; done
@@ -201,4 +232,4 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - run: tests/staging/check.sh
+      - run: tests/staging/check.sh ${{ matrix.ppa }}

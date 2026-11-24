@@ -18,6 +18,8 @@ debian_edit() {
 	sed -i -e "s/^X-GNOME-Gettext-Domain=indicator-session$/X-GNOME-Gettext-Domain=unity-help/" \
 		debian/g-unity7/unity-yelp.desktop || return 1
 	grep -qx "X-GNOME-Gettext-Domain=unity-help" debian/g-unity7/unity-yelp.desktop || return 1
+	# Ubuntu has no install file; one that it adds must not be replaced #
+	[[ ! -e debian/indicator-session.install ]] || return 1
 	echo "debian/g-unity7/unity-yelp.desktop usr/share/applications/" > debian/indicator-session.install || return 1
 }
 

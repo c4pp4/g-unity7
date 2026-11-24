@@ -6,8 +6,8 @@ GROUP="desktop"
 
 debian_edit() {
 	# unity-session-quit from unity-session instead of gnome-session-quit #
-	sed -i -e "s/^\( *\)gnome-session-bin,$/\1unity-session (>= 49.4+gu7.5~),/" debian/control || return 1
-	grep -q "^ *unity-session (>= 49.4+gu7.5~),$" debian/control || return 1
+	sed -i -e "s/^\( *\)gnome-session-bin,$/\1unity-session (>= 49.4a+gu7),/" debian/control || return 1
+	grep -q "^ *unity-session (>= 49.4a+gu7),$" debian/control || return 1
 	! grep -q "gnome-session" debian/control || return 1
 }
 

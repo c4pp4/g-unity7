@@ -10,8 +10,8 @@ debian_edit() {
 	local f
 
 	# The G Unity⁷ cinnamon-session has HiddenUnderSystemd and the session fixes #
-	sed -i -e "s/^\( *\)cinnamon-session,$/\1cinnamon-session (>= 6.6.4-1+gu7),/" debian/control || return 1
-	grep -q "^ *cinnamon-session (>= 6.6.4-1+gu7),$" debian/control || return 1
+	sed -i -e "s/^\( *\)cinnamon-session,$/\1cinnamon-session (>= 6.6.4-1a+gu7),/" debian/control || return 1
+	grep -q "^ *cinnamon-session (>= 6.6.4-1a+gu7),$" debian/control || return 1
 
 	# pactl for release-sound-card-at-session-end.patch. PipeWire only suggests #
 	#  pulseaudio-utils #
@@ -59,7 +59,7 @@ debian_edit() {
 	install -m 644 "${PKG_DIR}"/85unity-session_appmenu-gtk-module debian/g-unity7/ || return 1
 	echo "debian/g-unity7/85unity-session_appmenu-gtk-module etc/X11/Xsession.d/" >> debian/unity-session.install || return 1
 	grep -Fqx "debian/g-unity7/85unity-session_appmenu-gtk-module etc/X11/Xsession.d/" debian/unity-session.install || return 1
-	sed -i -e "s/^\( *\)cinnamon-session (>= 6.6.4-1+gu7),$/\1appmenu-gtk3-module,\n&/" debian/control || return 1
+	sed -i -e "s/^\( *\)cinnamon-session (>= 6.6.4-1a+gu7),$/\1appmenu-gtk3-module,\n&/" debian/control || return 1
 	grep -q "^ *appmenu-gtk3-module,$" debian/control || return 1
 
 	# Use the session's accessibility bus instead of the one the greeter left, as #
@@ -67,6 +67,11 @@ debian_edit() {
 	install -m 644 "${PKG_DIR}"/99unity-session_a11y-bus debian/g-unity7/ || return 1
 	echo "debian/g-unity7/99unity-session_a11y-bus etc/X11/Xsession.d/" >> debian/unity-session.install || return 1
 	grep -Fqx "debian/g-unity7/99unity-session_a11y-bus etc/X11/Xsession.d/" debian/unity-session.install || return 1
+
+	# Remove the Xsession.d scripts when the Ubuntu version replaces this one #
+	#  (ppa-purge) #
+	prerm_remove_on_downgrade unity-session /etc/X11/Xsession.d/85unity-session_appmenu-gtk-module \
+		/etc/X11/Xsession.d/99unity-session_a11y-bus || return 1
 }
 
 src_edit() {

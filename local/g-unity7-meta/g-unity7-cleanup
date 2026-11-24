@@ -134,8 +134,12 @@ die() {
 
 [[ -n ${dry_run} || ${EUID} -eq 0 ]] || die "run as root (sudo g-unity7-cleanup) or with --dry-run"
 
+## Succeed if package $1 is installed, for any architecture (a Multi-Arch
+##  package has a status for each one)
 installed() {
-	[[ $(dpkg-query -W -f='${db:Status-Status}' "$1" 2>/dev/null) == installed ]]
+	local status
+	status=$(dpkg-query -W -f='${db:Status-Status}\n' "$1" 2>/dev/null) || return 1
+	[[ $'\n'${status}$'\n' == *$'\n'installed$'\n'* ]]
 }
 
 installed "${meta}" || die "${meta} is not installed"
@@ -462,6 +466,37 @@ fi
 ##  as well; Evolution is mentioned if it is installed instead of Thunderbird.
 moz_install=() moz_snap_remove=() moz_copy=() moz_lines=() homes_noted=
 
+## A switch from a snap to the package starts before the package is installed:
+##  /var/lib/g-unity7/switch-<package> holds its ID until the snap is removed.
+##  When a run stops in between, such as when the copy of a profile failed,
+##  the next run continues the switch: the snap's default profile still becomes
+##  the default profile of the package that the run installed, and
+##  copy-snap-profiles does not make the copies of the switch again (it writes
+##  .g-unity7-snap-copy to the package profile directory), unless the snap
+##  changed the profiles since then. A run that does not remove the snap drops
+##  the file of its switch.
+switch_dir=/var/lib/g-unity7
+copy_marker=.g-unity7-snap-copy
+## The KiB that the chosen copies need on each file system (mount point)
+declare -A space_needed=()
+## The free space that a copy leaves at least, in KiB
+space_spare=102400
+
+## Print the free space in KiB and the mount point of the file system of path
+##  $1, or of its nearest existing parent directory.
+free_space() {
+	local path=$1
+	while [[ ! -e ${path} && ${path} == /?* ]]; do
+		path=${path%/*}
+	done
+	df -Pk -- "${path:-/}" 2>/dev/null | awk 'NR == 2 { print $4, $6 }'
+}
+
+## Print a size in KiB in MB, rounded up
+in_mb() {
+	echo "$(( ($1 + 1023) / 1024 )) MB"
+}
+
 ## Print the version of $1 in the G Unity⁷ PPA or the staging PPA, if any.
 ppa_version() {
 	LC_ALL=C apt-cache madison "$1" 2>/dev/null \
@@ -598,7 +633,8 @@ moz_choice() {
 	local pkg=$1 legacy=$2 xdg=$3 deb_profile=$4 app=$5 hash=$6 alt=${7:-}
 	local ppa status deb_installed= snap= snap_version= snap_rev= upstream users=() copy_users=()
 	local copy_text options=() actions=() default=1 i answer entry user home src name
-	local -A shared=()
+	local switch_id= adopt=adopt size free mount marker
+	local -A shared=() copied=() sizes=() need=()
 	ppa=$(ppa_version "${pkg}")
 	[[ -n ${ppa} ]] || return 0
 	if [[ -n ${spared[${pkg}]:-} ]]; then
@@ -636,22 +672,48 @@ moz_choice() {
 			return 0
 		fi
 		mapfile -t users < <(snap_profiles "${pkg}" "${legacy}" "${xdg}" "${snap_rev}")
-		## The Thunderbird snap links its profile directory to ~/.thunderbird
-		##  if that has profiles when the snap starts for the first time
-		##  (Ubuntu's package before 24.04). The package then uses the same
-		##  profiles, so there is nothing to copy.
+		## An unfinished switch installed the package, which was not used yet
+		[[ ! -f ${switch_dir}/switch-${pkg} ]] || switch_id=$(< "${switch_dir}/switch-${pkg}")
+		[[ -z ${deb_installed} || -n ${switch_id} ]] || adopt=
 		for entry in "${users[@]}"; do
 			IFS=: read -r user home src <<< "${entry}"
+			marker=${home}/${deb_profile}/${copy_marker}
+			## The Thunderbird snap links its profile directory to
+			##  ~/.thunderbird if that has profiles when the snap starts for
+			##  the first time (Ubuntu's package before 24.04). The package
+			##  then uses the same profiles, so there is nothing to copy.
 			if [[ $(readlink -f -- "${src}") == "$(readlink -f -- "${home}/${deb_profile}")" ]]; then
 				shared[${entry}]=1
+			elif [[ -n ${switch_id} && -f ${marker} && ! -L ${marker} && $(< "${marker}") == "${switch_id} ${src}" \
+				&& -z $(find "${src}/" -newer "${marker}" -print -quit 2>/dev/null) ]]; then
+				copied[${entry}]=1
 			else
 				copy_users+=( "${user}" )
+				size=$(du -sk -- "${src}/" 2>/dev/null | cut -f1) || size=
+				sizes[${entry}]=${size:-0}
+				read -r free mount < <(free_space "${home}/${deb_profile}") || true
+				[[ -z ${mount} ]] || need[${mount}]=$(( ${need[${mount}]:-0} + ${size:-0} ))
 			fi
 		done
 		if [[ ${EUID} -ne 0 && -z ${homes_noted} ]] && homes_hidden; then
 			moz_lines+=( "Without root, the snap profiles of other users are not shown (sudo g-unity7-cleanup --dry-run shows them)" )
 			homes_noted=1
 		fi
+		## Root cannot read some home directories, such as a network one
+		if [[ ${EUID} -eq 0 ]]; then
+			while read -r entry; do
+				[[ -x ${entry#*:} ]] \
+					|| moz_lines+=( "${app}: the home directory ${entry#*:} is not accessible; its snap profiles are not copied" )
+			done < <(homes)
+		fi
+		## A copy must fit, with the copies already chosen
+		for mount in "${!need[@]}"; do
+			read -r free _ < <(free_space "${mount}") || true
+			if [[ -n ${free} ]] && (( ${space_needed[${mount}]:-0} + need[${mount}] + space_spare > free )); then
+				moz_lines+=( "${app}: unchanged; the copy of the snap profiles needs $(in_mb "${need[${mount}]}") in ${mount}, which has $(in_mb "${free}") free. Free some space and run g-unity7-cleanup again." )
+				return 0
+			fi
+		done
 	fi
 
 	copy_text=
@@ -728,21 +790,30 @@ moz_choice() {
 		moz_lines+=( "${app}: install ${name} ${ppa} from G Unity⁷" )
 	done < <(moz_l10n "${pkg}" "${ppa}")
 	[[ -n ${snap} ]] || return 0
+	for mount in "${!need[@]}"; do
+		space_needed[${mount}]=$(( ${space_needed[${mount}]:-0} + need[${mount}] ))
+	done
 	## The snap's default profile becomes the default, unless the package was
 	##  already installed and has its own default profile
 	for entry in "${users[@]}"; do
 		IFS=: read -r user home src <<< "${entry}"
-		moz_copy+=( "${user}:${src}:${home}/${deb_profile}:${hash}:${deb_installed:-adopt}:${pkg}" )
-		if [[ -n ${shared[${entry}]:-} && -n ${deb_installed} ]]; then
+		if [[ -n ${copied[${entry}]:-} ]]; then
+			moz_lines+=( "${app}: ${src} was copied to ${home}/${deb_profile} before, nothing to copy" )
+			continue
+		fi
+		moz_copy+=( "${user}:${src}:${home}/${deb_profile}:${hash}:${adopt}:${pkg}" )
+		size=
+		[[ -z ${sizes[${entry}]:-} ]] || size=" ($(in_mb "${sizes[${entry}]}"))"
+		if [[ -n ${shared[${entry}]:-} && -z ${adopt} ]]; then
 			moz_lines+=( "${app}: the snap uses ${home}/${deb_profile}, nothing to copy" )
 		elif [[ -n ${shared[${entry}]:-} ]]; then
 			moz_lines+=( "${app}: the snap uses ${home}/${deb_profile}, nothing to copy; make the snap's default profile the default" )
 		elif [[ ! -f ${home}/${deb_profile}/profiles.ini ]]; then
-			moz_lines+=( "${app}: copy ${src} to ${home}/${deb_profile}" )
-		elif [[ -n ${deb_installed} ]]; then
-			moz_lines+=( "${app}: add the profiles in ${src} to ${home}/${deb_profile}; the default profile stays" )
+			moz_lines+=( "${app}: copy ${src} to ${home}/${deb_profile}${size}" )
+		elif [[ -z ${adopt} ]]; then
+			moz_lines+=( "${app}: add the profiles in ${src} to ${home}/${deb_profile}${size}; the default profile stays" )
 		else
-			moz_lines+=( "${app}: add the profiles in ${src} to ${home}/${deb_profile} and make the snap's default profile the default" )
+			moz_lines+=( "${app}: add the profiles in ${src} to ${home}/${deb_profile}${size} and make the snap's default profile the default" )
 		fi
 	done
 	moz_snap_remove+=( "${pkg}" )
@@ -1200,6 +1271,18 @@ fi
 ## The G Unity⁷ Firefox and Thunderbird packages (a lower version than the
 ##  Ubuntu packages; their pin comes with them), then the snap profiles and the
 ##  snaps.
+## The switch from each snap starts before its package is installed (see
+##  switch_dir). The file of a snap that this run does not remove is from a
+##  switch that was given up.
+for file in "${switch_dir}"/switch-*; do
+	[[ -e ${file} ]] || continue
+	[[ " ${moz_snap_remove[*]} " == *" ${file##*/switch-} "* ]] || rm -f -- "${file}"
+done
+for name in "${moz_snap_remove[@]}"; do
+	[[ ! -s ${switch_dir}/switch-${name} ]] || continue
+	mkdir -p "${switch_dir}"
+	printf '%s-%s\n' "$(date -u +%Y%m%dT%H%M%SZ)" "$$" > "${switch_dir}/switch-${name}"
+done
 if [[ ${#moz_install[@]} -gt 0 ]]; then
 	apt-get -y "${apt_lock[@]}" --allow-downgrades install "${moz_install[@]}"
 fi
@@ -1215,15 +1298,25 @@ for name in "${moz_snap_remove[@]}"; do
 		moz_running[${name}]=1
 	fi
 done
+## A copy that fails keeps its snap installed, and the copies of the other
+##  users are still made; the next run does not make them again.
+declare -A moz_copy_failed=()
 for entry in "${moz_copy[@]}"; do
 	IFS=: read -r user src dst hash adopt name <<< "${entry}"
 	[[ -z ${moz_running[${name}]:-} ]] || continue
-	setpriv --reuid="${user}" --regid="$(id -g "${user}")" --init-groups --reset-env \
-		"${copy_profiles}" "${src}" "${dst}" "${hash}" "${adopt}" \
-		|| die "cannot copy the profiles of ${user}; no snap has been removed"
+	if ! setpriv --reuid="${user}" --regid="$(id -g "${user}")" --init-groups --reset-env \
+		"${copy_profiles}" "${src}" "${dst}" "${hash}" "${adopt}" "$(< "${switch_dir}/switch-${name}")"; then
+		echo "g-unity7-cleanup: cannot copy the ${name} profiles of ${user}" >&2
+		moz_copy_failed[${name}]=1
+	fi
 done
 moz_failed=() moz_left=()
 for name in "${moz_snap_remove[@]}"; do
+	if [[ -n ${moz_copy_failed[${name}]:-} ]]; then
+		echo "g-unity7-cleanup: the ${name} snap stays installed, because a copy of its profiles failed; fix the error, such as a full disk, and run g-unity7-cleanup again" >&2
+		moz_left+=( "${name}" )
+		continue
+	fi
 	if [[ -n ${moz_running[${name}]:-} ]]; then
 		echo "g-unity7-cleanup: the ${name} snap was started; close it and run g-unity7-cleanup again" >&2
 		moz_left+=( "${name}" )
@@ -1236,9 +1329,12 @@ for name in "${moz_snap_remove[@]}"; do
 		continue
 	fi
 	snap_orphans_remove "${name}"
-	snap remove "${name}" || moz_failed+=( "${name}" )
+	if snap remove "${name}"; then
+		rm -f -- "${switch_dir}/switch-${name}"
+	else
+		moz_failed+=( "${name}" )
+	fi
 done
-## Running the script again would copy the profiles once more
 if [[ ${#moz_failed[@]} -gt 1 ]]; then
 	echo "g-unity7-cleanup: cannot remove the $(and_list "${moz_failed[@]}") snaps; the profiles have been copied" >&2
 elif [[ ${#moz_failed[@]} -eq 1 ]]; then

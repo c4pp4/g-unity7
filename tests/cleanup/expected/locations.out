@@ -12,12 +12,12 @@ G Unity⁷ provides a Thunderbird package with Unity's global menu:
 Firefox and Thunderbird (10):
   Firefox: install firefox 159.0.1-1+gu7.1~26.10 from G Unity⁷
   Firefox: install firefox-l10n-cs 159.0.1-1+gu7.1~26.10 from G Unity⁷
-  Firefox: copy /home/dave/snap/firefox/6000/.config/mozilla/firefox to /home/dave/.mozilla/firefox
+  Firefox: copy /home/dave/snap/firefox/6000/.config/mozilla/firefox to /home/dave/.mozilla/firefox (1 MB)
   Firefox: remove the snap (snapd saves a snapshot of its data)
   Thunderbird: install thunderbird 1:159.0-1+gu7.1~26.10 from G Unity⁷
   Thunderbird: install thunderbird-l10n-cs 1:159.0-1+gu7.1~26.10 from G Unity⁷
-  Thunderbird: copy /home/dave/snap/thunderbird/1333/.config/thunderbird to /home/dave/.thunderbird
-  Thunderbird: copy /home/erin/snap/thunderbird/common/.thunderbird to /home/erin/.thunderbird
+  Thunderbird: copy /home/dave/snap/thunderbird/1333/.config/thunderbird to /home/dave/.thunderbird (1 MB)
+  Thunderbird: copy /home/erin/snap/thunderbird/common/.thunderbird to /home/erin/.thunderbird (1 MB)
   Thunderbird: the snap uses /home/frank/.thunderbird, nothing to copy; make the snap's default profile the default
   Thunderbird: remove the snap (snapd saves a snapshot of its data)
 
@@ -44,12 +44,12 @@ G Unity⁷ provides a Thunderbird package with Unity's global menu:
 Firefox and Thunderbird (10):
   Firefox: install firefox 159.0.1-1+gu7.1~26.10 from G Unity⁷
   Firefox: install firefox-l10n-cs 159.0.1-1+gu7.1~26.10 from G Unity⁷
-  Firefox: copy /home/dave/snap/firefox/6000/.config/mozilla/firefox to /home/dave/.mozilla/firefox
+  Firefox: copy /home/dave/snap/firefox/6000/.config/mozilla/firefox to /home/dave/.mozilla/firefox (1 MB)
   Firefox: remove the snap (snapd saves a snapshot of its data)
   Thunderbird: install thunderbird 1:159.0-1+gu7.1~26.10 from G Unity⁷
   Thunderbird: install thunderbird-l10n-cs 1:159.0-1+gu7.1~26.10 from G Unity⁷
-  Thunderbird: copy /home/dave/snap/thunderbird/1333/.config/thunderbird to /home/dave/.thunderbird
-  Thunderbird: copy /home/erin/snap/thunderbird/common/.thunderbird to /home/erin/.thunderbird
+  Thunderbird: copy /home/dave/snap/thunderbird/1333/.config/thunderbird to /home/dave/.thunderbird (1 MB)
+  Thunderbird: copy /home/erin/snap/thunderbird/common/.thunderbird to /home/erin/.thunderbird (1 MB)
   Thunderbird: the snap uses /home/frank/.thunderbird, nothing to copy; make the snap's default profile the default
   Thunderbird: remove the snap (snapd saves a snapshot of its data)
 
@@ -85,16 +85,19 @@ state: firefox firefox-l10n-cs thunderbird thunderbird-l10n-cs
 -- snaps: 
 dave:dave 700 /home/dave/.mozilla/
 dave:dave 700 /home/dave/.mozilla/firefox/
+dave:dave 600 /home/dave/.mozilla/firefox/.g-unity7-snap-copy
 dave:dave 755 /home/dave/.mozilla/firefox/f.default/
 dave:dave 644 /home/dave/.mozilla/firefox/f.default/prefs.js
 dave:dave 600 /home/dave/.mozilla/firefox/installs.ini
 dave:dave 644 /home/dave/.mozilla/firefox/profiles.ini
 dave:dave 700 /home/dave/.thunderbird/
+dave:dave 600 /home/dave/.thunderbird/.g-unity7-snap-copy
 dave:dave 600 /home/dave/.thunderbird/installs.ini
 dave:dave 755 /home/dave/.thunderbird/new.default/
 dave:dave 644 /home/dave/.thunderbird/new.default/prefs.js
 dave:dave 644 /home/dave/.thunderbird/profiles.ini
 erin:erin 700 /home/erin/.thunderbird/
+erin:erin 600 /home/erin/.thunderbird/.g-unity7-snap-copy
 erin:erin 600 /home/erin/.thunderbird/installs.ini
 erin:erin 755 /home/erin/.thunderbird/legacy.default/
 erin:erin 644 /home/erin/.thunderbird/legacy.default/prefs.js

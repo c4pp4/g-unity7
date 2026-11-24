@@ -114,12 +114,14 @@ UPSTREAM_ENTRIES = 30
 
 def parse_changelog(text):
     """Return the G Unity⁷ data of the first changelog entry (patches,
-    fingerprint, input), and the version of each following entry with whether
-    it names a CVE or a Mozilla security advisory (upstream)."""
+    fingerprint, input, and the Ubuntu or Debian version that it was built on,
+    base), and the version of each following entry with whether it names a CVE
+    or a Mozilla security advisory (upstream). Versions built before
+    G-Unity7-Base have no base."""
     entry = re.split(r"\n(?=\S)", text.strip())
     head = entry[0]
     data = {"patches": {}, "upstream": []}
-    for key in ("Fingerprint", "Input"):
+    for key in ("Fingerprint", "Input", "Base"):
         match = re.search(rf"G-Unity7-{key}: (\S+)", head)
         if match:
             data[key.lower()] = match.group(1)
@@ -207,12 +209,13 @@ def ppa_sources(ppa, series):
     return {name: publication(entry) for name, entry in latest.items()}
 
 
-def ppa_max_n(source, ppa, series, base, tag):
+def ppa_max_n(source, ppa, base, tag):
     """Return the highest N of the versions <base>+<tag>.<N>~<series version> of
-    a source in a PPA series in any state, also deleted, or 0. Launchpad refuses
-    a version that the PPA had."""
-    params = {"ws.op": "getPublishedSources", "source_name": source, "exact_match": "true",
-              "distro_series": f"{API}/ubuntu/{series}"}
+    a source in a PPA in any series and state, also deleted, or 0. Launchpad
+    refuses a version that the PPA had. N counts across the series, so that the
+    version for a newer series is higher than for an older one with the same
+    base (+gu7.1~27.04 would be lower than +gu7.7~26.10)."""
+    params = {"ws.op": "getPublishedSources", "source_name": source, "exact_match": "true"}
     version_re = re.compile(rf"{re.escape(base)}\+{re.escape(tag)}\.(\d+)~[\d.]+")
     highest = 0
     try:
@@ -272,7 +275,11 @@ def cmd_ppa_latest(args):
 
 
 def cmd_ppa_max_n(args):
-    print(ppa_max_n(args.source, args.ppa, args.series, args.base, args.tag))
+    print(ppa_max_n(args.source, args.ppa, args.base, args.tag))
+
+
+def cmd_ppa_sources(args):
+    print(json.dumps({name: entry["version"] for name, entry in ppa_sources(args.ppa, args.series).items()}))
 
 
 ## Launchpad build states.
@@ -345,10 +352,14 @@ def main():
     p.add_argument("--series", required=True)
     p.set_defaults(func=cmd_ppa_latest)
 
-    p = sub.add_parser("ppa-max-n", help="highest N of a base version in a PPA, in any state")
-    p.add_argument("source")
+    p = sub.add_parser("ppa-sources", help="latest version of each source in a PPA series, as JSON")
     p.add_argument("--ppa", required=True)
     p.add_argument("--series", required=True)
+    p.set_defaults(func=cmd_ppa_sources)
+
+    p = sub.add_parser("ppa-max-n", help="highest N of a base version in a PPA, in any series and state")
+    p.add_argument("source")
+    p.add_argument("--ppa", required=True)
     p.add_argument("--base", required=True)
     p.add_argument("--tag", required=True)
     p.set_defaults(func=cmd_ppa_max_n)

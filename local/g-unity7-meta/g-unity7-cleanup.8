@@ -101,7 +101,17 @@ accessible, to the profile directory of the package
 .RI ( ~/.mozilla/firefox ,
 .IR ~/.thunderbird ),
 as that user, so that a link in a home directory cannot make it change
-anything else.
+anything else. Each copy goes to a temporary directory first and is moved into
+place when it is complete, so that an error, such as a full disk, leaves no
+part of a profile behind. The preview shows the size of each copy. A copy that
+would leave less than 100 MB free on its file system is not offered; free some
+space and run the script again. If root cannot read a home directory, for
+example a network one, the preview says so, and its snap profiles are not
+copied. The snap profiles in an encrypted home directory that is not mounted
+are not found either. These profiles stay in
+.I ~/snap
+when the snap is removed, and the script does not offer them again; copy them
+by hand.
 The snap profiles are taken from where Firefox and Thunderbird look for them:
 .I ~/snap/firefox/common/.mozilla/firefox
 if
@@ -134,8 +144,12 @@ profile left behind, the snap profiles are added in the same way.
 Finally, the script removes the snap. snapd saves a snapshot of the snap
 data, but when the removal fails, it drops the snapshot after it has already
 deleted the data; the copied profiles stay. Then remove the snap with
-.BR "sudo snap remove" ;
-running the script again would copy the profiles once more. While the snap is
+.BR "sudo snap remove" ,
+or run the script again. When a copy fails, the snap stays installed, and the
+copies of the other users are made. The next run continues the switch: it does
+not copy the profiles that were copied, unless the snap changed them since
+then, and the snap's default profile still becomes the default profile of the
+package that the first run installed. While the snap is
 running, the script offers nothing for it. Close the application and run the
 script again. If the snap is started while the script runs, the script
 leaves it installed and says what to do. A G Unity⁷ package older than
@@ -222,6 +236,14 @@ once.
 The system comes from the Ubuntu Unity image. Purging
 .B g-unity7-desktop
 removes it.
+.TP
+.I /var/lib/g-unity7/switch-firefox\fR, \fP/var/lib/g-unity7/switch-thunderbird
+A switch from the snap to the package that has not finished, until the snap
+is removed.
+.TP
+.I .g-unity7-snap-copy
+In the profile directory of the package: the copy of the snap profiles of the
+switch is done.
 .SH SEE ALSO
 .BR apt (8),
 .BR apt-mark (8)

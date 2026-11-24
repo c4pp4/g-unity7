@@ -95,8 +95,23 @@ sudo ppa-purge ppa:c4pp4/g-unity7
 ```
 
 Firefox and Thunderbird go back to the Ubuntu packages, which install the
-snaps. The configuration files of `g-unity7-apt-pin` stay until
-`sudo apt purge g-unity7-apt-pin`; without the PPA, they change nothing.
+snaps. The files that only the G Unity⁷ packages have in `/etc`, such as their
+X session scripts, go with them. The configuration files of `g-unity7-apt-pin`
+stay until `sudo apt purge g-unity7-apt-pin`; without the PPA, they change
+nothing.
+
+`ppa-purge` does not reinstall the packages that `g-unity7-cleanup` removed. On
+Ubuntu Unity, reinstall them with its task, then restart:
+
+```
+sudo apt install ubuntu-unity-desktop
+sudo reboot
+```
+
+Before upgrading to the next Ubuntu release, go back to Ubuntu with `ppa-purge`
+until the PPA has packages for that release. The upgrade disables the PPA but
+keeps its packages, and many of them have the same or a higher version than the
+packages of the new release.
 
 ## Layout
 
@@ -172,6 +187,10 @@ Optional settings:
   apply to a new version yet.
 - `UBUNTU_SERIES` takes the source from an older Ubuntu release when Ubuntu
   has removed it. `DSC_SHA256` is then the SHA256 of its `.dsc`.
+- `DEBIAN_REPLACES` lists the files of `packages/<package>/debian/` that
+  replace a file of the Ubuntu source, such as the Qt 6 `debian/control` of
+  dee-qt6. Another file of the port that would replace one of the source stops
+  the build, so that a file that Ubuntu adds later is not lost unnoticed.
 - `DEBIAN_SUITE` takes the source from Debian (`sid`, `experimental`, or both
   separated by a space) instead of the Ubuntu archive, such as Firefox from sid
   and Thunderbird from experimental. The `.dsc` must also have a valid
@@ -209,33 +228,60 @@ To build on another disk, set `BUILD_DIR` or make `build` a symlink;
 
 ## Versions
 
-`<Ubuntu version>+gu7.<N>~<series version>`, for example
-`7.1.4+19.04.20190319-8+gu7.1~26.10`. `N` increases when the patches change
-for the same Ubuntu version. The changelog entry lists the patches with their
-hashes and the fingerprint of the whole change, which decides whether a new
-version is needed.
+`<Ubuntu version><mark>+gu7.<N>~<series version>`, for example
+`6.6.4-1a+gu7.1~26.10` and `7.7.1+26.04.20260306-0ubuntu3+gu7.7~26.10`. `N`
+increases when the patches change for the same Ubuntu version. It counts across
+the series, so that the version for a newer series with the same Ubuntu version
+is higher.
+
+dpkg sorts letters before `+`. Without the mark, a version built on an Ubuntu
+update such as `6.6.4-1ubuntu0.1` would be lower than the one built on
+`6.6.4-1`, and Launchpad would refuse it. The mark is `a` after a digit, `0`
+after a letter (`26.10.2ubuntu0+gu7.1`), and nothing after an ubuntu or build
+revision (`0ubuntu3`), whose updates add `.1`. Own packages, Firefox and
+Thunderbird (built from Debian) and the sources of an older series have no
+mark.
+
+The changelog entry lists the patches with their hashes, the fingerprint of the
+whole change, which decides whether a new version is needed, and the Ubuntu or
+Debian version (`G-Unity7-Base`).
 
 ## Uploading and promoting
 
 Nothing reaches users without the owner's approval:
 
-1. `ppa.yml` (daily) builds the changed packages. A version with the same
-   fingerprint as in the staging PPA (a new Ubuntu revision) is uploaded to
+1. `ppa.yml` (twice a day) builds the changed packages. A version with the
+   same fingerprint as in the staging PPA (a new Ubuntu revision) is uploaded to
    `ppa:c4pp4/g-unity7-staging` right away. Any other version waits for review
-   in the approval issue: `/upload` or `/reject`. Then `ppa.yml` checks that
-   `g-unity7-desktop` installs from staging as intended.
+   in the approval issue: `/upload` or `/reject`. With the repository variable
+   `STAGING_FROZEN` (any value, such as the reason), every version waits for
+   review, for example while staging is tested before a promotion. Then
+   `ppa.yml` checks that `g-unity7-desktop` installs from staging as intended.
 2. `review.yml` (a few times a day) lists the staging versions that are newer
    than in `ppa:c4pp4/g-unity7`, with their build state. `/promote` copies them
    with their binaries, and `/promote --dry-run` only shows what it would copy.
    Packages of the same `GROUP` are promoted only together, the `desktop` group
-   before the `mozilla` group, whose packages need it. `/retry` retries failed
-   builds.
+   before the `mozilla` group, whose packages need it. A group is incomplete
+   while a member waits for review, failed its last build, or is in neither
+   PPA; `--force` promotes it anyway. `/retry` retries failed builds.
+   `/upload` and `/promote` take only the versions that the issue showed before
+   the command.
 3. `g-unity7-apt-pin` keeps the PPA versions on users' systems until a newer
    version is promoted.
 
-The approval issue also lists the packages whose build failed or that are
-behind Ubuntu or Debian for more than a day, and the overlay changes that the
-ports may need, which `/ported` records as checked.
+The approval issue also lists the packages whose build failed, those that
+`ppa.yml` could not check (a Launchpad error stops only that package), those
+that are behind Ubuntu or Debian for more than a day, the Mozilla releases that
+Debian has not packaged after three days, and the overlay changes that the
+ports may need, which `/ported` records as checked. A comment announces each
+new item.
+
+If a broken version reaches the main PPA, fix it forward: Launchpad cannot
+bring back an older version. Revert the change in the port or the overlay, let
+`ppa.yml` build the next version, upload it with `/upload`, test it and promote
+it. To stop the broken version from reaching more users meanwhile, delete it
+from the main PPA on Launchpad; the systems that have it keep it until the
+fixed version arrives.
 
 `pr.yml` checks on every push that the patches of the changed packages still
 apply, those of all packages when the scripts change, and every week.
@@ -249,10 +295,16 @@ scripts/run-local.sh --gpg scripts/upload.sh libunity
 ## GitHub setup
 
 - The `approve` label. The approval issue is found by this label.
-- The `launchpad` environment, with deployment branches limited to `master`:
+- The `launchpad` environment for the uploads (`ppa.yml` and `/upload`), with
+  deployment branches limited to `master`:
   - secrets `GPG_PRIVATE_KEY` (only the signing subkey:
-    `gpg --armor --export-secret-subkeys <subkey>!`), `GPG_PASSPHRASE` and
-    `LP_CREDENTIALS` (a launchpadlib credentials file created by
-    `scripts/lp_login.py`)
+    `gpg --armor --export-secret-subkeys <subkey>!`) and `GPG_PASSPHRASE`
   - variables `DEBEMAIL`, `DEBFULLNAME` and `GPG_KEY_ID`
-- Repository variables `DEBEMAIL` and `DEBFULLNAME` for the build jobs.
+- The `launchpad-api` environment for `/promote` and `/retry`, with deployment
+  branches limited to `master`: secret `LP_CREDENTIALS` (a launchpadlib
+  credentials file created by `scripts/lp_login.py`). With required reviewers,
+  these commands also wait for a confirmation on GitHub.
+- Repository variables `DEBEMAIL` and `DEBFULLNAME` for the build jobs, and
+  `STAGING_FROZEN` while staging is frozen.
+- Actions limited to those of GitHub, with SHA pinning required, and a ruleset
+  for `master` that blocks force pushes and deletion.

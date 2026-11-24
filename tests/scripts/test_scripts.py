@@ -223,6 +223,42 @@ class Commands(unittest.TestCase):
         self.assertIn("`changed`: the port or the overlay changed after the review", messages[1])
         self.assertIn("later", s["review"])
 
+    def test_upload_with_names_only_before_the_command(self):
+        s = state(review={"later": {"version": "1+gu7.1~26.10", "input": "x", "added": "2026-11-17T21:30:00Z"}})
+        messages = approve.do_upload(None, s, ["later"], {"later": {"input": "x"}}, before="2026-11-17T21:10:00Z")
+        self.assertIn("`later`: added for review after the command", messages[0])
+        self.assertIn("later", s["review"])
+
+    def test_upload_keeps_a_version_lower_than_staging(self):
+        s = state(review={"eog": {"source": "eog", "version": "50.3-1a+gu7.1~26.10", "input": "x"}})
+        with mock.patch.object(lp, "ppa_latest", return_value={"version": "50.3-1+gu7.3~26.10"}):
+            messages = approve.do_upload(None, s, ["eog"], {"eog": {"input": "x"}})
+        self.assertIn("staging has the higher version `50.3-1+gu7.3~26.10`", messages[0])
+        self.assertIn("/reject eog", messages[0])
+        self.assertIn("eog", s["review"])
+
+    def test_upload_records_the_input_for_plan_sh(self):
+        s = state(review={"unity": {"source": "unity", "version": "1-1+gu7.2~26.10", "base": "1-1",
+                                    "fingerprint": "f", "input": "x", "run_id": "5", "artifact": "source-unity"}})
+
+        def download(run_id, name, target):
+            os.makedirs(target)
+            with open(os.path.join(target, "result.env"), "w") as f:
+                f.write("STATUS=built\nVERSION=1-1+gu7.2~26.10\nFINGERPRINT=f\nINPUT=x\n")
+            return True
+        real_run = subprocess.run
+
+        def run(cmd, *args, **kwargs):
+            if cmd[0].endswith("/upload.sh"):
+                return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+            return real_run(cmd, *args, **kwargs)
+        with mock.patch.object(lp, "ppa_latest", return_value={"version": "1-1+gu7.1~26.10"}), \
+                mock.patch.object(approve, "download_artifact", side_effect=download), \
+                mock.patch.object(approve.subprocess, "run", side_effect=run):
+            messages = approve.do_upload(None, s, ["unity"], {"unity": {"input": "x"}})
+        self.assertIn("uploaded to `ppa:", messages[0])
+        self.assertEqual(s["uptodate"]["unity"], {"version": "1-1+gu7.2~26.10", "base": "1-1", "input": "x"})
+
     def test_command_time(self):
         with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
             json.dump({"comment": {"created_at": "2026-11-17T21:27:21Z"}}, f)
@@ -341,9 +377,13 @@ class CheckBehind(unittest.TestCase):
                             "gone": {"version": "1+gu7.1~26.10", "base": "1", "input": "c"}})
         with mock.patch.object(lp, "ppa_sources", return_value=self.staging), \
                 mock.patch.object(lp, "debian_version", return_value=("160.0.1-1", "unstable")) as debian, \
-                mock.patch.object(lp, "ubuntu_version", side_effect=lambda source, series: self.ubuntu[source]):
+                mock.patch.object(lp, "ubuntu_version", side_effect=lambda source, series: self.ubuntu[source]), \
+                mock.patch.object(approve, "mozilla_release", return_value="161.0") as release:
             approve.check_behind(s, self.pkgs)
         debian.assert_called_once_with("firefox", ["sid"])
+        release.assert_called_once_with("firefox")
+        self.assertEqual(s["mozilla"]["firefox"]["release"], "161.0")
+        self.assertEqual(s["mozilla"]["firefox"]["debian"], "160.0.1-1")
         self.assertEqual(sorted(s["behind"]), ["firefox", "nux", "unity"])
         self.assertEqual(s["behind"]["unity"]["since"], "2026-11-20T00:00:00Z")
         self.assertEqual(s["behind"]["firefox"]["base"], "160.0.1-1")
@@ -362,13 +402,29 @@ class CheckBehind(unittest.TestCase):
         self.assertIn("`unity`: `2` since 2026-11-20", rows[1])
         self.assertIn("## Behind Ubuntu and Debian", approve.render(s))
 
+    def test_mozilla_release_after_three_days_and_plan_errors(self):
+        now = approve.utc_now()
+        s = state(mozilla={"firefox": {"release": "161.0", "debian": "160.0.1-1", "since": "2026-11-20T00:00:00Z"},
+                           "thunderbird": {"release": "161.0", "debian": "1:160.0-1", "since": now}},
+                  plan_errors={"hud": {"run_id": "8", "since": "2026-11-21T03:00:00Z", "error": "timed out"}})
+        rows = approve.behind_rows(s)
+        self.assertEqual(len(rows), 2)
+        self.assertIn("`hud`: `ppa.yml` could not check it", rows[0])
+        self.assertIn("`timed out`", rows[0])
+        self.assertIn("`firefox`: Mozilla released `161.0`", rows[1])
+        self.assertIn("Debian has `160.0.1-1`", rows[1])
+
 
 class Plan(unittest.TestCase):
     """plan.sh with a stub lp.py: a package that the last build found up to
     date is skipped with the same base version and built for a new one."""
     STUB = """import json, os, sys
 if sys.argv[1] == "ubuntu-version":
+    if sys.argv[2] in os.environ.get("STUB_FAIL", "").split():
+        sys.exit("lp.py: " + sys.argv[2] + ": The read operation timed out")
     print(os.environ["STUB_BASE"], "Release")
+elif sys.argv[1] == "ppa-sources":
+    print(json.dumps({name: os.environ["STUB_STAGING"] for name in ("foo", "bar")}))
 elif sys.argv[1] == "ppa-latest":
     print(json.dumps({"version": os.environ["STUB_STAGING"], "input": "other"}))
 """
@@ -387,14 +443,16 @@ elif sys.argv[1] == "ppa-latest":
             f.write('OVERLAY_PKG="unity-base/foo"\nUBUNTU_SRC="foo"\n')
         os.makedirs(os.path.join(self.tmp, "overlay"))
 
-    def plan(self, base, staging, uptodate):
+    def plan(self, base, staging, uptodate, fail="", packages=(), errors=None):
         state_file = os.path.join(self.tmp, "state.json")
         with open(state_file, "w") as f:
             json.dump({"uptodate": {"foo": uptodate}}, f)
         env = dict(os.environ, OVERLAY_DIR=os.path.join(self.tmp, "overlay"), STUB_BASE=base,
-                   STUB_STAGING=staging)
-        out = subprocess.run([os.path.join(self.tmp, "scripts", "plan.sh"), "--state", state_file],
-                             env=env, capture_output=True, text=True, check=True).stdout
+                   STUB_STAGING=staging, STUB_FAIL=fail)
+        args = [os.path.join(self.tmp, "scripts", "plan.sh"), "--state", state_file]
+        if errors:
+            args += ["--errors", errors]
+        out = subprocess.run(args + list(packages), env=env, capture_output=True, text=True, check=True).stdout
         return json.loads(out)
 
     def test_uptodate(self):
@@ -404,6 +462,23 @@ elif sys.argv[1] == "ppa-latest":
         self.assertEqual(self.plan("1.0-1", "1.0-1+gu7.1~26.10", uptodate), [])
         self.assertEqual(self.plan("1.0-2", "1.0-1+gu7.1~26.10", uptodate), ["foo"])
         self.assertEqual(self.plan("1.0-1", "1.0-1+gu7.1~26.10", dict(uptodate, input="other")), ["foo"])
+        ## The version with the mark of the base (see VersionMark)
+        marked = dict(uptodate, version="1.0-1a+gu7.1~26.10")
+        self.assertEqual(self.plan("1.0-1", "1.0-1a+gu7.1~26.10", marked), [])
+        self.assertEqual(self.plan("1.0-1ubuntu0.1", "1.0-1a+gu7.1~26.10", marked), ["foo"])
+
+    def test_a_package_that_cannot_be_checked_does_not_stop_the_others(self):
+        os.makedirs(os.path.join(self.tmp, "packages", "bar"))
+        with open(os.path.join(self.tmp, "packages", "bar", "package.sh"), "w") as f:
+            f.write('OVERLAY_PKG="unity-base/bar"\nUBUNTU_SRC="bar"\n')
+        errors = os.path.join(self.tmp, "errors.json")
+        self.assertEqual(self.plan("1.0-2", "1.0-1+gu7.1~26.10", {}, fail="bar", errors=errors), ["foo"])
+        with open(errors) as f:
+            result = json.load(f)
+        self.assertEqual(result["checked"], ["foo"])
+        self.assertEqual(result["errors"], {"bar": "lp.py: bar: The read operation timed out"})
+        with self.assertRaises(subprocess.CalledProcessError):
+            self.plan("1.0-2", "1.0-1+gu7.1~26.10", {}, fail="foo bar")
 
 
 class AddReview(unittest.TestCase):
@@ -420,7 +495,7 @@ class AddReview(unittest.TestCase):
             with open(os.path.join(directory, "result.env"), "w") as f:
                 f.write("STATUS=uptodate\nPACKAGE=unity\nSOURCE=unity\nVERSION=1-1+gu7.2~26.10\nINPUT=new\n")
             args = argparse.Namespace(run_id="7", artifact_prefix="source-", dirs=[directory],
-                                      planned=json.dumps(["unity", "hud", "nux"]))
+                                      planned=json.dumps(["unity", "hud", "nux"]), plan=None, uploaded=None)
             with mock.patch.object(approve, "find_issue", return_value=None), \
                     mock.patch.object(approve, "load_state", return_value=s), \
                     mock.patch.object(approve, "github", return_value=jobs), \
@@ -447,27 +522,39 @@ class Promote(unittest.TestCase):
     def rows(self):
         return {name: self.row(name, pkg["group"]) for name, pkg in self.pkgs.items()}
 
-    def promote(self, table, current, names=(), force=False, dry_run=False, fail=()):
-        s = state(promote=table)
-        copied = []
+    def promote(self, table, current, names=(), force=False, dry_run=False, fail=(), pkgs=None,
+                missing=(), failed_builds=None, before=None):
+        pkgs = pkgs or self.pkgs
+        s = state(promote=table, failed_builds=failed_builds or {})
+        sources = {p["source"]: {"version": "1+gu7.2~26.10"} for n, p in pkgs.items() if n not in missing}
+        copied, waited = [], []
+        self.waited = waited
         real_run = subprocess.run
 
         def run(cmd, *args, **kwargs):
             if not cmd[0].endswith("/lp_write.py"):
                 return real_run(cmd, *args, **kwargs)
+            if "wait" in cmd:
+                waited.append([item.split("=")[0] for item in cmd[cmd.index("wait") + 1:cmd.index("--ppa")]])
+                return subprocess.CompletedProcess(cmd, 0, stdout="".join(f"{source} Pending\n"
+                                                                          for source in waited[-1]), stderr="")
             source = cmd[cmd.index("copy") + 1]
             copied.append(source)
-            return subprocess.CompletedProcess(cmd, 1 if source in fail else 0, stdout="Pending\n",
+            return subprocess.CompletedProcess(cmd, 1 if source in fail else 0, stdout="",
                                                stderr="copy error")
         with mock.patch.object(approve, "promote_rows", return_value=(current, [])), \
+                mock.patch.object(approve.lp, "ppa_sources", return_value=sources), \
                 mock.patch.object(approve.subprocess, "run", side_effect=run):
-            messages = approve.do_promote(s, list(names), force, self.pkgs, dry_run)
+            messages = approve.do_promote(s, list(names), force, pkgs, dry_run, before)
         return messages, copied
 
     def test_order(self):
         messages, copied = self.promote(self.rows(), self.rows())
         self.assertEqual(copied, ["unity", "g-unity7-apt-pin", "g-unity7-meta", "firefox", "hud"])
         self.assertEqual(len(messages), 5)
+        self.assertIn("(Launchpad is publishing it)", messages[0])
+        ## One wait for each wave: the ports, the own packages, the metapackage
+        self.assertEqual(self.waited, [["unity"], ["g-unity7-apt-pin"], ["g-unity7-meta"], ["firefox"], ["hud"]])
 
     def test_member_new_in_staging_stops_its_group_and_the_mozilla_group(self):
         current = self.rows()
@@ -496,6 +583,38 @@ class Promote(unittest.TestCase):
         messages, copied = self.promote(self.rows(), self.rows(), dry_run=True)
         self.assertEqual(copied, [])
         self.assertIn("`unity` `1+gu7.2~26.10` would be copied", messages[0])
+
+    def test_a_needed_package_is_copied_first_in_its_group(self):
+        pkgs = dict(self.pkgs, **{"gtk+3.0": {"source": "gtk+3.0", "group": "mozilla"}})
+        rows = {name: self.row(name, pkg["group"]) for name, pkg in pkgs.items()}
+        messages, copied = self.promote(rows, rows, pkgs=pkgs)
+        self.assertEqual(copied, ["unity", "g-unity7-apt-pin", "g-unity7-meta", "gtk+3.0", "firefox", "hud"])
+        self.assertEqual(self.waited[3:5], [["gtk+3.0"], ["firefox"]])
+
+    def test_the_ports_of_a_group_are_one_wave(self):
+        pkgs = dict(self.pkgs, nemo={"source": "nemo", "group": "desktop"})
+        rows = {name: self.row(name, pkg["group"]) for name, pkg in pkgs.items()}
+        messages, copied = self.promote(rows, rows, pkgs=pkgs)
+        self.assertEqual(self.waited[0], ["nemo", "unity"])
+
+    def test_a_failed_build_or_a_member_in_neither_ppa_stops_its_group(self):
+        messages, copied = self.promote(self.rows(), self.rows(),
+                                        failed_builds={"unity": {"run_id": "1", "since": "2026-11-24T00:00:00Z"}})
+        self.assertNotIn("g-unity7-meta", copied)
+        self.assertIn("group `desktop` is incomplete (unity (its last build failed))", messages[0])
+        pkgs = dict(self.pkgs, **{"new-port": {"source": "new-port", "group": "desktop"}})
+        messages, copied = self.promote(self.rows(), self.rows(), pkgs=pkgs, missing=["new-port"])
+        self.assertEqual(copied, ["hud"])
+        self.assertIn("new-port (in neither PPA)", messages[0])
+
+    def test_a_row_shown_after_the_command(self):
+        table = self.rows()
+        table["hud"] = dict(table["hud"], shown="2026-11-24T12:00:00Z")
+        messages, copied = self.promote(table, self.rows(), names=["hud"], before="2026-11-24T11:00:00Z")
+        self.assertEqual(copied, [])
+        self.assertIn("the table showed this version only after the command", messages[0])
+        messages, copied = self.promote(table, self.rows(), names=["hud"], before="2026-11-24T13:00:00Z")
+        self.assertEqual(copied, ["hud"])
 
 
 class StateFormat(unittest.TestCase):
@@ -534,3 +653,96 @@ class DebianVersion(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AddReviewPlan(unittest.TestCase):
+    def test_plan_errors_and_uploaded_versions(self):
+        s = state(plan_errors={"hud": {"run_id": "1", "since": "2026-11-20T00:00:00Z", "error": "old"},
+                               "nux": {"run_id": "1", "since": "2026-11-20T00:00:00Z", "error": "old"}})
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = os.path.join(tmp, "eog")
+            os.makedirs(directory)
+            with open(os.path.join(directory, "result.env"), "w") as f:
+                f.write("STATUS=built\nPACKAGE=eog\nSOURCE=eog\nVERSION=50.3-1a+gu7.1~26.10\nBASE=50.3-1\n"
+                        "INPUT=i\n")
+            args = argparse.Namespace(run_id="7", artifact_prefix="source-", dirs=[], planned=None,
+                                      plan=json.dumps({"checked": ["hud"], "errors": {"nux": "new", "zim": "e"}}),
+                                      uploaded=[directory])
+            with mock.patch.object(approve, "find_issue", return_value=None), \
+                    mock.patch.object(approve, "load_state", return_value=s), \
+                    mock.patch.object(approve, "refresh"):
+                approve.cmd_add_review(args)
+        self.assertEqual(sorted(s["plan_errors"]), ["nux", "zim"])
+        self.assertEqual(s["plan_errors"]["nux"], {"run_id": "7", "since": "2026-11-20T00:00:00Z", "error": "new"})
+        self.assertEqual(s["uptodate"]["eog"], {"version": "50.3-1a+gu7.1~26.10", "base": "50.3-1", "input": "i"})
+
+
+class Notices(unittest.TestCase):
+    def test_the_first_refresh_records_the_items_without_a_comment(self):
+        s = state(drift={"unity": {"value": "h", "text": "t"}},
+                  review={"hud": {"version": "1+gu7.1~26.10"}})
+        with mock.patch.object(approve, "comment") as comment:
+            approve.notify_new({"number": 1}, s)
+        comment.assert_called_once()
+        self.assertIn("`hud` `1+gu7.1~26.10` for review", comment.call_args[0][1])
+        s["failed_builds"] = {"nux": {"run_id": "3", "since": "2026-11-24T00:00:00Z"}}
+        with mock.patch.object(approve, "comment") as comment:
+            approve.notify_new({"number": 1}, s)
+        comment.assert_called_once()
+        self.assertIn("`nux`: the build in `ppa.yml` failed", comment.call_args[0][1])
+        with mock.patch.object(approve, "comment") as comment:
+            approve.notify_new({"number": 1}, s)
+        comment.assert_not_called()
+
+
+class Refresh(unittest.TestCase):
+    def test_a_failed_check_does_not_stop_the_other(self):
+        s = state()
+        with mock.patch.object(approve, "promote_rows", return_value=({}, [])), \
+                mock.patch.object(approve, "check_drift", side_effect=subprocess.CalledProcessError(1, "git")), \
+                mock.patch.object(approve, "check_behind") as behind, \
+                mock.patch.object(approve, "last_commit_time", return_value=None), \
+                mock.patch.object(approve, "save", return_value=None), \
+                mock.patch.object(approve, "notify_new"):
+            approve.refresh(None, s, {"unity": {"source": "unity"}})
+        behind.assert_called_once()
+        self.assertEqual(s["drift_checked"], "")
+
+
+class ChangedLines(unittest.TestCase):
+    def test_file_headers_and_lines_that_look_like_them(self):
+        diff = ("--- a/f\n+++ b/f\n@@ -1,3 +1,3 @@\n ctx\n--- removed comment\n-old\n+new\n"
+                "+++ added line\n-- \n2.56.1\n")
+        out = subprocess.run(["bash", "-c", "source scripts/lib.sh; changed_lines"], cwd=ROOT, input=diff,
+                             capture_output=True, text=True, check=True).stdout
+        self.assertEqual(out.splitlines(), ["--- removed comment", "-old", "+new", "+++ added line", "-- "])
+
+
+class VersionMark(unittest.TestCase):
+    """The mark between the base and +gu7 (version_mark in lib.sh): the version
+    built on an Ubuntu update of the base is higher than the one built on the
+    base, which is higher than the base and lower than the update."""
+    MARKS = {"6.6.4-1": "a", "0.9.35+20.04.20191129-4": "a", "49.4": "a", "7.7.1-0ubuntu3": "",
+             "1.5.34-1ubuntu3.1": "", "1.2build1": "", "26.10.2ubuntu": "0"}
+    UPDATES = [("6.6.4-1", "6.6.4-1ubuntu0.1"), ("6.6.4-1", "6.6.4-1build1"), ("6.6.4-1", "6.6.4-1.1"),
+               ("6.6.4-1", "6.6.4-2"), ("49.4", "49.4build1"), ("49.4", "49.4.1"),
+               ("7.7.1-0ubuntu3", "7.7.1-0ubuntu3.1"), ("7.7.1-0ubuntu3", "7.7.1-0ubuntu4"),
+               ("1.5.34-1ubuntu3.1", "1.5.34-1ubuntu3.2"), ("1.2build1", "1.2build2"),
+               ("26.10.2ubuntu", "26.10.2ubuntu0.1"), ("26.10.2ubuntu", "26.10.2ubuntu1")]
+
+    @staticmethod
+    def mark(base):
+        return subprocess.run(["bash", "-c", 'source scripts/lib.sh; version_mark "$1"', "-", base], cwd=ROOT,
+                              capture_output=True, text=True, check=True).stdout.strip()
+
+    def test_marks(self):
+        for base, mark in self.MARKS.items():
+            self.assertEqual(self.mark(base), mark, base)
+
+    def test_versions_of_updates_are_higher(self):
+        for base, update in self.UPDATES:
+            old = f"{base}{self.mark(base)}+gu7.7~26.10"
+            new = f"{update}{self.mark(update)}+gu7.1~26.10"
+            self.assertGreater(lp.version_cmp(new, old), 0, (new, old))
+            self.assertGreater(lp.version_cmp(old, base), 0, (old, base))
+            self.assertLess(lp.version_cmp(old, update), 0, (old, update))

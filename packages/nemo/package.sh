@@ -26,6 +26,8 @@ debian_edit() {
 	install -m 644 "${FILESDIR}"/nemo-autostart.desktop.in debian/g-unity7/unity-nemo.desktop || return 1
 	echo "debian/g-unity7/unity-nemo.desktop etc/xdg/autostart/" >> debian/nemo.install || return 1
 	grep -Fqx "debian/g-unity7/unity-nemo.desktop etc/xdg/autostart/" debian/nemo.install || return 1
+	# Remove it when the Ubuntu version replaces this one (ppa-purge) #
+	prerm_remove_on_downgrade nemo /etc/xdg/autostart/unity-nemo.desktop || return 1
 }
 
 src_edit() {

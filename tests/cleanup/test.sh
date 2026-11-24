@@ -506,6 +506,61 @@ group_mozilla() {
 	cat "${alice}"/dst/profiles.ini
 }
 
+## The copies of the snap profiles: a copy that fails keeps the snap installed
+##  while the copies of the other users are made, the next run continues the
+##  switch without making them again, and a copy that does not fit is not
+##  offered
+group_copies() {
+	local alice=/home/alice bob=/home/bob carol=/home/carol dir
+	setup_mozilla
+	useradd -m -u 1001 alice
+	useradd -m -u 1002 bob
+	useradd -m -u 1003 carol
+	printf '159.0-1 400\n' > /tmp/snaps/thunderbird
+	for dir in "${alice}" "${bob}"; do
+		mkdir -p "${dir}"/snap/thunderbird/common/.thunderbird/p.default
+		echo prefs > "${dir}"/snap/thunderbird/common/.thunderbird/p.default/prefs.js
+		printf '[Profile0]\nName=default\nIsRelative=1\nPath=p.default\nDefault=1\n' \
+			> "${dir}"/snap/thunderbird/common/.thunderbird/profiles.ini
+	done
+	chown -R alice:alice "${alice}"
+	chown -R bob:bob "${bob}"
+	## A file of the snap profile that bob cannot read stops his copy
+	echo mail > "${bob}"/snap/thunderbird/common/.thunderbird/p.default/locked
+	chmod 000 "${bob}"/snap/thunderbird/common/.thunderbird/p.default/locked
+
+	run "the copy of bob fails: 2 (no Firefox), 1, confirm" bash -c "printf '2\n1\ny\n' | ${cleanup}"
+	echo "-- snaps: $(ls /tmp/snaps | tr '\n' ' ')"
+	echo "-- switch: $(ls /var/lib/g-unity7 | tr '\n' ' ')"
+	files "${alice}"/.thunderbird "${bob}" | grep -v '/snap/'
+	echo
+
+	chmod 644 "${bob}"/snap/thunderbird/common/.thunderbird/p.default/locked
+	run "again: 2, 1, confirm" bash -c "printf '2\n1\ny\n' | ${cleanup}"
+	echo "-- snaps: $(ls /tmp/snaps | tr '\n' ' ')"
+	echo "-- switch: $(ls /var/lib/g-unity7 | tr '\n' ' ')"
+	files "${alice}"/.thunderbird "${bob}"/.thunderbird
+	echo "-- profiles.ini of bob"
+	cat "${bob}"/.thunderbird/profiles.ini
+	echo
+
+	## Too little free space for the copy of carol
+	printf '159.0-1 401\n' > /tmp/snaps/thunderbird
+	mkdir -p "${carol}"/snap/thunderbird/common/.thunderbird/c.default
+	printf '[Profile0]\nName=default\nIsRelative=1\nPath=c.default\nDefault=1\n' \
+		> "${carol}"/snap/thunderbird/common/.thunderbird/profiles.ini
+	chown -R carol:carol "${carol}"
+	cat > /usr/local/bin/df <<-'EOF'
+		#!/bin/sh
+		## Fake df: 50000 KiB free on /
+		echo "Filesystem 1024-blocks Used Available Capacity Mounted on"
+		echo "test 1000000 950000 50000 95% /"
+	EOF
+	chmod 755 /usr/local/bin/df
+	run "too little space: --dry-run, 2" bash -c "printf '2\n' | ${cleanup} --dry-run"
+	rm /usr/local/bin/df
+}
+
 ## Where the snap profiles are: the XDG directory of the installed revision,
 ##  where Thunderbird 160 creates new profiles (the "current" link still points
 ##  to the previous revision), the legacy directory, which Firefox and
@@ -745,6 +800,7 @@ out=$(mktemp)
 case ${group} in
 	alternatives) group_alternatives ;;
 	mozilla) group_mozilla ;;
+	copies) group_copies ;;
 	locations) group_locations ;;
 	links) group_links ;;
 	snaps) group_snaps ;;

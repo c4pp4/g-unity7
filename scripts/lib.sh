@@ -64,10 +64,65 @@ merge_translations() {
 	rm -rf "${tmp}"
 }
 
+## Print what goes between the Ubuntu version $1 that a port is built on and
+##  +gu7, so that the versions built on the next Ubuntu updates of it compare
+##  higher. dpkg sorts letters before "+", so 6.6.4-1ubuntu0.1+gu7.1, built on
+##  the update 6.6.4-1ubuntu0.1, would be lower than 6.6.4-1+gu7.3:
+##   - "a" after a digit: 6.6.4-1a+gu7.1 < 6.6.4-1ubuntu0.1, 6.6.4-1build1 and
+##     6.6.4-1.1 (letters sort before "." too), but > 6.6.4-1;
+##   - nothing after an ubuntu or build revision, whose updates add ".1":
+##     0ubuntu3+gu7.7 < 0ubuntu3.1+gu7.1;
+##   - "0" after a letter, such as 26.10.2ubuntu, where +gu7 would join the
+##     letters and the update 26.10.2ubuntu0.1 would compare lower.
+version_mark() {
+	if [[ $1 =~ [[:alpha:]]$ ]]; then
+		echo 0
+	elif [[ $1 =~ (ubuntu|build)[0-9]+(\.[0-9]+)*$ ]]; then
+		echo
+	else
+		echo a
+	fi
+}
+
+## Make the prerm of binary package $1 remove the files $2... when another
+##  version without +gu7 replaces the package, such as the Ubuntu one after
+##  ppa-purge: dpkg keeps the conffiles that the new version does not have. For
+##  debian_edit.
+prerm_remove_on_downgrade() {
+	local package=$1 file=debian/$1.prerm snippet
+	shift
+	[[ -f ${file} || ! -f debian/prerm ]] || file=debian/prerm
+	snippet=$(printf '%s\n' \
+		'## Remove the files of G Unity⁷ that the version that replaces this one,' \
+		'##  such as the Ubuntu one after ppa-purge, does not have (dpkg keeps them)' \
+		'if [ "$1" = upgrade ] && ! echo "$2" | grep -q "+gu7"; then' \
+		"	rm -f $*" \
+		'fi')
+	if [[ -f ${file} ]]; then
+		grep -qx '#DEBHELPER#' "${file}" || return 1
+		SNIPPET=${snippet} awk '$0 == "#DEBHELPER#" { print ENVIRON["SNIPPET"]; print "" } { print }' \
+			"${file}" > "${file}.new" || return 1
+		mv "${file}.new" "${file}" || return 1
+	else
+		printf '#!/bin/sh\nset -e\n\n%s\n\n#DEBHELPER#\n' "${snippet}" > "${file}" || return 1
+	fi
+	grep -qF 'grep -q "+gu7"' "${file}"
+}
+
 ## Print only the added and removed lines of a diff on stdin, so that the
-##  hash of a change does not depend on its context.
+##  hash of a change does not depend on its context. A "--- " line is a file
+##  header only when a "+++ " line follows it; otherwise it is a removed line
+##  that starts with "-- ", and a "+++ " line without it an added line that
+##  starts with "++ ".
 changed_lines() {
-	grep -a '^[+-]' | grep -av '^\(+++\|---\) ' || true
+	LC_ALL=C awk '
+		function flush() { if (held != "") print held; held = "" }
+		/^\+\+\+ / { if (held != "") { held = ""; next } print; next }
+		{ flush() }
+		/^--- / { held = $0; next }
+		/^[+-]/ { print }
+		END { flush() }
+	'
 }
 
 ## Print the git commit of repository $1, with -dirty if the paths $2... have
@@ -195,6 +250,7 @@ load_package() {
 	PATCHES=()
 	OVERLAY_FILES=()
 	OVERLAY_FOLLOW=()
+	DEBIAN_REPLACES=()
 	unset -f debian_edit src_edit local_prepare
 
 	if [[ -f ${REPO_ROOT}/local/${pkg}/package.sh ]]; then

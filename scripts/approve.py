@@ -70,6 +70,12 @@ STATE_ICONS = {"ok": "✅", "building": "⏳", "failed": "❌", "missing": "❔"
 ##  g-unity7-apt-pin and the GTK of the desktop group.
 GROUP_ORDER = ("desktop", "mozilla", "")
 GROUP_NEEDS = {"mozilla": ("g-unity7-apt-pin", "gtk+3.0")}
+## The ports that are built from Debian's Firefox and Thunderbird: the issue
+##  shows a Mozilla release that Debian has not packaged after MOZILLA_GRACE.
+##  Debian skips some releases (Thunderbird 154, 156 and 158).
+MOZILLA_PRODUCTS = {"firefox": "LATEST_FIREFOX_VERSION", "thunderbird": "LATEST_THUNDERBIRD_VERSION"}
+MOZILLA_URL = "https://product-details.mozilla.org/1.0/{}_versions.json"
+MOZILLA_GRACE = 3 * 24 * 60 * 60
 ## Copied last in its group: the metapackage depends on the other members
 META = "g-unity7-meta"
 ## The ports were compared with the ebuilds and ehooks of the overlay on
@@ -152,7 +158,7 @@ def load_state(issue):
         sys.exit("approve.py: a newer approve.py wrote the state of the issue")
     state["version"] = STATE_VERSION
     for key in ("review", "rejected", "uptodate", "promote", "seen", "ported", "drift", "behind",
-                "failed_builds"):
+                "failed_builds", "plan_errors", "mozilla"):
         state.setdefault(key, {})
     state.setdefault("stale", [])
     state.setdefault("drift_checked", "")
@@ -254,6 +260,9 @@ def promote_rows(pkgs, old=None):
             continue
         try:
             rows[name] = promote_row(pkg, staging, main, prev)
+            ## When the table first showed this version: /promote refuses a row
+            ##  that appeared after its command
+            rows[name]["shown"] = prev.get("shown", "") if prev else utc_now()
             failures = 0
         except LP_ERRORS:
             if old is None:
@@ -298,7 +307,7 @@ def promote_row(pkg, staging, main, prev=None):
         changes = describe_changes(data.get("patches", {}), main_data.get("patches")) if main else "new package"
         if main and not changes:
             if base_of(staging["version"]) != base_of(main["version"]):
-                changes = "rebased on " + base_of(staging["version"])
+                changes = "rebased on " + (data.get("base") or base_of(staging["version"]))
             else:
                 changes = "rebuild"
         security = bool(main) and security_fix(data.get("upstream", []), base_of(main["version"]))
@@ -397,8 +406,7 @@ def check_drift(state, pkgs):
     derived source, and a source from an older series that is back in the
     series (not for a derived source, such as unity-docs from the ubuntu-docs of
     an older series). Items checked with /ported (state["ported"]) are left out
-    until they change again. Then find the ports that are behind Ubuntu and
-    Debian."""
+    until they change again."""
     series = CONFIG["series"]
     ported = state["ported"]
     head = overlay_head()
@@ -454,7 +462,6 @@ def check_drift(state, pkgs):
         if value and ported.get(key) != value:
             drift[key] = {"value": value, "text": value}
     state["drift"] = drift
-    check_behind(state, pkgs)
 
 
 def archive_base(pkg):
@@ -467,10 +474,22 @@ def archive_base(pkg):
     return version
 
 
+def upstream_of(version):
+    """Return the upstream part of a Debian version: without the epoch and the
+    Debian revision."""
+    return re.sub(r"^\d+:", "", version).rsplit("-", 1)[0]
+
+
+def mozilla_release(source):
+    """Return the newest release of a Mozilla product (MOZILLA_PRODUCTS)."""
+    return lp.get(MOZILLA_URL.format(source)).get(MOZILLA_PRODUCTS[source])
+
+
 def check_behind(state, pkgs):
     """Find the ports whose staging version is older than the Ubuntu or Debian
     version that they are built on, except those that wait for review or were
-    rejected with that version. An item keeps the time when it was first
+    rejected with that version, and the Mozilla releases that Debian has not
+    packaged (state["mozilla"]). An item keeps the time when it was first
     found. Drop the up-to-date entries whose version staging no longer has,
     which plan.sh does not use."""
     staging = lp.ppa_sources(CONFIG["staging"], CONFIG["series"])
@@ -478,12 +497,23 @@ def check_behind(state, pkgs):
         current = staging.get(pkgs.get(name, {}).get("source", name))
         if not current or current["version"] != state["uptodate"][name]["version"]:
             del state["uptodate"][name]
-    behind = {}
+    behind, mozilla = {}, {}
     for name, pkg in sorted(pkgs.items()):
         current = staging.get(pkg["source"])
         if pkg.get("local") or not pkg.get("ubuntu_src") or not current:
             continue
         base = archive_base(pkg)
+        if base and pkg.get("debian_suite") and pkg["source"] in MOZILLA_PRODUCTS:
+            try:
+                release = mozilla_release(pkg["source"])
+            except (*LP_ERRORS, ValueError, AttributeError):
+                traceback.print_exc()
+                release = None
+                if name in state["mozilla"]:
+                    mozilla[name] = state["mozilla"][name]
+            if release and lp.version_cmp(release, upstream_of(base)) > 0:
+                mozilla[name] = {"release": release, "debian": base,
+                                 "since": state["mozilla"].get(name, {}).get("since") or utc_now()}
         if not base or not newer(base, base_of(current["version"])):
             continue
         if any(state[section].get(name, {}).get("base") == base for section in ("review", "rejected")):
@@ -491,6 +521,7 @@ def check_behind(state, pkgs):
         behind[name] = {"base": base, "staging": current["version"], "hold": pkg.get("hold", ""),
                         "since": state["behind"].get(name, {}).get("since") or utc_now()}
     state["behind"] = behind
+    state["mozilla"] = mozilla
 
 
 def drift_due(state):
@@ -501,11 +532,21 @@ def drift_due(state):
 
 def behind_rows(state):
     """Return the lines about the packages whose last build in ppa.yml failed,
-    and about those that are behind Ubuntu or Debian for longer than a day."""
+    those that plan.sh could not check, those that are behind Ubuntu or Debian
+    for longer than a day, and the Mozilla releases that Debian has not
+    packaged after MOZILLA_GRACE."""
     rows = []
     for name, item in sorted(state["failed_builds"].items()):
         run = f"https://github.com/{repo()}/actions/runs/{item['run_id']}"
         rows.append(f"- `{name}`: the build in `ppa.yml` failed ([run]({run})), first on {item['since'][:10]}.")
+    for name, item in sorted(state["plan_errors"].items()):
+        run = f"https://github.com/{repo()}/actions/runs/{item['run_id']}"
+        rows.append(f"- `{name}`: `ppa.yml` could not check it ([run]({run})), first on {item['since'][:10]}: "
+                    f"`{item['error']}`")
+    for name, item in sorted(state["mozilla"].items()):
+        if seconds_since(item["since"]) >= MOZILLA_GRACE:
+            rows.append(f"- `{name}`: Mozilla released `{item['release']}` (found on {item['since'][:10]}), "
+                        f"Debian has `{item['debian']}`.")
     for name, item in sorted(state["behind"].items()):
         if name in state["failed_builds"] or seconds_since(item["since"]) < DRIFT_INTERVAL:
             continue
@@ -530,6 +571,9 @@ def render(state, pkgs=None):
             "updates the tables a few times a day and after each command. Give commands in "
             "comments.", ""]
 
+    if os.environ.get("STAGING_FROZEN"):
+        out += [f"**Staging is frozen** (`STAGING_FROZEN`: {os.environ['STAGING_FROZEN']}): `ppa.yml` "
+                "uploads nothing by itself, every build waits here for review.", ""]
     out += ["## Review before upload", ""]
     if state["review"]:
         out += ["| Package | Version | Reason | Review |", "|---|---|---|---|"]
@@ -631,25 +675,50 @@ def save(issue, state, pkgs=None):
     return github("PATCH", f"/repos/{repo()}/issues/{issue['number']}", update)
 
 
-def notify_new(issue, state, commit_time=None):
-    """Comment on the versions that appeared since the last refresh, and once
-    when the last commit gets old."""
-    new = []
+def notices(state):
+    """Return the items that the owner should see, {key: (value, line)}: the
+    versions for review and promotion, and the items to check (failed builds,
+    packages that plan.sh could not check, packages behind Ubuntu, Debian or
+    Mozilla as the issue shows them, overlay and archive changes)."""
+    versions, checks = {}, {}
     for section in ("review", "promote"):
         for name, r in state[section].items():
             version = r.get("version") or r.get("staging")
-            key = f"{section}:{name}"
-            if state["seen"].get(key) != version:
-                where = "for review" if section == "review" else "for promotion"
-                new.append(f"- `{name}` `{version}` {where}"
-                           + (" 🔒" if r.get("security") else ""))
-                state["seen"][key] = version
-    for key in list(state["seen"]):
-        section, name = key.split(":", 1)
-        if name not in state[section]:
-            del state["seen"][key]
-    if new and issue:
-        comment(issue, "New versions:\n" + "\n".join(new))
+            where = "for review" if section == "review" else "for promotion"
+            versions[f"{section}:{name}"] = (version, f"- `{name}` `{version}` {where}"
+                                             + (" 🔒" if r.get("security") else ""))
+    for name, item in state["failed_builds"].items():
+        checks[f"failed:{name}"] = (item["run_id"], f"- `{name}`: the build in `ppa.yml` failed.")
+    for name, item in state["plan_errors"].items():
+        checks[f"plan:{name}"] = (item["since"], f"- `{name}`: `ppa.yml` could not check it.")
+    for name, item in state["behind"].items():
+        if name not in state["failed_builds"] and seconds_since(item["since"]) >= DRIFT_INTERVAL:
+            checks[f"behind:{name}"] = (item["base"], f"- `{name}`: staging is behind `{item['base']}`.")
+    for name, item in state["mozilla"].items():
+        if seconds_since(item["since"]) >= MOZILLA_GRACE:
+            checks[f"mozilla:{name}"] = (item["release"], f"- `{name}`: Mozilla released `{item['release']}`, "
+                                                          "Debian has not packaged it.")
+    for name, item in state["drift"].items():
+        checks[f"drift:{name}"] = (item["value"], f"- `{name}`: an overlay or archive change to check.")
+    return versions, checks
+
+
+def notify_new(issue, state, commit_time=None):
+    """Comment on the versions and the items to check that appeared since the
+    last refresh, and once when the last commit gets old. The first refresh
+    that knows the items to check records them without a comment."""
+    versions, checks = notices(state)
+    seen = state["seen"]
+    new_versions = [line for key, (value, line) in sorted(versions.items()) if seen.get(key) != value]
+    new_checks = [line for key, (value, line) in sorted(checks.items()) if seen.get(key) != value]
+    if not state.get("checks_seen"):
+        new_checks = []
+        state["checks_seen"] = True
+    state["seen"] = {key: value for key, (value, _) in {**versions, **checks}.items()}
+    if new_versions and issue:
+        comment(issue, "New versions:\n" + "\n".join(new_versions))
+    if new_checks and issue:
+        comment(issue, "New items to check (see the issue):\n" + "\n".join(new_checks))
     if issue and state["inactive_days"] >= INACTIVE_DAYS and state.get("inactive_warned") != commit_time:
         comment(issue, f"The last commit is {state['inactive_days']} days old. GitHub disables the "
                        "scheduled workflows after 60 days without activity. Push a commit to keep "
@@ -661,17 +730,24 @@ def refresh(issue, state, pkgs=None):
     pkgs = pkgs or packages()
     state["promote"], state["stale"] = promote_rows(pkgs, state["promote"])
     ## A build that failed is retried every day, except for a held package
-    for name in list(state["failed_builds"]):
-        if name not in pkgs or pkgs[name].get("hold"):
-            del state["failed_builds"][name]
+    for section in ("failed_builds", "plan_errors"):
+        for name in list(state[section]):
+            if name not in pkgs or pkgs[name].get("hold"):
+                del state[section][name]
+    ## One check failing does not stop the other; both run again at the next
+    ##  refresh until both succeed
     if drift_due(state):
-        try:
-            check_drift(state, pkgs)
+        checked = True
+        for check, what in ((check_drift, "overlay and archive changes"),
+                            (check_behind, "packages behind Ubuntu, Debian and Mozilla")):
+            try:
+                check(state, pkgs)
+            except (*LP_ERRORS, subprocess.CalledProcessError, ValueError):
+                traceback.print_exc()
+                print(f"::warning::The check for {what} failed. Its section keeps the items of the last check.")
+                checked = False
+        if checked:
             state["drift_checked"] = utc_now()
-        except (*LP_ERRORS, subprocess.CalledProcessError):
-            traceback.print_exc()
-            print("::warning::The check for overlay and archive changes failed. "
-                  "The section keeps the items of the last check.")
     if state["stale"]:
         print(f"::warning::Launchpad gave no state for {len(state['stale'])} packages. "
               "They keep their rows from the last update.")
@@ -709,13 +785,29 @@ def build_conclusions(run_id):
 
 def cmd_add_review(args):
     """Record the builds of a ppa.yml run: the planned packages whose build job
-    failed (--planned), and the built versions that need review (build
+    failed (--planned), the packages that plan.sh could not check (--plan), the
+    versions that were uploaded (--uploaded, whose input plan.sh then knows
+    without the changelog), and the built versions that need review (build
     directories). A build that found the staging version up to date (the same
     fingerprint, but another input hash, such as after a comment change in
     package.sh) is only remembered, so that plan.sh does not build it again
     every day."""
     issue = find_issue()
     state = load_state(issue)
+    if args.plan:
+        plan = json.loads(args.plan)
+        for name in plan.get("checked", []):
+            state["plan_errors"].pop(name, None)
+        for name, error in plan.get("errors", {}).items():
+            since = state["plan_errors"].get(name, {}).get("since") or utc_now()
+            state["plan_errors"][name] = {"run_id": args.run_id, "since": since, "error": error}
+    for directory in args.uploaded or []:
+        result = read_result(os.path.join(directory, "result.env"))
+        state["uptodate"][os.path.basename(directory.rstrip("/"))] = {
+            "version": result["VERSION"],
+            "base": result.get("BASE") or base_of(result["VERSION"]),
+            "input": result["INPUT"],
+        }
     planned = json.loads(args.planned) if args.planned else []
     if planned:
         conclusions = build_conclusions(args.run_id)
@@ -731,7 +823,7 @@ def cmd_add_review(args):
         if result.get("STATUS") == "uptodate":
             state["uptodate"][name] = {
                 "version": result["VERSION"],
-                "base": base_of(result["VERSION"]),
+                "base": result.get("BASE") or base_of(result["VERSION"]),
                 "input": result["INPUT"],
             }
             ## A version that waits for review was built from another input
@@ -742,10 +834,13 @@ def cmd_add_review(args):
             new = dict(line.split(" ", 1) for line in f.read().split("\n") if line)
         staging = lp.ppa_latest(result["SOURCE"], CONFIG["staging"], CONFIG["series"])
         reason = describe_changes(new, staging.get("patches")) if staging else "new package"
+        ## With STAGING_FROZEN, ppa.yml uploads nothing by itself
+        if staging and not result.get("NEEDS_REVIEW"):
+            reason = "the same patches on a new base; staging is frozen"
         state["review"][name] = {
             "source": result["SOURCE"],
             "version": result["VERSION"],
-            "base": base_of(result["VERSION"]),
+            "base": result.get("BASE") or base_of(result["VERSION"]),
             "fingerprint": result["FINGERPRINT"],
             "input": result["INPUT"],
             "run_id": args.run_id,
@@ -799,6 +894,9 @@ def do_upload(issue, state, names, pkgs, before=None):
         if not r:
             messages.append(f"- `{name}`: not waiting for review.")
             continue
+        if before and r.get("added", "") > before:
+            messages.append(f"- `{name}`: added for review after the command. Check it and give the command again.")
+            continue
         if name not in pkgs or pkgs[name]["input"] != r["input"]:
             messages.append(f"- `{name}`: the port or the overlay changed after the review. "
                             f"Build it again (`gh workflow run ppa.yml -f packages={name}`).")
@@ -809,9 +907,15 @@ def do_upload(issue, state, names, pkgs, before=None):
             continue
         try:
             staging = lp.ppa_latest(r["source"], CONFIG["staging"], CONFIG["series"])
-            if staging and not newer(r["version"], staging["version"]):
+            if staging and staging["version"] == r["version"]:
                 messages.append(f"- `{name}`: staging already has `{staging['version']}`.")
                 del state["review"][name]
+                continue
+            ## Launchpad refuses a lower version, such as after a change of the
+            ##  version scheme, until the higher one is deleted
+            if staging and not newer(r["version"], staging["version"]):
+                messages.append(f"- `{name}`: staging has the higher version `{staging['version']}`. Delete it "
+                                f"on Launchpad and give the command again, or drop this one with `/reject {name}`.")
                 continue
             with tempfile.TemporaryDirectory() as build_dir:
                 target = os.path.join(build_dir, CONFIG["series"], name)
@@ -843,6 +947,8 @@ def do_upload(issue, state, names, pkgs, before=None):
             continue
         messages.append(f"- `{name}` `{r['version']}` uploaded to `ppa:{CONFIG['staging']}`.")
         del state["review"][name]
+        ## plan.sh then needs no changelog to know the input of this version
+        state["uptodate"][name] = {"version": r["version"], "base": r["base"], "input": r["input"]}
         ## Launchpad refuses uploads that follow each other closely.
         if index < len(names) - 1:
             time.sleep(UPLOAD_PAUSE)
@@ -863,27 +969,60 @@ def do_reject(state, names):
 
 def promote_order(names, current):
     """Return the names in the order of the copies: the groups in GROUP_ORDER,
-    and in a group the ports first, then the own packages, the metapackage
-    last."""
+    and in a group first the packages that the others need (GROUP_NEEDS, such
+    as gtk+3.0 for Firefox), then the ports, then the own packages, the
+    metapackage last."""
     def key(name):
         group = current[name]["group"]
         rank = GROUP_ORDER.index(group) if group in GROUP_ORDER else GROUP_ORDER.index("")
-        return (rank, group, name == META, name.startswith("g-unity7-"), name)
+        return (rank, group, name == META, name not in GROUP_NEEDS.get(group, ()),
+                name.startswith("g-unity7-"), name)
     return sorted(names, key=key)
 
 
-def do_promote(state, names, force, pkgs, dry_run=False):
+def promote_wave(name, group):
+    """Return the wave of a copy in its group: 0 for a package that the others
+    need (GROUP_NEEDS), 1 for a port, 2 for an own package, 3 for the
+    metapackage."""
+    if name == META:
+        return 3
+    if name in GROUP_NEEDS.get(group, ()):
+        return 0
+    return 2 if name.startswith("g-unity7-") else 1
+
+
+def unavailable_members(state, pkgs):
+    """Return the members of the groups that would be missing or older in the
+    main PPA, {name: reason}: those whose last build failed, and those that
+    neither PPA has, such as a new port whose first build failed."""
+    staging = lp.ppa_sources(CONFIG["staging"], CONFIG["series"])
+    main = lp.ppa_sources(CONFIG["main"], CONFIG["series"])
+    unavailable = {}
+    for name, pkg in pkgs.items():
+        if not pkg.get("group") or pkg.get("hold"):
+            continue
+        if name in state["failed_builds"]:
+            unavailable[name] = "its last build failed"
+        elif pkg["source"] not in staging and pkg["source"] not in main:
+            unavailable[name] = "in neither PPA"
+    return unavailable
+
+
+def do_promote(state, names, force, pkgs, dry_run=False, before=None):
     """Copy the ✅ versions from staging to the main PPA: the given ones, or
-    without names those of the table. A group is copied only when each member
-    is ✅ with its version in the table and none waits for review (--force
-    also copies from an incomplete group). A group in GROUP_NEEDS waits for the
-    packages that it needs if the main PPA has no version of them. A failed
-    copy stops the rest of its group and the packages that need it. With
-    dry_run, nothing is copied."""
+    without names those of the table. A version that the table showed only
+    after the command (before) is not copied. A group is copied only when each
+    member is ✅ with its version in the table, none waits for review, none
+    failed its last build and each is in a PPA (--force also copies from an
+    incomplete group). A group in GROUP_NEEDS waits for the packages that it
+    needs if the main PPA has no version of them. A failed copy stops the rest
+    of its group and the packages that need it. With dry_run, nothing is
+    copied."""
     messages = []
     table = state["promote"]
     current, _ = promote_rows(pkgs)
     waiting = waiting_groups(state, pkgs)
+    unavailable = unavailable_members(state, pkgs)
     problems = {}
     for name, r in current.items():
         if name not in table:
@@ -891,6 +1030,8 @@ def do_promote(state, names, force, pkgs, dry_run=False):
         elif table[name]["staging"] != r["staging"]:
             problems[name] = (f"staging now has `{r['staging']}` instead of `{table[name]['staging']}`. "
                               "Check it and give the command again")
+        elif before and table[name].get("shown", "") > before:
+            problems[name] = "the table showed this version only after the command. Check it and give the command again"
         elif r["state"] != "ok":
             problems[name] = f"the build has not finished ({STATE_ICONS[r['state']]})"
     groups = {}
@@ -909,6 +1050,8 @@ def do_promote(state, names, force, pkgs, dry_run=False):
         incomplete = [n for n in sorted(groups.get(r["group"], []))
                       if n in problems or (names and n not in names)]
         incomplete += [f"{n} (waiting for review)" for n in waiting.get(r["group"], [])]
+        incomplete += [f"{n} ({why})" for n, why in sorted(unavailable.items())
+                       if pkgs[n]["group"] == r["group"] and n not in incomplete]
         if incomplete and not force:
             messages.append(f"- `{name}`: group `{r['group']}` is incomplete "
                             f"({', '.join(incomplete)}). Use `--force` to promote it anyway.")
@@ -923,37 +1066,63 @@ def do_promote(state, names, force, pkgs, dry_run=False):
             selected.remove(name)
     credentials = os.environ.get("LP_CREDENTIALS_FILE")
     failed, failed_groups = set(), set()
+
+    def fail(name, message):
+        messages.append(message)
+        failed.add(name)
+        if current[name]["group"]:
+            failed_groups.add(current[name]["group"])
+
+    ## The copies go in waves: in each group the packages that the others need,
+    ##  the ports, the own packages, the metapackage (as promote_order sorts
+    ##  them). All copies of a wave are asked for before waiting for them, so
+    ##  that users see an incomplete group only briefly.
+    waves = []
     for name in promote_order(selected, current):
-        r = current[name]
-        ## A package that is not copied stops the packages that need it too
-        if r["group"] and r["group"] in failed_groups:
-            messages.append(f"- `{name}`: not copied, because a copy in group `{r['group']}` failed.")
-            failed.add(name)
+        key = (current[name]["group"], promote_wave(name, current[name]["group"]))
+        if not waves or waves[-1][0] != key:
+            waves.append((key, []))
+        waves[-1][1].append(name)
+    for _, wave in waves:
+        asked = []
+        for name in wave:
+            r = current[name]
+            ## A package that is not copied stops the packages that need it too
+            if r["group"] and r["group"] in failed_groups:
+                fail(name, f"- `{name}`: not copied, because a copy in group `{r['group']}` failed.")
+                continue
+            missing = [n for n in GROUP_NEEDS.get(r["group"], ()) if n in failed]
+            if missing:
+                fail(name, f"- `{name}`: not copied, because {', '.join(f'`{n}`' for n in missing)} "
+                           "was not copied.")
+                continue
+            if dry_run:
+                messages.append(f"- `{name}` `{r['staging']}` would be copied to `ppa:{CONFIG['main']}`.")
+                continue
+            proc = subprocess.run([f"{SCRIPTS}/lp_write.py", "--credentials", credentials, "copy",
+                                   r["source"], r["staging"], "--from", CONFIG["staging"],
+                                   "--to", CONFIG["main"], "--series", CONFIG["series"], "--no-wait"],
+                                  capture_output=True, text=True)
+            if proc.returncode:
+                fail(name, f"- `{name}`: the copy failed:\n```\n{proc.stderr[-1500:]}\n```")
+                continue
+            asked.append(name)
+        if not asked:
             continue
-        missing = [n for n in GROUP_NEEDS.get(r["group"], ()) if n in failed]
-        if missing:
-            messages.append(f"- `{name}`: not copied, because {', '.join(f'`{n}`' for n in missing)} "
-                            "was not copied.")
-            failed.add(name)
-            if r["group"]:
-                failed_groups.add(r["group"])
-            continue
-        if dry_run:
-            messages.append(f"- `{name}` `{r['staging']}` would be copied to `ppa:{CONFIG['main']}`.")
-            continue
-        proc = subprocess.run([f"{SCRIPTS}/lp_write.py", "--credentials", credentials, "copy",
-                               r["source"], r["staging"], "--from", CONFIG["staging"],
-                               "--to", CONFIG["main"], "--series", CONFIG["series"]],
+        proc = subprocess.run([f"{SCRIPTS}/lp_write.py", "--credentials", credentials, "wait",
+                               *(f"{current[n]['source']}={current[n]['staging']}" for n in asked),
+                               "--ppa", CONFIG["main"], "--series", CONFIG["series"]],
                               capture_output=True, text=True)
-        if proc.returncode:
-            messages.append(f"- `{name}`: the copy failed:\n```\n{proc.stderr[-1500:]}\n```")
-            failed.add(name)
-            if r["group"]:
-                failed_groups.add(r["group"])
-            continue
-        status = proc.stdout.strip()
-        messages.append(f"- `{name}` `{r['staging']}` copied to `ppa:{CONFIG['main']}`"
-                        + (" (Launchpad is publishing it)." if status == "Pending" else "."))
+        statuses = dict(line.split(None, 1) for line in proc.stdout.splitlines() if " " in line)
+        for name in asked:
+            r = current[name]
+            status = statuses.get(r["source"])
+            if not status:
+                fail(name, f"- `{name}`: the copy did not appear in `ppa:{CONFIG['main']}` in time:"
+                           f"\n```\n{proc.stderr[-1500:]}\n```")
+                continue
+            messages.append(f"- `{name}` `{r['staging']}` copied to `ppa:{CONFIG['main']}`"
+                            + (" (Launchpad is publishing it)." if status == "Pending" else "."))
     return messages
 
 
@@ -1000,7 +1169,7 @@ def run_command(issue, state, text):
             messages = do_reject(state, args)
         elif command == "/promote":
             names = [a for a in args if a not in ("--force", "--dry-run")]
-            messages = do_promote(state, names, "--force" in args, pkgs, "--dry-run" in args)
+            messages = do_promote(state, names, "--force" in args, pkgs, "--dry-run" in args, command_time())
         elif command == "/retry" and len(args) == 2:
             messages = do_retry(*args)
         elif command == "/ported" and args:
@@ -1054,6 +1223,10 @@ def main():
     p.add_argument("--artifact-prefix", default="source-")
     p.add_argument("--planned", help="JSON list of the packages that the run built, whose failed "
                                      "builds the issue shows")
+    p.add_argument("--plan", help="JSON of plan.sh --errors: the checked packages and those that "
+                                  "could not be checked, which the issue shows")
+    p.add_argument("--uploaded", action="append", help="build directory of a version that the run "
+                                                      "uploaded (repeatable)")
     p.add_argument("dirs", nargs="*", help="build directories (build/<series>/<package>)")
     p.set_defaults(func=cmd_add_review)
 

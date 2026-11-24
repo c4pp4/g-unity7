@@ -13,7 +13,7 @@ PATCHES=(
 debian_edit() {
 	sed -i \
 		-e "s/\(^\|[ :]\)cmake (>= 3.4),$/\1cmake (>= 3.16),/" \
-		-e "s/^\( *\)libdbusmenu-qt5-dev (>= 0.9.3),$/\1libdbusmenu-qt6-dev (>= 0.9.3+16.04.20160218-5+gu7),/" \
+		-e "s/^\( *\)libdbusmenu-qt5-dev (>= 0.9.3),$/\1libdbusmenu-qt6-dev (>= 0.9.3+16.04.20160218-5a+gu7),/" \
 		-e "s/^\( *\)libdee-qt5-dev,$/\1libdee-qt6-dev (>= 3.3+14.04.20140317-0ubuntu9+gu7),/" \
 		-e "s/^\( *\)libgsettings-qt-dev,$/\1libgsettings-qt6-dev,/" \
 		-e "s/^\( *\)libqt5sql5-sqlite\(,\?\)$/\1libqt6sql6-sqlite\2/" \

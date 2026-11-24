@@ -10,11 +10,21 @@ PATCHES=(
 )
 
 debian_edit() {
-	# Use the GSettings cursor theme for X applications #
+	# Use the GSettings cursor theme for X applications in the Unity session #
+	#  only, as the other Xsession.d scripts of G Unity⁷ (the one of the ebuild #
+	#  runs in every X session) #
 	install -d debian/g-unity7 || return 1
-	install -m 755 "${FILESDIR}"/95-xcursor-theme debian/g-unity7/95xcursor-theme || return 1
+	{
+		printf '%s\n' '# Use the GSettings cursor theme for X applications in the Unity session' \
+			'case :$XDG_CURRENT_DESKTOP: in' '	*:Unity:*)'
+		sed -e 's/^/\t\t/' "${FILESDIR}"/95-xcursor-theme
+		printf '%s\n' '		;;' 'esac'
+	} > debian/g-unity7/95xcursor-theme || return 1
+	chmod 644 debian/g-unity7/95xcursor-theme || return 1
+	grep -qx "$(printf '\t\t')export XCURSOR_THEME=.*" debian/g-unity7/95xcursor-theme || return 1
 	echo "debian/g-unity7/95xcursor-theme etc/X11/Xsession.d/" >> debian/install || return 1
 	grep -Fqx "debian/g-unity7/95xcursor-theme etc/X11/Xsession.d/" debian/install || return 1
+	prerm_remove_on_downgrade unity-tweak-tool /etc/X11/Xsession.d/95xcursor-theme || return 1
 }
 
 src_edit() {

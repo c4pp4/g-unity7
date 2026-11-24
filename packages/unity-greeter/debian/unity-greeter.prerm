@@ -1,7 +1,10 @@
 #!/bin/sh
 set -e
 
-if [ "$1" = "remove" ] || [ "$1" = "deconfigure" ]; then
+## Also when another version without +gu7 replaces this one, such as the Ubuntu
+##  one after ppa-purge, which does not register the alternative
+if [ "$1" = "remove" ] || [ "$1" = "deconfigure" ] \
+	|| { [ "$1" = "upgrade" ] && ! echo "$2" | grep -q "+gu7"; }; then
 	update-alternatives --remove lightdm-greeter /usr/share/xgreeters/unity-greeter.desktop
 fi
 

@@ -5,6 +5,11 @@ OVERLAY_PKG="dev-libs/libdbusmenu-qt"
 UBUNTU_SRC="libdbusmenu-qt"
 SOURCE_NAME="libdbusmenu-qt6"
 GROUP="desktop"
+## The Qt 6 packaging replaces the Qt 5 control and rules of libdbusmenu-qt
+DEBIAN_REPLACES=(
+	debian/control
+	debian/rules
+)
 
 PATCHES=(
 	Qt6-migration.patch

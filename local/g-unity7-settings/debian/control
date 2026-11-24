@@ -16,8 +16,8 @@ Depends: ${misc:Depends},
          ubuntu-mono (>= 24.04-0ubuntu2+gu7),
          ubuntu-sounds,
          ubuntu-unity-backgrounds,
-         yaru-theme-gtk (>= 26.10.3ubuntu+gu7),
-         yaru-theme-icon (>= 26.10.3ubuntu+gu7)
+         yaru-theme-gtk (>= 26.10.3ubuntu0+gu7),
+         yaru-theme-icon (>= 26.10.3ubuntu0+gu7)
 Description: G Unity⁷ desktop default settings
  GSettings overrides for the Unity session and Unity Greeter from the
  gentoo-unity7 overlay: the Yaru-dark theme, Ubuntu fonts (with the

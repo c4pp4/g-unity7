@@ -9,7 +9,7 @@ Firefox and Thunderbird (7):
   Firefox: install firefox 159.0.1-1+gu7.1~26.10 from G Unity⁷
   Firefox: install firefox-l10n-cs 159.0.1-1+gu7.1~26.10 from G Unity⁷
   Firefox: install firefox-l10n-pt-br 159.0.1-1+gu7.1~26.10 from G Unity⁷
-  Firefox: copy /home/alice/snap/firefox/common/.mozilla/firefox to /home/alice/.mozilla/firefox
+  Firefox: copy /home/alice/snap/firefox/common/.mozilla/firefox to /home/alice/.mozilla/firefox (1 MB)
   Firefox: remove the snap (snapd saves a snapshot of its data)
   Thunderbird: unchanged; the snap 160.0-1 is newer than the G Unity⁷ package 1:159.0-1+gu7.1~26.10, which could not open its profile. Run g-unity7-cleanup again after the package is updated.
 
@@ -34,8 +34,8 @@ Firefox and Thunderbird (7):
   Firefox: install firefox 159.0.1-1+gu7.1~26.10 from G Unity⁷
   Firefox: install firefox-l10n-cs 159.0.1-1+gu7.1~26.10 from G Unity⁷
   Firefox: install firefox-l10n-pt-br 159.0.1-1+gu7.1~26.10 from G Unity⁷
-  Firefox: copy /home/alice/snap/firefox/common/.mozilla/firefox to /home/alice/.mozilla/firefox
-  Firefox: copy /home/carol/snap/firefox/common/.mozilla/firefox to /home/carol/.mozilla/firefox
+  Firefox: copy /home/alice/snap/firefox/common/.mozilla/firefox to /home/alice/.mozilla/firefox (1 MB)
+  Firefox: copy /home/carol/snap/firefox/common/.mozilla/firefox to /home/carol/.mozilla/firefox (1 MB)
   Firefox: remove the snap (snapd saves a snapshot of its data)
   Thunderbird: unchanged; the snap 160.0-1 is newer than the G Unity⁷ package 1:159.0-1+gu7.1~26.10, which could not open its profile. Run g-unity7-cleanup again after the package is updated.
 
@@ -60,8 +60,8 @@ Firefox and Thunderbird (7):
   Firefox: install firefox 159.0.1-1+gu7.1~26.10 from G Unity⁷
   Firefox: install firefox-l10n-cs 159.0.1-1+gu7.1~26.10 from G Unity⁷
   Firefox: install firefox-l10n-pt-br 159.0.1-1+gu7.1~26.10 from G Unity⁷
-  Firefox: copy /home/alice/snap/firefox/common/.mozilla/firefox to /home/alice/.mozilla/firefox
-  Firefox: copy /home/carol/snap/firefox/common/.mozilla/firefox to /home/carol/.mozilla/firefox
+  Firefox: copy /home/alice/snap/firefox/common/.mozilla/firefox to /home/alice/.mozilla/firefox (1 MB)
+  Firefox: copy /home/carol/snap/firefox/common/.mozilla/firefox to /home/carol/.mozilla/firefox (1 MB)
   Firefox: remove the snap (snapd saves a snapshot of its data)
   Thunderbird: unchanged; the snap 160.0-1 is newer than the G Unity⁷ package 1:159.0-1+gu7.1~26.10, which could not open its profile. Run g-unity7-cleanup again after the package is updated.
 
@@ -95,6 +95,7 @@ firefox:
   Candidate: 159.0.1-1+gu7.1~26.10
 alice:alice 700 /home/alice/.mozilla/
 alice:alice 700 /home/alice/.mozilla/firefox/
+alice:alice 600 /home/alice/.mozilla/firefox/.g-unity7-snap-copy
 alice:alice 755 /home/alice/.mozilla/firefox/abc.default/
 alice:alice 644 /home/alice/.mozilla/firefox/abc.default/prefs.js
 alice:alice 600 /home/alice/.mozilla/firefox/installs.ini
@@ -123,6 +124,7 @@ Locked=1
 -- /var/snap/firefox: 6000 
 carol:carol 700 /home/carol/.mozilla/
 carol:carol 700 /home/carol/.mozilla/firefox/
+carol:carol 600 /home/carol/.mozilla/firefox/.g-unity7-snap-copy
 carol:carol 755 /home/carol/.mozilla/firefox/c.default/
 carol:carol 600 /home/carol/.mozilla/firefox/installs.ini
 carol:carol 644 /home/carol/.mozilla/firefox/profiles.ini
@@ -143,7 +145,7 @@ Firefox and Thunderbird (5):
   Thunderbird: install thunderbird 1:159.0-1+gu7.1~26.10 from G Unity⁷
   Thunderbird: install thunderbird-l10n-cs 1:159.0-1+gu7.1~26.10 from G Unity⁷
   Thunderbird: install thunderbird-l10n-pt-br 1:159.0-1+gu7.1~26.10 from G Unity⁷
-  Thunderbird: copy /home/alice/snap/thunderbird/common/.thunderbird to /home/alice/.thunderbird
+  Thunderbird: copy /home/alice/snap/thunderbird/common/.thunderbird to /home/alice/.thunderbird (1 MB)
   Thunderbird: remove the snap (snapd saves a snapshot of its data)
 
 Packages apt will install (2):
@@ -174,7 +176,7 @@ Both the G Unity⁷ Thunderbird package and the Thunderbird snap are installed:
   2) Keep the snap as well
 
 Firefox and Thunderbird (2):
-  Thunderbird: copy /home/alice/snap/thunderbird/common/.thunderbird to /home/alice/.thunderbird
+  Thunderbird: copy /home/alice/snap/thunderbird/common/.thunderbird to /home/alice/.thunderbird (1 MB)
   Thunderbird: remove the snap (snapd saves a snapshot of its data)
 
 Packages apt will remove: none
@@ -190,6 +192,7 @@ state: firefox firefox-l10n-cs firefox-l10n-pt-br thunderbird thunderbird-l10n-c
 
 -- snaps: thunderbird 
 alice:alice 700 /home/alice/.thunderbird/
+alice:alice 600 /home/alice/.thunderbird/.g-unity7-snap-copy
 alice:alice 600 /home/alice/.thunderbird/installs.ini
 alice:alice 755 /home/alice/.thunderbird/p.default/
 alice:alice 644 /home/alice/.thunderbird/p.default/prefs.js
@@ -197,25 +200,23 @@ alice:alice 644 /home/alice/.thunderbird/profiles.ini
 
 ### again: the package and the snap: 1, confirm
 Both the G Unity⁷ Thunderbird package and the Thunderbird snap are installed:
-  1) Copy the snap profile for alice and remove the snap (recommended)
+  1) Remove the snap (recommended)
   2) Keep the snap as well
 
 Firefox and Thunderbird (2):
-  Thunderbird: add the profiles in /home/alice/snap/thunderbird/common/.thunderbird to /home/alice/.thunderbird; the default profile stays
+  Thunderbird: /home/alice/snap/thunderbird/common/.thunderbird was copied to /home/alice/.thunderbird before, nothing to copy
   Thunderbird: remove the snap (snapd saves a snapshot of its data)
 
 Packages apt will remove: none
 
 To keep a package, run: sudo g-unity7-cleanup --keep <package>
-Copied /home/alice/snap/thunderbird/common/.thunderbird/p.default to /home/alice/.thunderbird/p.default-snap
 thunderbird removed (test)
 state: firefox firefox-l10n-cs firefox-l10n-pt-br thunderbird thunderbird-l10n-cs thunderbird-l10n-pt-br 
 
 -- snaps: 
 alice:alice 700 /home/alice/.thunderbird/
+alice:alice 600 /home/alice/.thunderbird/.g-unity7-snap-copy
 alice:alice 600 /home/alice/.thunderbird/installs.ini
-alice:alice 755 /home/alice/.thunderbird/p.default-snap/
-alice:alice 644 /home/alice/.thunderbird/p.default-snap/prefs.js
 alice:alice 755 /home/alice/.thunderbird/p.default/
 alice:alice 644 /home/alice/.thunderbird/p.default/prefs.js
 alice:alice 644 /home/alice/.thunderbird/profiles.ini
@@ -233,11 +234,6 @@ Default=1
 [InstallFDC34C9F024745EB]
 Default=p.default
 Locked=1
-
-[Profile1]
-Name=default (snap)
-IsRelative=1
-Path=p.default-snap
 
 ### nothing left: --dry-run
 Nothing to do. No Ubuntu Unity packages replaced by G Unity⁷ are left.

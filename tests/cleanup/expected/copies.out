@@ -1,0 +1,118 @@
+### the copy of bob fails: 2 (no Firefox), 1, confirm
+Firefox is not installed.
+G Unity⁷ provides a Firefox package with Unity's global menu:
+  1) Install the G Unity⁷ package (recommended)
+  2) Do not install it
+
+Thunderbird is installed as an Ubuntu snap.
+G Unity⁷ provides a Thunderbird package with Unity's global menu:
+  1) Install the G Unity⁷ package, copy the snap profiles for alice and bob and remove the snap (recommended)
+  2) Keep the Ubuntu snap
+
+Firefox and Thunderbird (6):
+  Firefox: not installed
+  Thunderbird: install thunderbird 1:159.0-1+gu7.1~26.10 from G Unity⁷
+  Thunderbird: install thunderbird-l10n-cs 1:159.0-1+gu7.1~26.10 from G Unity⁷
+  Thunderbird: copy /home/alice/snap/thunderbird/common/.thunderbird to /home/alice/.thunderbird (1 MB)
+  Thunderbird: copy /home/bob/snap/thunderbird/common/.thunderbird to /home/bob/.thunderbird (1 MB)
+  Thunderbird: remove the snap (snapd saves a snapshot of its data)
+
+Packages apt will install (1):
+  thunderbird-l10n-cs
+
+Packages apt will downgrade (1):
+  thunderbird
+
+Packages apt will remove: none
+
+To keep a package, run: sudo g-unity7-cleanup --keep <package>
+The following NEW packages will be installed:
+  thunderbird-l10n-cs
+The following packages will be DOWNGRADED:
+  thunderbird
+0 upgraded, 1 newly installed, 1 downgraded, 0 to remove and 0 not upgraded.
+After this operation, 0 B of additional disk space will be used.
+dpkg: warning: downgrading thunderbird (2:1snap1) to (1:159.0-1+gu7.1~26.10)
+Copied /home/alice/snap/thunderbird/common/.thunderbird to /home/alice/.thunderbird
+Set /home/alice/.thunderbird/p.default as the default profile
+cp: (error)
+copy-snap-profiles: cannot copy /home/bob/snap/thunderbird/common/.thunderbird
+g-unity7-cleanup: cannot copy the thunderbird profiles of bob
+g-unity7-cleanup: the thunderbird snap stays installed, because a copy of its profiles failed; fix the error, such as a full disk, and run g-unity7-cleanup again
+[exit 1]
+state: firefox thunderbird thunderbird-l10n-cs 
+
+-- snaps: thunderbird 
+-- switch: switch-thunderbird 
+alice:alice 700 /home/alice/.thunderbird/
+alice:alice 600 /home/alice/.thunderbird/.g-unity7-snap-copy
+alice:alice 600 /home/alice/.thunderbird/installs.ini
+alice:alice 755 /home/alice/.thunderbird/p.default/
+alice:alice 644 /home/alice/.thunderbird/p.default/prefs.js
+alice:alice 644 /home/alice/.thunderbird/profiles.ini
+bob:bob 750 /home/bob/
+bob:bob 644 /home/bob/.bash_logout
+bob:bob 644 /home/bob/.bashrc
+bob:bob 644 /home/bob/.profile
+
+### again: 2, 1, confirm
+Firefox is not installed.
+G Unity⁷ provides a Firefox package with Unity's global menu:
+  1) Install the G Unity⁷ package (recommended)
+  2) Do not install it
+
+Both the G Unity⁷ Thunderbird package and the Thunderbird snap are installed:
+  1) Copy the snap profile for bob and remove the snap (recommended)
+  2) Keep the snap as well
+
+Firefox and Thunderbird (4):
+  Firefox: not installed
+  Thunderbird: /home/alice/snap/thunderbird/common/.thunderbird was copied to /home/alice/.thunderbird before, nothing to copy
+  Thunderbird: copy /home/bob/snap/thunderbird/common/.thunderbird to /home/bob/.thunderbird (1 MB)
+  Thunderbird: remove the snap (snapd saves a snapshot of its data)
+
+Packages apt will remove: none
+
+To keep a package, run: sudo g-unity7-cleanup --keep <package>
+Copied /home/bob/snap/thunderbird/common/.thunderbird to /home/bob/.thunderbird
+Set /home/bob/.thunderbird/p.default as the default profile
+thunderbird removed (test)
+state: firefox thunderbird thunderbird-l10n-cs 
+
+-- snaps: 
+-- switch: 
+alice:alice 700 /home/alice/.thunderbird/
+alice:alice 600 /home/alice/.thunderbird/.g-unity7-snap-copy
+alice:alice 600 /home/alice/.thunderbird/installs.ini
+alice:alice 755 /home/alice/.thunderbird/p.default/
+alice:alice 644 /home/alice/.thunderbird/p.default/prefs.js
+alice:alice 644 /home/alice/.thunderbird/profiles.ini
+bob:bob 700 /home/bob/.thunderbird/
+bob:bob 600 /home/bob/.thunderbird/.g-unity7-snap-copy
+bob:bob 600 /home/bob/.thunderbird/installs.ini
+bob:bob 755 /home/bob/.thunderbird/p.default/
+bob:bob 644 /home/bob/.thunderbird/p.default/locked
+bob:bob 644 /home/bob/.thunderbird/p.default/prefs.js
+bob:bob 644 /home/bob/.thunderbird/profiles.ini
+-- profiles.ini of bob
+[Profile0]
+Name=default
+IsRelative=1
+Path=p.default
+Default=1
+
+[InstallFDC34C9F024745EB]
+Default=p.default
+Locked=1
+
+### too little space: --dry-run, 2
+Firefox is not installed.
+G Unity⁷ provides a Firefox package with Unity's global menu:
+  1) Install the G Unity⁷ package (recommended)
+  2) Do not install it
+
+Nothing to do. No Ubuntu Unity packages replaced by G Unity⁷ are left.
+Firefox: not installed
+Thunderbird: unchanged; the copy of the snap profiles needs 1 MB in /, which has 49 MB free. Free some space and run g-unity7-cleanup again.
+state: firefox thunderbird thunderbird-l10n-cs 
+
