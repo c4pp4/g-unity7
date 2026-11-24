@@ -35,21 +35,17 @@ src=$1 dst=$2 hash=$3 adopt=$4
 [[ -f ${src}/profiles.ini ]] || die "cannot read ${src}/profiles.ini"
 
 ## Print the path of the default profile of the snap in profiles.ini $1: the
-##  one in its first install section other than that of the package (install
-##  hash $2), or else the one in the section of the package, or else the
-##  profile with Default=1. The snap uses one profile for all installs. A snap
-##  profile directory may also have the section of Ubuntu's package from before
-##  the snap, whose directory had the same hash as the G Unity⁷ package.
+##  profile with Default=1, or else the only profile. In a snap, Firefox and
+##  Thunderbird do not keep a profile for each install (nsToolkitProfileService),
+##  so they open this profile and ignore the install sections. Those in a snap
+##  profile directory come from Ubuntu's package before the snap and may name an
+##  older profile.
 moz_default_profile() {
-	awk -F= -v own="[Install${2:-}]" '
+	awk -F= '
 		/^\[/ { section = $0; next }
-		section ~ /^\[Install/ && $1 == "Default" {
-			if (section == own) { if (pkg == "") pkg = $2 }
-			else if (snap == "") snap = $2
-		}
-		section ~ /^\[Profile/ && $1 == "Path" { path[section] = $2 }
-		section ~ /^\[Profile/ && $1 == "Default" && $2 == "1" { def = section }
-		END { if (snap != "") print snap; else if (pkg != "") print pkg; else if (def != "") print path[def] }
+		section ~ /^\[Profile[0-9]+\]$/ && $1 == "Path" { path[section] = $2; only = $2; n++ }
+		section ~ /^\[Profile[0-9]+\]$/ && $1 == "Default" && $2 == "1" { def = section }
+		END { if (def != "") print path[def]; else if (n == 1) print only }
 	' "$1" 2>/dev/null || true
 }
 
@@ -93,7 +89,7 @@ moz_claim_profile() {
 moz_merge_profiles() {
 	local src=$1 dst=$2 hash=$3 adopt=$4
 	local def def_new='' n name path rel new i
-	def=$(moz_default_profile "${src}/profiles.ini" "${hash}")
+	def=$(moz_default_profile "${src}/profiles.ini")
 	n=$(sed -n 's/^\[Profile\([0-9]*\)\]$/\1/p' "${dst}/profiles.ini" | sort -n | tail -n 1) || true
 	n=$(( ${n:--1} + 1 ))
 	## Fields separated by \x1f, which keeps an empty name as a field
@@ -130,7 +126,7 @@ moz_merge_profiles() {
 ##  before 24.04). The package then uses the same profiles.
 if [[ -d ${dst} && $(readlink -f -- "${src}") == "$(readlink -f -- "${dst}")" ]]; then
 	echo "${src} is ${dst}, nothing to copy"
-	[[ -z ${adopt} ]] || moz_claim_profile "${dst}" "${hash}" "$(moz_default_profile "${dst}/profiles.ini" "${hash}")"
+	[[ -z ${adopt} ]] || moz_claim_profile "${dst}" "${hash}" "$(moz_default_profile "${dst}/profiles.ini")"
 	exit 0
 fi
 if [[ -f ${dst}/profiles.ini ]]; then
@@ -157,4 +153,4 @@ else
 	chmod go-rwx "${dst}" || die "cannot change the mode of ${dst}"
 fi
 echo "Copied ${src} to ${dst}"
-moz_claim_profile "${dst}" "${hash}" "$(moz_default_profile "${dst}/profiles.ini" "${hash}")"
+moz_claim_profile "${dst}" "${hash}" "$(moz_default_profile "${dst}/profiles.ini")"

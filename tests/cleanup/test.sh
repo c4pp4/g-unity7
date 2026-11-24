@@ -510,7 +510,9 @@ group_mozilla() {
 ##  where Thunderbird 160 creates new profiles (the "current" link still points
 ##  to the previous revision), the legacy directory, which Firefox and
 ##  Thunderbird use if it exists, and the link that the Thunderbird snap makes
-##  to the profiles of Ubuntu's package from before the snap
+##  to the profiles of Ubuntu's package from before the snap. The snap opens
+##  the profile with Default=1 there, not the one in the install section of the
+##  package.
 group_locations() {
 	local dave=/home/dave erin=/home/erin frank=/home/frank
 	setup_mozilla
@@ -533,9 +535,10 @@ group_locations() {
 	ln -s 1331 "${dave}"/snap/thunderbird/current
 	profile "${erin}"/snap/thunderbird/common/.thunderbird legacy.default
 	profile "${erin}"/snap/thunderbird/1333/.config/thunderbird xdg.default
-	mkdir -p "${frank}"/.thunderbird/deb.default "${frank}"/.thunderbird/snap.default \
+	mkdir -p "${frank}"/.thunderbird/used.default "${frank}"/.thunderbird/old.default \
 		"${frank}"/snap/thunderbird/common
-	printf '[Profile0]\nName=default\nIsRelative=1\nPath=deb.default\nDefault=1\n\n[Profile1]\nName=default-release\nIsRelative=1\nPath=snap.default\n\n[InstallFDC34C9F024745EB]\nDefault=deb.default\nLocked=1\n\n[Install1F2E3D4C5B6A7980]\nDefault=snap.default\nLocked=1\n' \
+	echo prefs > "${frank}"/.thunderbird/used.default/prefs.js
+	printf '[Profile0]\nName=default\nIsRelative=1\nPath=used.default\nDefault=1\n\n[Profile1]\nName=old\nIsRelative=1\nPath=old.default\n\n[General]\nStartWithLastProfile=1\nVersion=2\n\n[InstallFDC34C9F024745EB]\nDefault=old.default\nLocked=1\n' \
 		> "${frank}"/.thunderbird/profiles.ini
 	ln -s "${frank}"/.thunderbird "${frank}"/snap/thunderbird/common/.thunderbird
 	chown -hR dave:dave "${dave}"

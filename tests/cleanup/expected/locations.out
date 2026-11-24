@@ -77,7 +77,7 @@ Set /home/dave/.thunderbird/new.default as the default profile
 Copied /home/erin/snap/thunderbird/common/.thunderbird to /home/erin/.thunderbird
 Set /home/erin/.thunderbird/legacy.default as the default profile
 /home/frank/snap/thunderbird/common/.thunderbird is /home/frank/.thunderbird, nothing to copy
-Set /home/frank/.thunderbird/snap.default as the default profile
+Set /home/frank/.thunderbird/used.default as the default profile
 firefox removed (test)
 thunderbird removed (test)
 state: firefox firefox-l10n-cs thunderbird thunderbird-l10n-cs 
@@ -100,31 +100,32 @@ erin:erin 755 /home/erin/.thunderbird/legacy.default/
 erin:erin 644 /home/erin/.thunderbird/legacy.default/prefs.js
 erin:erin 644 /home/erin/.thunderbird/profiles.ini
 frank:frank 755 /home/frank/.thunderbird/
-frank:frank 755 /home/frank/.thunderbird/deb.default/
 frank:frank 600 /home/frank/.thunderbird/installs.ini
+frank:frank 755 /home/frank/.thunderbird/old.default/
 frank:frank 644 /home/frank/.thunderbird/profiles.ini
-frank:frank 755 /home/frank/.thunderbird/snap.default/
+frank:frank 755 /home/frank/.thunderbird/used.default/
+frank:frank 644 /home/frank/.thunderbird/used.default/prefs.js
 -- profiles.ini of frank
 [Profile0]
 Name=default
 IsRelative=1
-Path=deb.default
+Path=used.default
 Default=1
 
 [Profile1]
-Name=default-release
+Name=old
 IsRelative=1
-Path=snap.default
+Path=old.default
+
+[General]
+StartWithLastProfile=1
+Version=2
 
 [InstallFDC34C9F024745EB]
-Default=snap.default
-Locked=1
-
-[Install1F2E3D4C5B6A7980]
-Default=snap.default
+Default=used.default
 Locked=1
 -- installs.ini of frank
 
 [FDC34C9F024745EB]
-Default=snap.default
+Default=used.default
 Locked=1
