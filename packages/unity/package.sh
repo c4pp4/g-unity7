@@ -17,6 +17,7 @@ PATCHES=(
 	fix-recently-used-tracking-for-DBusActivatable-apps.patch
 	prevent-compiz-segfault-by-guarding-pthread_join.patch
 	prevent-duplicate-reboot-shutdown-dialog.patch
+	redraw-title-bar-when-menus-change.patch
 	remove-all-code-related-to-online-search.patch
 	revert-unwanted-ubuntu-unity-changes.patch
 	set-desktop-name.patch

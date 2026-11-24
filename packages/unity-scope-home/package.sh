@@ -4,4 +4,5 @@ GROUP="desktop"
 
 PATCHES=(
 	Remove-Software-center-and-1kB-filter-option-and-fix-100kB.patch
+	Sort-photos-from-the-newest.patch
 )

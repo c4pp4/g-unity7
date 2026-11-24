@@ -12,6 +12,9 @@ PATCHES=(
 	Fix-scope-crash.patch
 	Fix-preview-crash.patch
 	Refresh-results-when-Shotwell-database-changes.patch
+	Hide-all-trashed-and-missing-photos.patch
+	Fix-Older-date-filter.patch
+	Make-photos-sortable-by-date.patch
 )
 
 debian_edit() {
