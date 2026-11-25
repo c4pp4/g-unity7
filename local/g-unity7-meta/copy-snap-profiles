@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/python3 -I
 ## Copy the profiles of a Firefox or Thunderbird snap to the profile directory
 ##  of the G Unity⁷ package. g-unity7-cleanup runs it as the user whose
 ##  profiles they are: the user owns these directories and can replace any path
@@ -28,276 +28,459 @@
 ##  package), a copy that was completed in the same switch is not made again,
 ##  such as when the copy of another user stopped the run, unless the snap
 ##  changed the profiles since then.
+##
+##  cp -a and mv -T make the copies and move them into place, so that links,
+##  special files and attributes are handled as cp and mv do.
 
-set -euo pipefail
-umask 077
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
 
-die() {
-	echo "copy-snap-profiles: $*" >&2
-	exit 1
-}
-
-[[ ${EUID} -ne 0 ]] || die "run it as the user whose profiles they are, not as root"
-[[ $# -eq 4 || $# -eq 5 ]] \
-	|| die "usage: copy-snap-profiles <snap profile directory> <package profile directory> <install hash> <adopt> [<switch id>]"
-src=$1 dst=$2 hash=$3 adopt=$4 switch=${5:-}
-[[ -f ${src}/profiles.ini ]] || die "cannot read ${src}/profiles.ini"
+USAGE = ("usage: copy-snap-profiles <snap profile directory> <package profile directory> "
+         "<install hash> <adopt> [<switch id>]")
 ## Written to the package profile directory when the copy of a switch is done
-marker=.g-unity7-snap-copy
+MARKER = ".g-unity7-snap-copy"
+PROFILE_SECTION = re.compile(r"\[Profile[0-9]+\]")
+PROFILE_NUMBER = re.compile(r"\[Profile([0-9]*)\]")
+## The bytes of file names and contents that are not UTF-8 stay as they are
+ENCODING = {"encoding": "utf-8", "errors": "surrogateescape", "newline": ""}
 
-## The temporary directory of the copies, removed on exit
-tmp=
-trap '[[ -z ${tmp} ]] || rm -rf -- "${tmp}"' EXIT
 
-## Create the temporary directory in directory $1, on the file system of the
-##  package profile directory, so that a complete copy is only renamed.
-make_tmp() {
-	tmp=$(mktemp -d "$1/.g-unity7-copy.XXXXXX" 2>/dev/null) || die "cannot create a temporary directory in $1"
-}
+class Failure(Exception):
+    """An error that stops the copy. Its text follows "copy-snap-profiles: "."""
 
-## Record that the copy of this switch is done
-mark_done() {
-	[[ -z ${switch} ]] || printf '%s %s\n' "${switch}" "${src}" > "${dst}/${marker}" \
-		|| die "cannot write ${dst}/${marker}"
-}
 
-## Print the path of the default profile of the snap in profiles.ini $1: the
-##  profile with Default=1, or else the only profile. In a snap, Firefox and
-##  Thunderbird do not keep a profile for each install (nsToolkitProfileService),
-##  so they open this profile and ignore the install sections. Those in a snap
-##  profile directory come from Ubuntu's package before the snap and may name an
-##  older profile.
-moz_default_profile() {
-	awk -F= '
-		/^\[/ { section = $0; next }
-		section ~ /^\[Profile[0-9]+\]$/ && $1 == "Path" { path[section] = $2; only = $2; n++ }
-		section ~ /^\[Profile[0-9]+\]$/ && $1 == "Default" && $2 == "1" { def = section }
-		END { if (def != "") print path[def]; else if (n == 1) print only }
-	' "$1" 2>/dev/null || true
-}
+def die(text):
+    raise Failure(text)
 
-## Set Default=$3 in section [$2] of ini file $1, or add the section.
-ini_set_default() {
-	local file=$1 section=$2 value=$3 content
-	if [[ -f ${file} ]] && grep -qxF "[${section}]" "${file}"; then
-		content=$(awk -v s="[${section}]" -v v="${value}" '
-			/^\[/ { in_s = ($0 == s); print; if (in_s) print "Default=" v; next }
-			in_s && /^Default=/ { next }
-			{ print }' "${file}") || die "cannot read ${file}"
-		printf '%s\n' "${content}" > "${file}" || die "cannot write ${file}"
-	else
-		printf '\n[%s]\nDefault=%s\nLocked=1\n' "${section}" "${value}" >> "${file}" \
-			|| die "cannot write ${file}"
-	fi
-}
 
-## Make profile $3 (a path relative to the profile directory $1) the profile of
-##  the package, as Firefox does on its first run. $2 is the install hash of
-##  the package directory in profiles.ini and installs.ini. Without this,
-##  Firefox creates a new profile, because the compatibility.ini of a copied
-##  profile points to the snap.
-moz_claim_profile() {
-	local dir=$1 hash=$2 profile=$3
-	[[ -n ${hash} && -n ${profile} ]] || return 0
-	ini_set_default "${dir}/profiles.ini" "Install${hash}" "${profile}"
-	ini_set_default "${dir}/installs.ini" "${hash}" "${profile}"
-	echo "Set ${dir}/${profile} as the default profile"
-}
+def run(*command):
+    """Run a command with the output of this program, and return whether it
+    succeeded."""
+    sys.stdout.flush()
+    return subprocess.run(command).returncode == 0
 
-## Print a name for the copy of profile directory $1 in the package profile
-##  directory $2 that neither it nor the temporary directory has: the name
-##  itself, or with "-snap" added (the snap copied the old profiles of the
-##  Ubuntu package under the same names), or "-snap2" and so on.
-free_name() {
-	local name=$1 dir=$2 new i=2
-	new=${name}
-	[[ ! -e ${dir}/${new} && ! -e ${tmp}/${new} ]] || new=${name}-snap
-	while [[ -e ${dir}/${new} || -e ${tmp}/${new} ]]; do
-		new=${name}-snap${i}
-		i=$(( i + 1 ))
-	done
-	echo "${new}"
-}
 
-## Succeed if the profile in directory $1 belongs to one of the profile groups
-##  with the StoreIDs $2...: Firefox writes the StoreID of its group to prefs.js
-moz_group_member() {
-	local dir=$1 id
-	shift
-	for id in "$@"; do
-		grep -Fq "\"toolkit.profiles.storeID\", \"${id}\"" "${dir}/prefs.js" 2>/dev/null && return 0
-	done
-	return 1
-}
+def read_lines(path):
+    """Return the lines of file path as awk reads them (split at a newline only,
+    without the newline), or None if it cannot be read."""
+    try:
+        with open(path, **ENCODING) as file:
+            lines = file.read().split("\n")
+    except (OSError, ValueError):
+        return None
+    if lines[-1] == "":
+        lines.pop()
+    return lines
 
-## Add the profiles in the snap profile directory $1 to the profile directory
-##  $2, which has its own profiles.ini: copy each profile directory (under a
-##  free name, see free_name) and add it to profiles.ini with "(snap)" after
-##  its name. No profile is replaced. With $4, the snap's default profile
-##  becomes the default profile of the package (install hash $3); otherwise the
-##  default stays. Only profiles in a directory of their own in the snap
-##  profile directory are copied, as Firefox and Thunderbird create them, not
-##  those with an absolute path or a path with "/".
-##
-##  A profile group of Firefox (the Profiles menu) has one profile in
-##  profiles.ini, with the StoreID of the group. Its other profiles are only in
-##  "Profile Groups/<StoreID>.sqlite", with paths relative to the profile
-##  directory, and have the StoreID in prefs.js. They are copied with the
-##  database under the same names, so that these paths stay valid, and the
-##  copy fails if a name is taken. Other directories with prefs.js or
-##  times.json that profiles.ini does not list, such as a profile removed from
-##  the list but kept, are copied like the listed profiles but not added to
-##  profiles.ini.
-##
-##  All profiles are copied to the temporary directory before the first one is
-##  moved into place, so that an error leaves the package profile directory as
-##  it was.
-moz_merge_profiles() {
-	local src=$1 dst=$2 hash=$3 adopt=$4
-	local def def_new='' n name path rel store selector new entry entries=() unlisted=() ids=() dir base file
-	local -A listed=()
-	def=$(moz_default_profile "${src}/profiles.ini")
-	n=$(sed -n 's/^\[Profile\([0-9]*\)\]$/\1/p' "${dst}/profiles.ini" | sort -n | tail -n 1) || true
-	n=$(( ${n:--1} + 1 ))
-	make_tmp "${dst}"
-	## Fields separated by \x1f, which keeps an empty name as a field
-	while IFS=$'\x1f' read -r name path rel store selector; do
-		[[ ${rel} != 1 ]] || listed[${path}]=1
-		[[ ${rel} == 1 && -n ${path} && ${path} != */* && ${path} != . && ${path} != .. \
-			&& -d ${src}/${path} ]] || continue
-		if [[ -n ${store} ]]; then
-			ids+=( "${store}" )
-			new=${path}
-			[[ ! -e ${dst}/${new} && ! -e ${tmp}/${new} ]] \
-				|| die "cannot add the profile group of ${src}/${path} to ${dst}: ${dst}/${new} exists"
-		else
-			new=$(free_name "${path}" "${dst}")
-		fi
-		cp -a "${src}/${path}" "${tmp}/${new}" || die "cannot copy ${src}/${path}"
-		entries+=( "${name}"$'\x1f'"${path}"$'\x1f'"${new}"$'\x1f'"${store}"$'\x1f'"${selector}" )
-	done < <(awk '
-		function out() {
-			if (sec ~ /^\[Profile[0-9]+\]$/ && path != "")
-				printf "%s\037%s\037%s\037%s\037%s\n", name, path, rel, store, sel
-		}
-		/^\[/ { out(); sec = $0; name = path = rel = store = sel = ""; next }
-		{ k = $0; sub(/=.*/, "", k); v = $0; sub(/^[^=]*=/, "", v) }
-		k == "Name" { name = v }
-		k == "Path" { path = v }
-		k == "IsRelative" { rel = v }
-		k == "StoreID" { store = v }
-		k == "ShowSelector" { sel = v }
-		END { out() }' "${src}/profiles.ini")
-	## The profiles that profiles.ini does not list
-	for dir in "${src}"/*/; do
-		dir=${dir%/}
-		base=${dir##*/}
-		[[ -d ${dir} && ! -L ${dir} && -z ${listed[${base}]:-} && ${base} != "Profile Groups" ]] || continue
-		[[ -f ${dir}/prefs.js || -f ${dir}/times.json ]] || continue
-		if [[ ${#ids[@]} -gt 0 ]] && moz_group_member "${dir}" "${ids[@]}"; then
-			new=${base}
-			[[ ! -e ${dst}/${new} && ! -e ${tmp}/${new} ]] \
-				|| die "cannot add the profile group of ${src} to ${dst}: ${dst}/${new} exists"
-		else
-			new=$(free_name "${base}" "${dst}")
-		fi
-		cp -a "${dir}" "${tmp}/${new}" || die "cannot copy ${dir}"
-		unlisted+=( "${base}"$'\x1f'"${new}" )
-	done
-	## The databases of the profile groups
-	if [[ ${#ids[@]} -gt 0 && -d "${src}/Profile Groups" && ! -L "${src}/Profile Groups" ]]; then
-		mkdir "${tmp}/Profile Groups" || die "cannot create ${tmp}/Profile Groups"
-		for file in "${src}/Profile Groups"/*; do
-			[[ -f ${file} && ! -L ${file} ]] || continue
-			[[ ! -e "${dst}/Profile Groups/${file##*/}" ]] \
-				|| die "cannot add the profile group of ${src} to ${dst}: ${dst}/Profile Groups/${file##*/} exists"
-			cp -a "${file}" "${tmp}/Profile Groups/" || die "cannot copy ${file}"
-		done
-	fi
 
-	## The group databases and the unlisted profiles first: nothing uses them
-	##  before the profiles are added to profiles.ini
-	if [[ -d "${tmp}/Profile Groups" ]]; then
-		mkdir -p "${dst}/Profile Groups" || die "cannot create ${dst}/Profile Groups"
-		for file in "${tmp}/Profile Groups"/*; do
-			[[ -e ${file} ]] || continue
-			mv -T -- "${file}" "${dst}/Profile Groups/${file##*/}" \
-				|| die "cannot move the copy of ${src}/Profile Groups/${file##*/} to ${dst}/Profile Groups"
-			echo "Copied ${src}/Profile Groups/${file##*/} to ${dst}/Profile Groups/${file##*/}"
-		done
-	fi
-	for entry in "${unlisted[@]}"; do
-		IFS=$'\x1f' read -r base new <<< "${entry}"
-		mv -T -- "${tmp}/${new}" "${dst}/${new}" || die "cannot move the copy of ${src}/${base} to ${dst}/${new}"
-		echo "Copied ${src}/${base} to ${dst}/${new} (not in profiles.ini)"
-	done
-	for entry in "${entries[@]}"; do
-		IFS=$'\x1f' read -r name path new store selector <<< "${entry}"
-		mv -T -- "${tmp}/${new}" "${dst}/${new}" || die "cannot move the copy of ${src}/${path} to ${dst}/${new}"
-		{
-			printf '\n[Profile%s]\nName=%s (snap)\nIsRelative=1\nPath=%s\n' "${n}" "${name}" "${new}"
-			[[ -z ${store} ]] || printf 'StoreID=%s\n' "${store}"
-			[[ -z ${selector} ]] || printf 'ShowSelector=%s\n' "${selector}"
-		} >> "${dst}/profiles.ini" || die "cannot write ${dst}/profiles.ini"
-		echo "Copied ${src}/${path} to ${dst}/${new}"
-		n=$(( n + 1 ))
-		[[ ${path} != "${def}" ]] || def_new=${new}
-	done
-	[[ -z ${adopt} ]] || moz_claim_profile "${dst}" "${hash}" "${def_new}"
-}
+def file_text(path):
+    """Return the text of file path without the newlines at its end, as $(< path)
+    does, or "" if it cannot be read."""
+    try:
+        with open(path, **ENCODING) as file:
+            return file.read().rstrip("\n")
+    except (OSError, ValueError):
+        return ""
 
-[[ ${adopt} == adopt ]] || adopt=
-## A copy of this switch is not made again, unless the snap changed the
-##  profiles since then
-if [[ -n ${switch} && -f ${dst}/${marker} && ! -L ${dst}/${marker} \
-	&& $(< "${dst}/${marker}") == "${switch} ${src}" \
-	&& -z $(find "${src}/" -newer "${dst}/${marker}" -print -quit 2>/dev/null) ]]; then
-	echo "${src} was copied to ${dst} before, nothing to copy"
-	exit 0
-fi
-## The Thunderbird snap links its profile directory to ~/.thunderbird if that
-##  has profiles when the snap starts for the first time (Ubuntu's package
-##  before 24.04). The package then uses the same profiles.
-if [[ -d ${dst} && $(readlink -f -- "${src}") == "$(readlink -f -- "${dst}")" ]]; then
-	echo "${src} is ${dst}, nothing to copy"
-	[[ -z ${adopt} ]] || moz_claim_profile "${dst}" "${hash}" "$(moz_default_profile "${dst}/profiles.ini")"
-	exit 0
-fi
-if [[ -f ${dst}/profiles.ini ]]; then
-	moz_merge_profiles "${src}" "${dst}" "${hash}" "${adopt}"
-	mark_done
-	exit 0
-fi
-if [[ -d ${dst} ]]; then
-	## Copied into the directory as they are only if no name is taken
-	for path in "${src}"/* "${src}"/.[!.]* "${src}"/..?*; do
-		[[ -e ${path} || -L ${path} ]] || continue
-		if [[ -e ${dst}/${path##*/} || -L ${dst}/${path##*/} ]]; then
-			printf '[General]\nStartWithLastProfile=1\nVersion=2\n' > "${dst}/profiles.ini" \
-				|| die "cannot write ${dst}/profiles.ini"
-			moz_merge_profiles "${src}" "${dst}" "${hash}" adopt
-			mark_done
-			exit 0
-		fi
-	done
-	make_tmp "${dst}"
-	cp -a "${src}/." "${tmp}/" || die "cannot copy ${src}"
-	## profiles.ini last: without it, the directory is not a profile directory
-	for path in "${tmp}"/* "${tmp}"/.[!.]* "${tmp}"/..?*; do
-		[[ -e ${path} || -L ${path} ]] || continue
-		[[ ${path##*/} != profiles.ini ]] || continue
-		mv -T -- "${path}" "${dst}/${path##*/}" || die "cannot move the copy of ${src}/${path##*/} to ${dst}"
-	done
-	mv -T -- "${tmp}/profiles.ini" "${dst}/profiles.ini" || die "cannot move the copy of ${src}/profiles.ini to ${dst}"
-else
-	mkdir -p "$(dirname "${dst}")" || die "cannot create $(dirname "${dst}")"
-	make_tmp "$(dirname "${dst}")"
-	cp -a "${src}" "${tmp}/copy" || die "cannot copy ${src}"
-	## Private, as Firefox and Thunderbird create it. cp keeps the mode of the
-	##  snap directory, which other users can read.
-	chmod go-rwx "${tmp}/copy" || die "cannot change the mode of the copy of ${src}"
-	mv -T -- "${tmp}/copy" "${dst}" || die "cannot move the copy of ${src} to ${dst}"
-fi
-echo "Copied ${src} to ${dst}"
-moz_claim_profile "${dst}" "${hash}" "$(moz_default_profile "${dst}/profiles.ini")"
-mark_done
+
+def write(path, text, mode):
+    """Write (mode "w") or append (mode "a") text to file path."""
+    try:
+        with open(path, mode, **ENCODING) as file:
+            file.write(text)
+    except OSError:
+        die(f"cannot write {path}")
+
+
+def entries(directory):
+    """Return the names in directory as the globs * .[!.]* ..?* list them: those
+    that do not start with a dot first, then the others, each sorted by bytes."""
+    try:
+        names = os.listdir(directory)
+    except OSError:
+        return []
+    order = sorted(names, key=os.fsencode)
+    return ([n for n in order if not n.startswith(".")]
+            + [n for n in order if n.startswith(".") and not n.startswith("..")]
+            + [n for n in order if n.startswith("..") and len(n) > 2])
+
+
+def lexists(path):
+    """Succeed if path exists, also as a link that points nowhere ([[ -e || -L ]])."""
+    return os.path.lexists(path)
+
+
+def moz_default_profile(path):
+    """Return the path of the default profile of the snap in profiles.ini path:
+    the profile with Default=1, or else the only profile. In a snap, Firefox and
+    Thunderbird do not keep a profile for each install (nsToolkitProfileService),
+    so they open this profile and ignore the install sections. Those in a snap
+    profile directory come from Ubuntu's package before the snap and may name
+    an older profile. The fields are split at each "=", as awk -F= does."""
+    section = ""
+    paths, only, count, default = {}, "", 0, None
+    for line in read_lines(path) or []:
+        if line.startswith("["):
+            section = line
+            continue
+        if not PROFILE_SECTION.fullmatch(section):
+            continue
+        fields = line.split("=")
+        value = fields[1] if len(fields) > 1 else ""
+        if fields[0] == "Path":
+            paths[section] = value
+            only = value
+            count += 1
+        if fields[0] == "Default" and value == "1":
+            default = section
+    if default is not None:
+        return paths.get(default, "")
+    return only if count == 1 else ""
+
+
+def ini_set_default(path, section, value):
+    """Set Default=value in section [section] of ini file path, or add the
+    section."""
+    header = f"[{section}]"
+    lines = read_lines(path) if os.path.isfile(path) else None
+    if lines is not None and header in lines:
+        out, inside = [], False
+        for line in lines:
+            if line.startswith("["):
+                inside = line == header
+                out.append(line)
+                if inside:
+                    out.append(f"Default={value}")
+                continue
+            if inside and line.startswith("Default="):
+                continue
+            out.append(line)
+        write(path, "\n".join(out).rstrip("\n") + "\n", "w")
+    else:
+        write(path, f"\n[{section}]\nDefault={value}\nLocked=1\n", "a")
+
+
+def moz_claim_profile(directory, install_hash, profile):
+    """Make profile (a path relative to the profile directory) the profile of
+    the package, as Firefox does on its first run. install_hash is the install
+    hash of the package directory in profiles.ini and installs.ini. Without
+    this, Firefox creates a new profile, because the compatibility.ini of a
+    copied profile points to the snap."""
+    if not install_hash or not profile:
+        return
+    ini_set_default(f"{directory}/profiles.ini", f"Install{install_hash}", profile)
+    ini_set_default(f"{directory}/installs.ini", install_hash, profile)
+    print(f"Set {directory}/{profile} as the default profile")
+
+
+def free_name(name, directory, tmp):
+    """Return a name for the copy of profile directory name in the package
+    profile directory that neither it nor the temporary directory tmp has: the
+    name itself, or with "-snap" added (the snap copied the old profiles of
+    the Ubuntu package under the same names), or "-snap2" and so on."""
+    def taken(new):
+        return os.path.exists(f"{directory}/{new}") or os.path.exists(f"{tmp}/{new}")
+    new = name
+    if taken(new):
+        new = f"{name}-snap"
+    i = 2
+    while taken(new):
+        new = f"{name}-snap{i}"
+        i += 1
+    return new
+
+
+def moz_group_member(directory, ids):
+    """Succeed if the profile in directory belongs to one of the profile groups
+    with the StoreIDs ids: Firefox writes the StoreID of its group to prefs.js."""
+    try:
+        with open(f"{directory}/prefs.js", "rb") as file:
+            data = file.read()
+    except OSError:
+        return False
+    return any(f'"toolkit.profiles.storeID", "{store}"'.encode("utf-8", "surrogateescape") in data
+               for store in ids)
+
+
+def profile_entries(path):
+    """Return the profiles in profiles.ini path as (name, path, IsRelative,
+    StoreID, ShowSelector): the sections [ProfileN] with a Path. A key ends at
+    the first "=", and a line without "=" is its own value."""
+    found, section, fields = [], "", {}
+
+    def out():
+        if PROFILE_SECTION.fullmatch(section) and fields.get("Path", ""):
+            found.append((fields.get("Name", ""), fields["Path"], fields.get("IsRelative", ""),
+                          fields.get("StoreID", ""), fields.get("ShowSelector", "")))
+
+    for line in read_lines(path) or []:
+        if line.startswith("["):
+            out()
+            section, fields = line, {}
+            continue
+        key, sep, value = line.partition("=")
+        if not sep:
+            value = line
+        if key in ("Name", "Path", "IsRelative", "StoreID", "ShowSelector"):
+            fields[key] = value
+    out()
+    return found
+
+
+def next_profile_number(path):
+    """Return the number after the highest [ProfileN] in profiles.ini path, or 0."""
+    numbers = [m.group(1) for line in read_lines(path) or [] if (m := PROFILE_NUMBER.fullmatch(line))]
+    if not numbers:
+        return 0
+    highest = max(numbers, key=lambda n: (int(n) if n else 0, n))
+    return int(highest) + 1 if highest else 0
+
+
+def newer_than(top, reference):
+    """Succeed if directory top, or a file in it, was modified after reference,
+    as find "top/" -newer reference -print -quit: links are not followed, and
+    what cannot be read is left out."""
+    try:
+        since = os.lstat(reference).st_mtime_ns
+        if os.stat(f"{top}/").st_mtime_ns > since:
+            return True
+    except OSError:
+        return False
+    for dirpath, dirnames, filenames in os.walk(f"{top}/"):
+        for name in dirnames + filenames:
+            try:
+                if os.lstat(os.path.join(dirpath, name)).st_mtime_ns > since:
+                    return True
+            except OSError:
+                pass
+    return False
+
+
+class Copy:
+    """The copy of the snap profile directory src to the package profile
+    directory dst."""
+
+    def __init__(self, src, dst, install_hash, adopt, switch):
+        self.src, self.dst, self.hash, self.adopt, self.switch = src, dst, install_hash, adopt, switch
+        ## The temporary directory of the copies, removed at the end
+        self.tmp = None
+
+    def make_tmp(self, directory):
+        """Create the temporary directory in directory, on the file system of the
+        package profile directory, so that a complete copy is only renamed."""
+        try:
+            self.tmp = tempfile.mkdtemp(prefix=".g-unity7-copy.", dir=directory)
+        except OSError:
+            die(f"cannot create a temporary directory in {directory}")
+
+    def remove_tmp(self):
+        if self.tmp:
+            shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def mark_done(self):
+        """Record that the copy of this switch is done."""
+        if self.switch:
+            write(f"{self.dst}/{MARKER}", f"{self.switch} {self.src}\n", "w")
+
+    def move(self, source, target, failure):
+        if not run("mv", "-T", "--", source, target):
+            die(failure)
+
+    def merge_profiles(self, adopt):
+        """Add the profiles in the snap profile directory to the package profile
+        directory, which has its own profiles.ini: copy each profile directory
+        (under a free name, see free_name) and add it to profiles.ini with
+        "(snap)" after its name. No profile is replaced. With adopt, the snap's
+        default profile becomes the default profile of the package; otherwise
+        the default stays. Only profiles in a directory of their own in the snap
+        profile directory are copied, as Firefox and Thunderbird create them,
+        not those with an absolute path or a path with "/".
+
+        A profile group of Firefox (the Profiles menu) has one profile in
+        profiles.ini, with the StoreID of the group. Its other profiles are only
+        in "Profile Groups/<StoreID>.sqlite", with paths relative to the profile
+        directory, and have the StoreID in prefs.js. They are copied with the
+        database under the same names, so that these paths stay valid, and the
+        copy fails if a name is taken. Other directories with prefs.js or
+        times.json that profiles.ini does not list, such as a profile removed
+        from the list but kept, are copied like the listed profiles but not
+        added to profiles.ini.
+
+        All profiles are copied to the temporary directory before the first one
+        is moved into place, so that an error leaves the package profile
+        directory as it was."""
+        src, dst = self.src, self.dst
+        default = moz_default_profile(f"{src}/profiles.ini")
+        default_new = ""
+        n = next_profile_number(f"{dst}/profiles.ini")
+        self.make_tmp(dst)
+        tmp = self.tmp
+        listed, ids, copied, unlisted = set(), [], [], []
+        for name, path, relative, store, selector in profile_entries(f"{src}/profiles.ini"):
+            if relative == "1":
+                listed.add(path)
+            if not (relative == "1" and path and "/" not in path and path not in (".", "..")
+                    and os.path.isdir(f"{src}/{path}")):
+                continue
+            if store:
+                ids.append(store)
+                new = path
+                if os.path.exists(f"{dst}/{new}") or os.path.exists(f"{tmp}/{new}"):
+                    die(f"cannot add the profile group of {src}/{path} to {dst}: {dst}/{new} exists")
+            else:
+                new = free_name(path, dst, tmp)
+            if not run("cp", "-a", "--", f"{src}/{path}", f"{tmp}/{new}"):
+                die(f"cannot copy {src}/{path}")
+            copied.append((name, path, new, store, selector))
+        ## The profiles that profiles.ini does not list
+        for base in entries(src):
+            folder = f"{src}/{base}"
+            if (base.startswith(".") or not os.path.isdir(folder) or os.path.islink(folder)
+                    or base in listed or base == "Profile Groups"):
+                continue
+            if not (os.path.isfile(f"{folder}/prefs.js") or os.path.isfile(f"{folder}/times.json")):
+                continue
+            if ids and moz_group_member(folder, ids):
+                new = base
+                if os.path.exists(f"{dst}/{new}") or os.path.exists(f"{tmp}/{new}"):
+                    die(f"cannot add the profile group of {src} to {dst}: {dst}/{new} exists")
+            else:
+                new = free_name(base, dst, tmp)
+            if not run("cp", "-a", "--", folder, f"{tmp}/{new}"):
+                die(f"cannot copy {folder}")
+            unlisted.append((base, new))
+        ## The databases of the profile groups
+        groups = f"{src}/Profile Groups"
+        if ids and os.path.isdir(groups) and not os.path.islink(groups):
+            try:
+                os.mkdir(f"{tmp}/Profile Groups")
+            except OSError:
+                die(f"cannot create {tmp}/Profile Groups")
+            for name in entries(groups):
+                file = f"{groups}/{name}"
+                if name.startswith(".") or not os.path.isfile(file) or os.path.islink(file):
+                    continue
+                if os.path.exists(f"{dst}/Profile Groups/{name}"):
+                    die(f"cannot add the profile group of {src} to {dst}: {dst}/Profile Groups/{name} exists")
+                if not run("cp", "-a", "--", file, f"{tmp}/Profile Groups/"):
+                    die(f"cannot copy {file}")
+
+        ## The group databases and the unlisted profiles first: nothing uses them
+        ##  before the profiles are added to profiles.ini
+        if os.path.isdir(f"{tmp}/Profile Groups"):
+            try:
+                os.makedirs(f"{dst}/Profile Groups", exist_ok=True)
+            except OSError:
+                die(f"cannot create {dst}/Profile Groups")
+            for name in entries(f"{tmp}/Profile Groups"):
+                if name.startswith("."):
+                    continue
+                self.move(f"{tmp}/Profile Groups/{name}", f"{dst}/Profile Groups/{name}",
+                          f"cannot move the copy of {src}/Profile Groups/{name} to {dst}/Profile Groups")
+                print(f"Copied {src}/Profile Groups/{name} to {dst}/Profile Groups/{name}")
+        for base, new in unlisted:
+            self.move(f"{tmp}/{new}", f"{dst}/{new}", f"cannot move the copy of {src}/{base} to {dst}/{new}")
+            print(f"Copied {src}/{base} to {dst}/{new} (not in profiles.ini)")
+        for name, path, new, store, selector in copied:
+            self.move(f"{tmp}/{new}", f"{dst}/{new}", f"cannot move the copy of {src}/{path} to {dst}/{new}")
+            text = f"\n[Profile{n}]\nName={name} (snap)\nIsRelative=1\nPath={new}\n"
+            if store:
+                text += f"StoreID={store}\n"
+            if selector:
+                text += f"ShowSelector={selector}\n"
+            write(f"{dst}/profiles.ini", text, "a")
+            print(f"Copied {src}/{path} to {dst}/{new}")
+            n += 1
+            if path == default:
+                default_new = new
+        if adopt:
+            moz_claim_profile(dst, self.hash, default_new)
+
+    def main(self):
+        src, dst = self.src, self.dst
+        ## A copy of this switch is not made again, unless the snap changed the
+        ##  profiles since then
+        marker = f"{dst}/{MARKER}"
+        if (self.switch and os.path.isfile(marker) and not os.path.islink(marker)
+                and file_text(marker) == f"{self.switch} {src}" and not newer_than(src, marker)):
+            print(f"{src} was copied to {dst} before, nothing to copy")
+            return
+        ## The Thunderbird snap links its profile directory to ~/.thunderbird if
+        ##  that has profiles when the snap starts for the first time (Ubuntu's
+        ##  package before 24.04). The package then uses the same profiles.
+        if os.path.isdir(dst) and os.path.realpath(src) == os.path.realpath(dst):
+            print(f"{src} is {dst}, nothing to copy")
+            if self.adopt:
+                moz_claim_profile(dst, self.hash, moz_default_profile(f"{dst}/profiles.ini"))
+            return
+        if os.path.isfile(f"{dst}/profiles.ini"):
+            self.merge_profiles(self.adopt)
+            self.mark_done()
+            return
+        if os.path.isdir(dst):
+            ## Copied into the directory as they are only if no name is taken
+            if any(lexists(f"{dst}/{name}") for name in entries(src)):
+                write(f"{dst}/profiles.ini", "[General]\nStartWithLastProfile=1\nVersion=2\n", "w")
+                self.merge_profiles("adopt")
+                self.mark_done()
+                return
+            self.make_tmp(dst)
+            if not run("cp", "-a", "--", f"{src}/.", f"{self.tmp}/"):
+                die(f"cannot copy {src}")
+            ## profiles.ini last: without it, the directory is not a profile directory
+            for name in entries(self.tmp):
+                if name != "profiles.ini":
+                    self.move(f"{self.tmp}/{name}", f"{dst}/{name}", f"cannot move the copy of {src}/{name} to {dst}")
+            self.move(f"{self.tmp}/profiles.ini", f"{dst}/profiles.ini",
+                      f"cannot move the copy of {src}/profiles.ini to {dst}")
+        else:
+            parent = os.path.dirname(dst)
+            try:
+                os.makedirs(parent, exist_ok=True)
+            except OSError:
+                die(f"cannot create {parent}")
+            self.make_tmp(parent)
+            if not run("cp", "-a", "--", src, f"{self.tmp}/copy"):
+                die(f"cannot copy {src}")
+            ## Private, as Firefox and Thunderbird create it. cp keeps the mode of
+            ##  the snap directory, which other users can read.
+            try:
+                os.chmod(f"{self.tmp}/copy", os.stat(f"{self.tmp}/copy").st_mode & 0o7700)
+            except OSError:
+                die(f"cannot change the mode of the copy of {src}")
+            self.move(f"{self.tmp}/copy", dst, f"cannot move the copy of {src} to {dst}")
+        print(f"Copied {src} to {dst}")
+        moz_claim_profile(dst, self.hash, moz_default_profile(f"{dst}/profiles.ini"))
+        self.mark_done()
+
+
+def main(argv):
+    os.umask(0o077)
+    if os.geteuid() == 0:
+        die("run it as the user whose profiles they are, not as root")
+    if len(argv) not in (4, 5):
+        die(USAGE)
+    src, dst, install_hash, adopt = argv[:4]
+    switch = argv[4] if len(argv) == 5 else ""
+    if not os.path.isfile(f"{src}/profiles.ini"):
+        die(f"cannot read {src}/profiles.ini")
+    copy = Copy(src, dst, install_hash, "adopt" if adopt == "adopt" else "", switch)
+    try:
+        copy.main()
+    finally:
+        copy.remove_tmp()
+
+
+if __name__ == "__main__":
+    sys.stdout.reconfigure(line_buffering=True)
+    try:
+        main(sys.argv[1:])
+    except (Failure, OSError) as error:
+        print(f"copy-snap-profiles: {error}", file=sys.stderr)
+        sys.exit(1)
+    except KeyboardInterrupt:
+        sys.exit(130)

@@ -33,8 +33,6 @@ After this operation, 0 B of additional disk space will be used.
 dpkg: warning: downgrading firefox (1:1snap1) to (159.0.1-1+gu7.1~26.10)
 dpkg: warning: downgrading thunderbird (2:1snap1) to (1:153.8.0esr-1+gu7.1~26.10)
 Copied /home/mallory/snap/firefox/common/.mozilla/firefox to /home/mallory/.mozilla/firefox
-grep: /home/mallory/.mozilla/firefox/installs.ini: Permission denied
-/usr/libexec/g-unity7/copy-snap-profiles: line 89: /home/mallory/.mozilla/firefox/installs.ini: Permission denied
 copy-snap-profiles: cannot write /home/mallory/.mozilla/firefox/installs.ini
 g-unity7-cleanup: cannot copy the firefox profiles of mallory
 g-unity7-cleanup: the firefox snap stays installed, because a copy of its profiles failed; fix the error, such as a full disk, and run g-unity7-cleanup again
@@ -120,7 +118,6 @@ The following packages will be DOWNGRADED:
 0 upgraded, 1 newly installed, 1 downgraded, 0 to remove and 0 not upgraded.
 After this operation, 0 B of additional disk space will be used.
 dpkg: warning: downgrading firefox (1:1snap1) to (159.0.1-1+gu7.1~26.10)
-/usr/libexec/g-unity7/copy-snap-profiles: line 276: /home/mallory/.mozilla/firefox/profiles.ini: Permission denied
 copy-snap-profiles: cannot write /home/mallory/.mozilla/firefox/profiles.ini
 g-unity7-cleanup: cannot copy the firefox profiles of mallory
 g-unity7-cleanup: the firefox snap stays installed, because a copy of its profiles failed; fix the error, such as a full disk, and run g-unity7-cleanup again

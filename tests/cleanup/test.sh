@@ -138,7 +138,7 @@ run() {
 ##  installed helper of the cleanup, and the fake snap and systemctl
 setup_common() {
 	apt-get update -qq 2>/dev/null
-	apt-get install -y -qq --no-install-recommends apt-utils >/dev/null 2>&1
+	apt-get install -y -qq --no-install-recommends apt-utils python3 >/dev/null 2>&1
 	if [[ -f ${meta}/copy-snap-profiles ]]; then
 		install -D -m 755 "${meta}"/copy-snap-profiles /usr/libexec/g-unity7/copy-snap-profiles
 	fi

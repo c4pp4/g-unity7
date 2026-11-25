@@ -10,6 +10,8 @@ Homepage: https://github.com/c4pp4/g-unity7
 Package: g-unity7-desktop
 Architecture: all
 Depends: ${misc:Depends},
+# copy-snap-profiles
+         python3,
 # G Unity⁷ packages
          g-unity7-apt-pin,
          g-unity7-l10n,
