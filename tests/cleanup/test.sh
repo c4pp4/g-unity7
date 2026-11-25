@@ -363,7 +363,7 @@ group_alternatives() {
 setup_mozilla() {
 	local ubuntu=${repos}/ubuntu ppa=${repos}/c4pp4/g-unity7 lang
 	firefox_ppa=159.0.1-1+gu7.1~26.10
-	thunderbird_ppa=1:159.0-1+gu7.1~26.10
+	thunderbird_ppa=1:153.8.0esr-1+gu7.1~26.10
 	mkdeb "${ubuntu}" firefox 1:1snap1
 	mkdeb "${ubuntu}" thunderbird 2:1snap1
 	for name in firefox thunderbird; do
@@ -417,7 +417,7 @@ group_mozilla() {
 	useradd -m -u 60001 carol 2>/dev/null
 	printf '[User]\nLanguage=pt_BR.UTF-8\n' > /var/lib/AccountsService/users/bob
 	printf '159.0.1-1 6000\n' > /tmp/snaps/firefox
-	printf '160.0-1 400\n' > /tmp/snaps/thunderbird
+	printf '161.0-1 400\n' > /tmp/snaps/thunderbird
 	mkdir -p "${alice}"/snap/firefox/common/.mozilla/firefox/abc.default \
 		"${alice}"/snap/thunderbird/common/.thunderbird/p.default \
 		"${bob}"/snap/firefox/common/.mozilla/firefox/x "${bob}"/.mozilla/firefox
@@ -427,6 +427,10 @@ group_mozilla() {
 	echo prefs > "${alice}"/snap/thunderbird/common/.thunderbird/p.default/prefs.js
 	printf '[General]\nStartWithLastProfile=1\n\n[Profile0]\nName=default\nIsRelative=1\nPath=p.default\nDefault=1\n\n' \
 		> "${alice}"/snap/thunderbird/common/.thunderbird/profiles.ini
+	## Thunderbird 161 of the snap used the profile last, which the ESR package
+	##  does not open
+	printf '[Compatibility]\nLastVersion=161.0_20261124054846/20261124054846\n' \
+		> "${alice}"/snap/thunderbird/common/.thunderbird/p.default/compatibility.ini
 	chown -R alice:alice "${alice}"
 	chown -R bob:bob "${bob}"
 	mkdir -p /home/carol/snap/firefox/common/.mozilla/firefox/c.default
@@ -438,7 +442,13 @@ group_mozilla() {
 	mkdir -p /var/snap/firefox/5000 /var/snap/firefox/6000
 
 	run "dry-run as alice, without root: Enter" bash -c "printf '\n' | setpriv --reuid=alice --regid=alice --init-groups --reset-env ${cleanup} --dry-run"
-	run "dry-run: Enter (Firefox; the Thunderbird snap is newer)" bash -c "printf '\n' | ${cleanup} --dry-run"
+	run "dry-run: Enter (Firefox; Thunderbird 161 used the snap profile)" bash -c "printf '\n' | ${cleanup} --dry-run"
+	## A profile that a newer Firefox used keeps the snap until the package is
+	##  updated
+	printf '[Compatibility]\nLastVersion=160.0.1_20261110000000/20261110000000\n' \
+		> /home/carol/snap/firefox/common/.mozilla/firefox/c.default/compatibility.ini
+	run "dry-run: Firefox 160 used the snap profile of carol" bash -c "printf '\n' | ${cleanup} --dry-run"
+	rm /home/carol/snap/firefox/common/.mozilla/firefox/c.default/compatibility.ini
 	run "Firefox package (1), confirm" bash -c "printf '1\ny\n' | ${cleanup}"
 	echo "### after the Firefox package"
 	ls /etc/apt/preferences.d
@@ -454,11 +464,15 @@ group_mozilla() {
 	apt-get -s upgrade 2>&1 | grep -E '^(Inst|Remv)' || echo "apt upgrade keeps the packages"
 	echo
 
-	printf '159.0-1 410\n' > /tmp/snaps/thunderbird
+	## The snap was updated, but not started since Thunderbird 153 used the
+	##  profile: the ESR package opens it
+	printf '161.0.1-1 410\n' > /tmp/snaps/thunderbird
+	printf '[Compatibility]\nLastVersion=153.7.0_20261020000000/20261020000000\n' \
+		> "${alice}"/snap/thunderbird/common/.thunderbird/p.default/compatibility.ini
 	(exec -a /snap/thunderbird/410/thunderbird sleep 300) &
 	sleeper=$!
 	sleep 1
-	run "Thunderbird snap 159.0 running: Enter, confirm" bash -c "printf '\ny\n' | ${cleanup}"
+	run "Thunderbird snap 161.0.1 running, Thunderbird 153 used its profile: Enter, confirm" bash -c "printf '\ny\n' | ${cleanup}"
 	kill "${sleeper}" 2>/dev/null || true
 	wait "${sleeper}" 2>/dev/null || true
 

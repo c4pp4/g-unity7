@@ -1,10 +1,12 @@
-## Thunderbird from Debian experimental with the Unity global menu from the
+## The Thunderbird ESR from Debian sid with the Unity global menu from the
 ##  ehooks. Ubuntu only has a transitional package that installs the snap.
-##  Debian has the monthly releases, the same as the snap, in experimental and
-##  the ESR in sid.
+##  Debian has the ESR in sid, which it updates within days of each Mozilla
+##  release, and the monthly releases of the snap in experimental, both as
+##  thunderbird. resolve_overlay_pkg picks the directory of the ESR in the
+##  ehooks (thunderbird-153).
 OVERLAY_PKG="ehooks/mail-client/thunderbird"
 UBUNTU_SRC="thunderbird"
-DEBIAN_SUITE="experimental"
+DEBIAN_SUITE="sid"
 GROUP="mozilla"
 
 PATCHES=(
@@ -12,7 +14,7 @@ PATCHES=(
 )
 
 debian_edit() {
-	local class
+	local class launcher
 
 	# Build without the -flto=auto that dpkg-buildflags of Ubuntu adds on amd64, #
 	#  as Debian does. With it, the link of libxul.so runs an LTO of all the C++ #
@@ -52,11 +54,15 @@ debian_edit() {
 	grep -qx "usr/share/g-unity7-apt-pin/thunderbird.pref etc/apt/preferences.d/g-unity7-thunderbird.pref" \
 		debian/thunderbird.links || return 1
 
-	# The launcher of the ehooks, with more translations of the quicklist. Keep #
-	#  the window class of the Debian build (thunderbird-default) #
+	# The launcher of the ehooks, with more translations of the quicklist. The #
+	#  directory of an ESR names it thunderbird-esr.desktop, as Gentoo does; #
+	#  install it as thunderbird.desktop, as Debian does. Keep the window class #
+	#  of the Debian build (thunderbird-default) #
 	class=$(sed -n "s/^StartupWMClass=//p" debian/thunderbird.desktop)
 	[[ -n ${class} ]] || return 1
-	cp "${FILESDIR}"/thunderbird.desktop debian/thunderbird.desktop || return 1
+	launcher=${FILESDIR}/thunderbird.desktop
+	[[ -f ${launcher} ]] || launcher=${FILESDIR}/thunderbird-esr.desktop
+	cp "${launcher}" debian/thunderbird.desktop || return 1
 	sed -i -e "s/^StartupWMClass=.*/StartupWMClass=${class}/" debian/thunderbird.desktop || return 1
 	grep -qx "StartupWMClass=${class}" debian/thunderbird.desktop || return 1
 }

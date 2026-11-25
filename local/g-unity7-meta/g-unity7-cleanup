@@ -460,9 +460,9 @@ fi
 ##  own pin. When the user chooses the PPA package, its language packages for
 ##  the languages in use are installed, the snap profiles of every user are
 ##  copied as that user (added to the existing profiles, if any), and the snap
-##  is removed. A PPA package older
-##  than the snap is not offered: Firefox and Thunderbird do not open a profile
-##  that a newer version used. Without the snap, the PPA package is offered
+##  is removed. The snap stays if a newer version of Firefox or Thunderbird
+##  used one of its profiles, which the PPA package cannot open (see
+##  moz_newer_profiles). Without the snap, the PPA package is offered
 ##  as well; Evolution is mentioned if it is installed instead of Thunderbird.
 moz_install=() moz_snap_remove=() moz_copy=() moz_lines=() homes_noted=
 
@@ -647,6 +647,23 @@ moz_absolute_profiles() {
 		END { out() }' "$1" 2>/dev/null || true
 }
 
+## Print "<major> <profile>" for each profile in snap profile directory $1 that
+##  a version with a major number above $2 used last: LastVersion in its
+##  compatibility.ini, such as 161.0_20261124054846/20261124054846. Firefox and
+##  Thunderbird compare only the major numbers (CompareCompatVersions) and do
+##  not open such a profile. "Safe Mode" has no number and is not compared, as
+##  in Firefox.
+moz_newer_profiles() {
+	local file major
+	for file in "$1"/*/compatibility.ini; do
+		[[ -f ${file} && ! -L ${file} ]] || continue
+		major=$(sed -n 's/^LastVersion=\([0-9][0-9]*\).*/\1/p' "${file}" 2>/dev/null | head -n 1) || true
+		[[ ${major} =~ ^[0-9]{1,6}$ ]] || continue
+		(( 10#${major} > 10#$2 )) && echo "${major} ${file%/compatibility.ini}"
+	done
+	return 0
+}
+
 ## moz_choice <package> <legacy snap profile> <XDG snap profile> <package profile> <name> <install hash> [<alternative>]
 ##  The snap profile directories are relative to $SNAP_USER_COMMON and
 ##  $SNAP_USER_DATA (see snap_profiles), the package profile directory (the
@@ -658,7 +675,7 @@ moz_absolute_profiles() {
 ##  relation, mentioned if installed.
 moz_choice() {
 	local pkg=$1 legacy=$2 xdg=$3 deb_profile=$4 app=$5 hash=$6 alt=${7:-}
-	local ppa status deb_installed= snap= snap_version= snap_rev= upstream users=() copy_users=()
+	local ppa status deb_installed= snap= snap_rev= upstream users=() copy_users=() newer=() newer_text major
 	local copy_text options=() actions=() default=1 i answer entry user home src name dst path
 	local switch_id= adopt=adopt size free mount marker simulation reason l10n=()
 	local -A shared=() copied=() sizes=() need=() dsts=()
@@ -682,13 +699,31 @@ moz_choice() {
 	## Nothing to choose if the G Unity⁷ package is installed and the snap is not
 	[[ -n ${snap} || -z ${deb_installed} ]] || return 0
 
-	## A profile that a newer version used does not open in an older one
 	if [[ -n ${snap} ]]; then
-		read -r snap_version snap_rev < <(snap list "${pkg}" 2>/dev/null | awk 'NR == 2 { print $2, $3 }') || true
+		read -r _ snap_rev < <(snap list "${pkg}" 2>/dev/null | awk 'NR == 2 { print $2, $3 }') || true
+		mapfile -t users < <(snap_profiles "${pkg}" "${legacy}" "${xdg}" "${snap_rev}")
+		## A profile that a newer version used does not open in the package. The
+		##  version of the snap does not tell: a snap that was not started since
+		##  its update has not used its profiles.
 		upstream=${ppa#*:}
 		upstream=${upstream%-*}
-		if [[ -n ${snap_version} ]] && dpkg --compare-versions "${snap_version%-*}" gt "${upstream}"; then
-			moz_lines+=( "${app}: unchanged; the snap ${snap_version} is newer than the G Unity⁷ package ${ppa}, which could not open its profile. Run g-unity7-cleanup again after the package is updated." )
+		for entry in "${users[@]}"; do
+			IFS=: read -r user home src <<< "${entry}"
+			while read -r major path; do
+				newer+=( "${path} (last used by ${app} ${major})" )
+			done < <(moz_newer_profiles "${src}" "${upstream%%.*}")
+		done
+		if [[ ${#newer[@]} -gt 0 ]]; then
+			if [[ ${#newer[@]} -gt 1 ]]; then
+				newer_text="the snap profiles $(and_list "${newer[@]}")"
+			else
+				newer_text="the snap profile ${newer[0]}"
+			fi
+			if [[ ${upstream} == *esr ]]; then
+				moz_lines+=( "${app}: unchanged; the G Unity⁷ package ${ppa} cannot open ${newer_text}. It is the ESR, which stays behind the monthly releases of the snap; see NEWER PROFILES in g-unity7-cleanup(8)." )
+			else
+				moz_lines+=( "${app}: unchanged; the G Unity⁷ package ${ppa} cannot open ${newer_text}. Run g-unity7-cleanup again after the package is updated." )
+			fi
 			return 0
 		fi
 		## Do not touch a running snap: a copy of an open profile may be
@@ -698,7 +733,6 @@ moz_choice() {
 			moz_lines+=( "${app}: the snap is running; close ${app} and run g-unity7-cleanup again" )
 			return 0
 		fi
-		mapfile -t users < <(snap_profiles "${pkg}" "${legacy}" "${xdg}" "${snap_rev}")
 		## An unfinished switch installed the package, which was not used yet
 		[[ ! -f ${switch_dir}/switch-${pkg} ]] || switch_id=$(< "${switch_dir}/switch-${pkg}")
 		[[ -z ${deb_installed} || -n ${switch_id} ]] || adopt=

@@ -71,10 +71,10 @@ STATE_ICONS = {"ok": "✅", "building": "⏳", "failed": "❌", "missing": "❔"
 ##  g-unity7-apt-pin and the GTK of the desktop group.
 GROUP_ORDER = ("desktop", "mozilla", "")
 GROUP_NEEDS = {"mozilla": ("g-unity7-apt-pin", "gtk+3.0")}
-## The ports that are built from Debian's Firefox and Thunderbird: the issue
+## The ports that are built from Debian's Firefox and Thunderbird ESR: the issue
 ##  shows a Mozilla release that Debian has not packaged after MOZILLA_GRACE.
-##  Debian skips some releases (Thunderbird 154, 156 and 158).
-MOZILLA_PRODUCTS = {"firefox": "LATEST_FIREFOX_VERSION", "thunderbird": "LATEST_THUNDERBIRD_VERSION"}
+##  Debian skips some releases (Thunderbird 153.1.1 and 153.3.1).
+MOZILLA_PRODUCTS = {"firefox": "LATEST_FIREFOX_VERSION", "thunderbird": "THUNDERBIRD_ESR"}
 MOZILLA_URL = "https://product-details.mozilla.org/1.0/{}_versions.json"
 MOZILLA_GRACE = 3 * 24 * 60 * 60
 ## Copied last in its group: the metapackage depends on the other members

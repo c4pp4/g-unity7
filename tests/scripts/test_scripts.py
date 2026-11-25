@@ -433,7 +433,7 @@ class CheckBehind(unittest.TestCase):
     def test_mozilla_release_after_three_days_and_plan_errors(self):
         now = approve.utc_now()
         s = state(mozilla={"firefox": {"release": "161.0", "debian": "160.0.1-1", "since": "2026-11-20T00:00:00Z"},
-                           "thunderbird": {"release": "161.0", "debian": "1:160.0-1", "since": now}},
+                           "thunderbird": {"release": "153.9.0esr", "debian": "1:153.8.0esr-1", "since": now}},
                   plan_errors={"hud": {"run_id": "8", "since": "2026-11-21T03:00:00Z", "error": "timed out"}})
         rows = approve.behind_rows(s)
         self.assertEqual(len(rows), 2)

@@ -68,12 +68,15 @@ before making them. `g-unity7-cleanup --dry-run` only shows them. To keep a
 package that it would remove, run `sudo g-unity7-cleanup --keep <package>`.
 
 Ubuntu installs Firefox and Thunderbird as snaps. `g-unity7-cleanup` offers the
-PPA packages with Unity's global menu instead, built from the Debian sources. It
-copies the snap profiles without replacing existing ones, installs the
-language packages of the system's languages and removes the snaps. It does not
-offer a package older than the snap, because Firefox and Thunderbird do not
-open a profile that a newer version used. If you keep the snaps,
-`g-unity7-apt-pin` keeps them too. If the snap is not installed,
+PPA packages with Unity's global menu instead, built from the Debian sources:
+Firefox with the monthly releases and Thunderbird as the ESR, as Debian
+unstable has them. It copies the snap profiles without replacing existing
+ones, installs the language packages of the system's languages and removes the
+snaps. A snap stays if a newer version used one of its profiles, because
+Firefox and Thunderbird do not open such a profile. The Firefox package
+catches up with the snap, while the Thunderbird snap has the monthly releases;
+`man g-unity7-cleanup` describes how to move its data by hand. If you keep the
+snaps, `g-unity7-apt-pin` keeps them too. If the snap is not installed,
 `g-unity7-cleanup` offers the PPA package as well. A Firefox or Thunderbird
 package from another source, such as Mozilla's APT repository, stays.
 
@@ -199,8 +202,8 @@ Optional settings:
   dee-qt6. Another file of the port that would replace one of the source stops
   the build, so that a file that Ubuntu adds later is not lost unnoticed.
 - `DEBIAN_SUITE` takes the source from Debian (`sid`, `experimental`, or both
-  separated by a space) instead of the Ubuntu archive, such as Firefox from sid
-  and Thunderbird from experimental. The `.dsc` must also have a valid
+  separated by a space) instead of the Ubuntu archive, such as Firefox and the
+  Thunderbird ESR from sid. The `.dsc` must also have a valid
   signature of a Debian developer.
 
 apt downloads the sources from the Ubuntu or Debian archive with its archive

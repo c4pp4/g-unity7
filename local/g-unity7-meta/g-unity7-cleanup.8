@@ -171,9 +171,17 @@ then, and the snap's default profile still becomes the default profile of the
 package that the first run installed. While the snap is
 running, the script offers nothing for it. Close the application and run the
 script again. If the snap is started while the script runs, the script
-leaves it installed and says what to do. A G Unity⁷ package older than
-the snap is not offered, because Firefox and Thunderbird do not open a profile
-that a newer version used. Run the script again after the package is updated.
+leaves it installed and says what to do. The snap also stays if a version of
+Firefox or Thunderbird with a higher major number than the G Unity⁷ package
+used one of its profiles last
+.RB ( LastVersion
+in
+.IR compatibility.ini ),
+because Firefox and Thunderbird do not open such a profile. The version of the
+snap does not matter: a snap that was not started since its update has not
+used its profiles. For Firefox, run the script again after the package is
+updated. For Thunderbird, see
+.BR "NEWER PROFILES" .
 A G Unity⁷ package that apt cannot install is not offered either, and the
 other changes are made. This happens when GTK 3 is installed for another
 architecture too, such as i386 for Steam or Wine, and the PPA does not have
@@ -232,6 +240,40 @@ changes if apt would then make other changes than shown, for example after
 unattended-upgrades updated the package lists in the meantime. To keep a
 package, give it with
 .BR \-\-keep .
+.SH NEWER PROFILES
+The G Unity⁷ Thunderbird package is the ESR (Extended Support Release), as in
+Debian unstable, which gets a new major version once a year. The Thunderbird
+snap has the monthly releases unless it tracks
+.IR esr/stable ,
+so a snap profile that one of them used does not open in the package. Keeping
+the snap needs nothing; Thunderbird then has no global menu. To switch to the
+package, move the data by hand:
+.IP 1. 4
+In the snap, save what is not on a server: export the address books and
+calendars, and copy the local folders (the
+.I Mail/Local Folders
+directory of the profile) out of
+.IR ~/snap/thunderbird ,
+which snapd deletes with the snap.
+.IP 2. 4
+Remove the snap with
+.BR "sudo snap remove thunderbird" .
+snapd saves a snapshot of its data, which
+.B snap saved
+lists.
+.IP 3. 4
+Run
+.BR "sudo g-unity7-cleanup" ,
+which then offers the package.
+.IP 4. 4
+Set up the accounts again in the new profile of the package (the mail of IMAP
+accounts stays on the server), import the address books and calendars, and
+copy the local folders back while Thunderbird is closed.
+.PP
+Starting the package with
+.B --allow-downgrade
+opens the newer profile, but the newer version may have changed the format of
+its data.
 .SH OPTIONS
 .TP
 .BR \-n ", " \-\-dry\-run
