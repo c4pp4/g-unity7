@@ -1,10 +1,11 @@
 From: c4pp4
-Date: Fri, 06 Nov 2026 13:30:02 +0100
+Date: Wed, 25 Nov 2026 09:48:24 +0100
 Subject: [PATCH 1/1] Find the Firefox snap profiles
 
 Ubuntu ships Firefox as a snap, which keeps its profiles in
-~/snap/firefox/common/.mozilla/firefox/. Use them if
-~/.mozilla/firefox/ does not exist.
+~/snap/firefox/common/.mozilla/firefox/ and their thumbnails in
+~/snap/firefox/common/.cache/mozilla/firefox/. Use them if the profile
+directory of the package does not exist.
 
 Signed-off-by: c4pp4
 ---
@@ -12,20 +13,21 @@ Signed-off-by: c4pp4
 diff --git a/src/unity_firefoxbookmarks_daemon.py b/src/unity_firefoxbookmarks_daemon.py
 --- a/src/unity_firefoxbookmarks_daemon.py
 +++ b/src/unity_firefoxbookmarks_daemon.py
-@@ -43,6 +43,8 @@
- DEFAULT_RESULT_TYPE = Unity.ResultType.DEFAULT
- FIREFOX_EXECUTABLE = GLib.find_program_in_path('firefox') or GLib.find_program_in_path('firefox-bin') or '/usr/bin/firefox'
- BOOKMARKS_PATH = os.getenv("HOME") + "/.mozilla/firefox/"
-+# The profiles of the Firefox snap
+@@ -47,6 +47,9 @@
+ # thumbnails are in $XDG_CACHE_HOME in both cases
+ XDG_BOOKMARKS_PATH = (os.getenv("XDG_CONFIG_HOME") or os.getenv("HOME") + "/.config") + "/mozilla/firefox/"
+ CACHE_PATH = (os.getenv("XDG_CACHE_HOME") or os.getenv("HOME") + "/.cache") + "/mozilla/firefox/"
++# The profiles of the Firefox snap and their thumbnails
 +SNAP_BOOKMARKS_PATH = os.getenv("HOME") + "/snap/firefox/common/.mozilla/firefox/"
++SNAP_CACHE_PATH = os.getenv("HOME") + "/snap/firefox/common/.cache/mozilla/firefox/"
  BOOKMARKS_QUERY = '''SELECT moz_bookmarks.title, moz_places.url, '%s', '%s'
                       FROM moz_bookmarks, moz_places
                       WHERE moz_places.id = moz_bookmarks.fk
-@@ -100,6 +102,8 @@
-     results = []
-     path = BOOKMARKS_PATH
+@@ -106,6 +109,8 @@
+     if not os.path.exists(os.getenv("HOME") + "/.mozilla"):
+         path = XDG_BOOKMARKS_PATH
      if not os.path.isdir(path):
-+        path = SNAP_BOOKMARKS_PATH
++        path, cache = SNAP_BOOKMARKS_PATH, SNAP_CACHE_PATH
 +    if not os.path.isdir(path):
          return results
      bookmarks = get_bookmarks_from_firefox(path, search)
