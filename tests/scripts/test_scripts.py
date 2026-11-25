@@ -764,6 +764,7 @@ class Refresh(unittest.TestCase):
     def test_a_failed_check_does_not_stop_the_other(self):
         s = state()
         with mock.patch.object(approve, "promote_rows", return_value=({}, [])), \
+                mock.patch.object(lp, "foreign_sources", return_value=[]), \
                 mock.patch.object(approve, "check_drift", side_effect=subprocess.CalledProcessError(1, "git")), \
                 mock.patch.object(approve, "check_behind") as behind, \
                 mock.patch.object(approve, "last_commit_time", return_value=None), \
@@ -772,6 +773,60 @@ class Refresh(unittest.TestCase):
             approve.refresh(None, s, {"unity": {"source": "unity"}})
         behind.assert_called_once()
         self.assertEqual(s["drift_checked"], "")
+
+
+class MainWatch(unittest.TestCase):
+    STAGING = "https://api.launchpad.net/devel/~c4pp4/+archive/ubuntu/g-unity7-staging"
+    FOUND = [{"source": "hud", "version": "2+gu7.1~26.10", "series": "stonking", "status": "Pending",
+              "created": "2026-11-25T12:00:00.000000+00:00", "copied_from": ""}]
+
+    @staticmethod
+    def entry(name, copied, status="Published"):
+        return {"source_package_name": name, "source_package_version": "1+gu7.1~26.10",
+                "distro_series_link": "https://api.launchpad.net/devel/ubuntu/stonking", "status": status,
+                "date_created": "2026-11-25T12:00:00.000000+00:00", "copied_from_archive_link": copied}
+
+    def test_only_copies_from_staging_belong_there(self):
+        """/promote copies from staging; an upload has no copied_from_archive_link."""
+        listings = {"Pending": [self.entry("hud", None, "Pending")],
+                    "Published": [self.entry("unity", self.STAGING),
+                                  self.entry("nemo", "https://api.launchpad.net/devel/~x/+archive/ubuntu/ppa"),
+                                  self.entry("zim", "https://api.launchpad.net/devel/ubuntu/+archive/primary")]}
+        with mock.patch.object(lp, "collection", side_effect=lambda url, params: listings[params["status"]]):
+            found = lp.foreign_sources("c4pp4/g-unity7", "c4pp4/g-unity7-staging")
+        self.assertEqual(sorted((s["source"], s["copied_from"], s["series"]) for s in found),
+                         [("hud", "", "stonking"), ("nemo", "~x/+archive/ubuntu/ppa", "stonking"),
+                          ("zim", "ubuntu/+archive/primary", "stonking")])
+
+    def test_the_issue_warns_once_and_the_scheduled_run_fails(self):
+        s = state()
+        with mock.patch.object(lp, "foreign_sources", return_value=self.FOUND), \
+                mock.patch("sys.stdout", new=io.StringIO()) as out:
+            approve.check_main(s)
+        self.assertIn("::error::hud 2+gu7.1~26.10 (stonking)", out.getvalue())
+        body = approve.render(s)
+        self.assertIn("## ⚠️ Not copied from staging", body)
+        self.assertIn("| `hud` | `2+gu7.1~26.10` | stonking | Pending | 2026-11-25 12:00 | upload |", body)
+        self.assertEqual(approve.load_state({"number": 1, "body": body}), s)
+        with mock.patch.object(approve, "comment") as comment:
+            approve.notify_new({"number": 1}, s)
+            approve.notify_new({"number": 1}, s)
+        comment.assert_called_once()
+        self.assertIn("- `hud` `2+gu7.1~26.10` (stonking)", comment.call_args[0][1])
+        with mock.patch.object(approve, "find_issue", return_value=None), \
+                mock.patch.object(approve, "load_state", return_value=s), \
+                mock.patch.object(approve, "refresh"), \
+                self.assertRaises(SystemExit) as raised:
+            approve.cmd_refresh(argparse.Namespace())
+        self.assertIn("did not copy", str(raised.exception.code))
+
+    def test_a_launchpad_error_keeps_the_last_check(self):
+        s = state(foreign={"hud 2+gu7.1~26.10 stonking": self.FOUND[0]})
+        with mock.patch.object(lp, "foreign_sources", side_effect=urllib.error.URLError("timed out")), \
+                mock.patch("sys.stdout", new=io.StringIO()), \
+                mock.patch("sys.stderr", new=io.StringIO()):
+            approve.check_main(s)
+        self.assertEqual(list(s["foreign"]), ["hud 2+gu7.1~26.10 stonking"])
 
 
 class ChangedLines(unittest.TestCase):

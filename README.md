@@ -283,6 +283,14 @@ Debian has not packaged after three days, and the overlay changes that the
 ports may need, which `/ported` records as checked. A comment announces each
 new item.
 
+Only `/promote` puts versions into `ppa:c4pp4/g-unity7`, as copies from
+staging. The signing key of the `launchpad` environment could upload there as
+well, so every update of the approval issue checks that each version in the
+main PPA was copied from staging. Any other version (an upload, or a copy from
+another archive) is shown at the top of the issue and announced by a comment,
+and the scheduled `review.yml` run fails until the version is deleted on
+Launchpad.
+
 If a broken version reaches the main PPA, fix it forward: Launchpad cannot
 bring back an older version. Revert the change in the port or the overlay, let
 `ppa.yml` build the next version, upload it with `/upload`, test it and promote

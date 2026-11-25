@@ -159,7 +159,7 @@ def load_state(issue):
         sys.exit("approve.py: a newer approve.py wrote the state of the issue")
     state["version"] = STATE_VERSION
     for key in ("review", "rejected", "uptodate", "promote", "seen", "ported", "drift", "behind",
-                "failed_builds", "plan_errors", "mozilla"):
+                "failed_builds", "plan_errors", "mozilla", "foreign"):
         state.setdefault(key, {})
     state.setdefault("stale", [])
     state.setdefault("drift_checked", "")
@@ -280,6 +280,24 @@ def kept(row, pkg):
     """Return a row from the last update with the group and source of the
     package now."""
     return dict(row, group=pkg["group"], source=pkg["source"]) if pkg else row
+
+
+def check_main(state):
+    """Record the versions in the main PPA that /promote did not copy from
+    staging: an upload signed with the key of the launchpad environment, or a
+    copy from another archive. The scripts never do either, and
+    unattended-upgrades installs them on the users' systems. A Launchpad error
+    keeps the items of the last check."""
+    try:
+        found = lp.foreign_sources(CONFIG["main"], CONFIG["staging"])
+    except LP_ERRORS:
+        traceback.print_exc()
+        print("::warning::The check of the main PPA failed. Its section keeps the items of the last check.")
+        return
+    state["foreign"] = {f"{s['source']} {s['version']} {s['series']}": s for s in found}
+    for s in found:
+        print(f"::error::{s['source']} {s['version']} ({s['series']}) is in ppa:{CONFIG['main']}, "
+              f"but /promote did not copy it from ppa:{CONFIG['staging']}")
 
 
 def security_fix(upstream, since):
@@ -601,6 +619,21 @@ def render(state, pkgs=None):
             "updates the tables a few times a day and after each command. Give commands in "
             "comments.", ""]
 
+    if state["foreign"]:
+        owner, name = CONFIG["main"].split("/")
+        out += ["## ⚠️ Not copied from staging", "",
+                f"`ppa:{CONFIG['main']}` has versions that `/promote` did not copy from "
+                f"`ppa:{CONFIG['staging']}`: an upload signed with the key of the `launchpad` "
+                "environment, or a copy from another archive. unattended-upgrades installs them on the "
+                "users' systems. Delete them on "
+                f"[Launchpad](https://launchpad.net/~{owner}/+archive/ubuntu/{name}/+delete-packages). "
+                "If you did not put them there, also replace the signing key and `LP_CREDENTIALS`.", "",
+                "| Package | Version | Series | Status | Created | Copied from |", "|---|---|---|---|---|---|"]
+        for _, s in sorted(state["foreign"].items()):
+            out.append(f"| `{s['source']}` | `{s['version']}` | {s['series']} | {s['status']} | "
+                       f"{s['created'][:16].replace('T', ' ')} | {s['copied_from'] or 'upload'} |")
+        out.append("")
+
     if os.environ.get("STAGING_FROZEN"):
         out += [f"**Staging is frozen** (`STAGING_FROZEN`: {os.environ['STAGING_FROZEN']}): `ppa.yml` "
                 "uploads nothing by itself, every build waits here for review.", ""]
@@ -695,7 +728,7 @@ def save(issue, state, pkgs=None):
     if len(body) > BODY_WARN:
         print(f"::warning::The issue body has {len(body)} characters; GitHub refuses more than 65536.")
     waiting = bool(state["review"] or state["promote"] or state["drift"] or behind_rows(state)
-                   or state["inactive_days"] >= INACTIVE_DAYS)
+                   or state["foreign"] or state["inactive_days"] >= INACTIVE_DAYS)
     if not issue:
         if not waiting:
             return None
@@ -739,13 +772,21 @@ def notify_new(issue, state, commit_time=None):
     last refresh, and once when the last commit gets old. The first refresh
     that knows the items to check records them without a comment."""
     versions, checks = notices(state)
+    ## Versions in the main PPA that /promote did not copy, also on the first
+    ##  refresh
+    alerts = {f"foreign:{key}": (s["created"], f"- `{s['source']}` `{s['version']}` ({s['series']})")
+              for key, s in state["foreign"].items()}
     seen = state["seen"]
     new_versions = [line for key, (value, line) in sorted(versions.items()) if seen.get(key) != value]
     new_checks = [line for key, (value, line) in sorted(checks.items()) if seen.get(key) != value]
+    new_alerts = [line for key, (value, line) in sorted(alerts.items()) if seen.get(key) != value]
     if not state.get("checks_seen"):
         new_checks = []
         state["checks_seen"] = True
-    state["seen"] = {key: value for key, (value, _) in {**versions, **checks}.items()}
+    state["seen"] = {key: value for key, (value, _) in {**versions, **checks, **alerts}.items()}
+    if new_alerts and issue:
+        comment(issue, f"⚠️ In `ppa:{CONFIG['main']}`, but `/promote` did not copy them from staging "
+                       "(see the issue):\n" + "\n".join(new_alerts))
     if new_versions and issue:
         comment(issue, "New versions:\n" + "\n".join(new_versions))
     if new_checks and issue:
@@ -760,6 +801,7 @@ def notify_new(issue, state, commit_time=None):
 def refresh(issue, state, pkgs=None):
     pkgs = pkgs or packages()
     state["promote"], state["stale"] = promote_rows(pkgs, state["promote"])
+    check_main(state)
     ## A build that failed is retried every day, except for a held package
     for section in ("failed_builds", "plan_errors"):
         for name in list(state[section]):
@@ -1249,7 +1291,12 @@ def cmd_comment(args):
 
 def cmd_refresh(args):
     issue = find_issue()
-    refresh(issue, load_state(issue))
+    state = load_state(issue)
+    refresh(issue, state)
+    ## The scheduled run fails, and GitHub sends a notice of it
+    if state["foreign"]:
+        sys.exit(f"approve.py: ppa:{CONFIG['main']} has versions that /promote did not copy from "
+                 "staging; see the issue")
 
 
 def cmd_state(args):

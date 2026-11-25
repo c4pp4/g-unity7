@@ -213,6 +213,35 @@ def ppa_sources(ppa, series):
     return {name: publication(entry) for name, entry in latest.items()}
 
 
+def foreign_sources(ppa, origin):
+    """Return the Pending and Published sources of a PPA, in all series, that
+    were not copied from the PPA origin, newest first: uploads, which have no
+    copied_from_archive_link, and copies from other archives. Each is {source,
+    version, series, status, created, copied_from}."""
+    origin_path = ppa_archive(origin).split("/~", 1)[1]
+    found = []
+    try:
+        for status in ("Pending", "Published"):
+            for entry in collection(ppa_archive(ppa), {"ws.op": "getPublishedSources", "status": status,
+                                                       "ws.size": "300"}):
+                copied = entry.get("copied_from_archive_link") or ""
+                if copied.split("/~", 1)[-1] == origin_path:
+                    continue
+                found.append({
+                    "source": entry["source_package_name"],
+                    "version": entry["source_package_version"],
+                    "series": entry["distro_series_link"].rsplit("/", 1)[-1],
+                    "status": entry["status"],
+                    "created": entry["date_created"],
+                    "copied_from": copied.split(f"{API}/", 1)[-1],
+                })
+    except urllib.error.HTTPError as error:
+        if error.code != 404:
+            raise
+        print(f"lp.py: PPA {ppa} not found", file=sys.stderr)
+    return sorted(found, key=lambda s: s["created"], reverse=True)
+
+
 def ppa_max_n(source, ppa, base, tag):
     """Return the highest N of the versions <base>+<tag>.<N>~<series version> of
     a source in a PPA in any series and state, also deleted, or 0. Launchpad
