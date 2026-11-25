@@ -24,6 +24,8 @@
 ##                in the legacy directory, and linked to the package profiles
 ##  links        snap profiles with links to other files, which the copy must
 ##                not follow
+##  scenarios     a new system: the Firefox and Thunderbird snaps that were never
+##                started, and Evolution instead of Thunderbird
 ##  snaps         desktop files and mount units of snaps that are not
 ##                installed, and the configuration files of PulseAudio
 ##  pin           unattended-upgrades with the pins of g-unity7-apt-pin, when
@@ -891,6 +893,24 @@ group_pin() {
 	done
 }
 
+## A new system: the Firefox and Thunderbird snaps that were never started have
+##  no profiles to copy. Then Evolution instead of Thunderbird, without its snap
+##  and its package.
+group_scenarios() {
+	setup_mozilla
+	useradd -m -u 1001 jana
+	printf '160.0.1-1 7000\n' > /tmp/snaps/firefox
+	printf '161.0-1 900\n' > /tmp/snaps/thunderbird
+	run "snaps that were never started: 1, 1, confirm" bash -c "printf '1\n1\ny\n' | ${cleanup}"
+	echo "-- snaps: $(ls /tmp/snaps | tr '\n' ' ')"
+	echo
+
+	apt-get purge -y -qq thunderbird thunderbird-l10n-cs >/dev/null 2>&1
+	mkdeb /tmp/evolution evolution 3.58.1-1
+	dpkg -i /tmp/evolution/evolution_3.58.1-1_all.deb >/dev/null 2>&1
+	run "Evolution instead of Thunderbird: --dry-run, Enter" bash -c "printf '\n' | ${cleanup} --dry-run"
+}
+
 setup_common
 out=$(mktemp)
 case ${group} in
@@ -900,6 +920,7 @@ case ${group} in
 	profiles) group_profiles ;;
 	locations) group_locations ;;
 	links) group_links ;;
+	scenarios) group_scenarios ;;
 	snaps) group_snaps ;;
 	pin) group_pin ;;
 	*) echo "test.sh: unknown group ${group}" >&2; exit 2 ;;
