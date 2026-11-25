@@ -144,7 +144,8 @@ local/<package>/          own packages (package.sh and the whole source)
 tests/
   scripts/                unit tests of the scripts (python3 -m unittest discover -s tests/scripts)
   cleanup/                g-unity7-cleanup with dummy packages in Ubuntu containers (run.sh), and unit
-                          tests of copy-snap-profiles (python3 -m unittest discover -s tests/cleanup)
+                          tests of g-unity7-cleanup and copy-snap-profiles (python3 -m unittest
+                          discover -s tests/cleanup)
   staging/                apt simulation (check.sh) and a real installation (install.sh) from a PPA
 Containerfile             the build container (Ubuntu of the series)
 ```

@@ -62,7 +62,9 @@ jobs:
           persist-credentials: false
       - run: python3 -m unittest discover -s tests/scripts -v
       - run: python3 -m unittest discover -s tests/cleanup -v
-      - run: python3 -m pyflakes scripts tests/scripts tests/cleanup local/g-unity7-meta/copy-snap-profiles
+      - run: >-
+          python3 -m pyflakes scripts tests/scripts tests/cleanup
+          local/g-unity7-meta/g-unity7-cleanup local/g-unity7-meta/copy-snap-profiles
 
   shellcheck:
     runs-on: ubuntu-latest
@@ -74,8 +76,7 @@ jobs:
       #  build-source.sh uses, and other intended code
       - run: |
           command -v shellcheck >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck; }
-          git ls-files -z '*.sh' local/g-unity7-meta/g-unity7-cleanup \
-            | xargs -0 shellcheck -S error -s bash
+          git ls-files -z '*.sh' | xargs -0 shellcheck -S error -s bash
 
   ## GitHub expressions, job dependencies and contexts of the workflows.
   ##  shellcheck runs in the job above. actionlint does not know queue in

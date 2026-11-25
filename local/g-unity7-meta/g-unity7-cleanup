@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/python3 -I
 ## Remove the Ubuntu Unity packages that G Unity⁷ replaces, like Gentoo's
 ##  "emerge --depclean".
 ##
@@ -46,426 +46,62 @@
 ##  - purges the configuration files of PulseAudio, which installing
 ##    g-unity7-desktop removes for PipeWire, as its autostart file remains
 ##  Packages given with --keep are neither marked nor removed.
+##
+## apt, dpkg, snap and the other tools make the decisions and the changes, as
+##  an administrator would run them; this program reads their output. A command
+##  that fails stops it with its exit status, as set -e does in a shell script,
+##  unless its failure is expected.
 
-set -euo pipefail
+import datetime
+import glob
+import os
+import pwd
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import threading
 
-meta=g-unity7-desktop
-task=ubuntu-unity-desktop
+META = "g-unity7-desktop"
+TASK = "ubuntu-unity-desktop"
 ## Copies the snap profiles of a user as that user
-copy_profiles=/usr/libexec/g-unity7/copy-snap-profiles
+COPY_PROFILES = "/usr/libexec/g-unity7/copy-snap-profiles"
 ## apt waits for the lock that unattended-upgrades often holds on a new system
-apt_lock=( -o DPkg::Lock::Timeout=300 )
+APT_LOCK = ("-o", "DPkg::Lock::Timeout=300")
+USAGE = """\
+Usage: g-unity7-cleanup [-n|--dry-run] [-y|--yes] [-k|--keep <package>]...
 
-usage() {
-	cat <<-EOF
-		Usage: g-unity7-cleanup [-n|--dry-run] [-y|--yes] [-k|--keep <package>]...
+Remove the Ubuntu Unity packages that G Unity⁷ replaces: duplicate
+applications and other installed alternatives of the g-unity7-desktop
+applications, like Gentoo's "emerge --depclean". When several alternatives
+are installed, or a different one is installed instead of the recommended
+one, it asks which one to keep.
 
-		Remove the Ubuntu Unity packages that G Unity⁷ replaces: duplicate
-		applications and other installed alternatives of the g-unity7-desktop
-		applications, like Gentoo's "emerge --depclean". When several alternatives
-		are installed, or a different one is installed instead of the recommended
-		one, it asks which one to keep.
-
-		  -n, --dry-run         show the changes without making them (no root
-		                        needed)
-		  -y, --yes             do not ask; keep or install the recommended
-		                        alternatives and the G Unity⁷ Firefox and
-		                        Thunderbird packages
-		  -k, --keep <package>  neither mark nor remove the package
-	EOF
-}
-
-dry_run=
-yes=
-declare -A keep_given=()
-while [[ $# -gt 0 ]]; do
-	case $1 in
-		-n|--dry-run) dry_run=1 ;;
-		-y|--yes) yes=1 ;;
-		-k|--keep)
-			[[ $# -ge 2 && $2 =~ ^[a-z0-9][a-z0-9+.-]+$ ]] || { usage >&2; exit 2; }
-			keep_given[$2]=1
-			shift
-			;;
-		--keep=*)
-			[[ ${1#--keep=} =~ ^[a-z0-9][a-z0-9+.-]+$ ]] || { usage >&2; exit 2; }
-			keep_given[${1#--keep=}]=1
-			;;
-		-h|--help) usage; exit 0 ;;
-		*) usage >&2; exit 2 ;;
-	esac
-	shift
-done
-
-## Progress spinner, shown only on a terminal, as in the overlay's
-##  version_control.sh. The block runs in a subshell.
-spinner=( "|" "/" "-" "\\" )
-spinner_pid=
-
-spinner_start() {
-	[[ -t 2 && -z ${spinner_pid} ]] || return 0
-	{
-		pos=1
-		printf "%s %s" "Looking for packages" "${spinner[0]}"
-		while sleep 0.1; do
-			printf "\b%s" "${spinner[pos]}"
-			pos=$(( (pos + 1) % ${#spinner[@]} ))
-		done
-	} >&2 &
-	spinner_pid=$!
-}
-
-spinner_stop() {
-	[[ -n ${spinner_pid} ]] || return 0
-	kill "${spinner_pid}" 2>/dev/null || true
-	wait "${spinner_pid}" 2>/dev/null || true
-	spinner_pid=
-	printf "\r%22s\r" "" >&2
-}
-
-tmp=
-trap 'spinner_stop; [[ -z ${tmp} ]] || rm -rf "${tmp}"' EXIT
-
-die() {
-	spinner_stop
-	echo "g-unity7-cleanup: $*" >&2
-	exit 1
-}
-
-[[ -n ${dry_run} || ${EUID} -eq 0 ]] || die "run as root (sudo g-unity7-cleanup) or with --dry-run"
-
-## Succeed if package $1 is installed, for any architecture (a Multi-Arch
-##  package has a status for each one)
-installed() {
-	local status
-	status=$(dpkg-query -W -f='${db:Status-Status}\n' "$1" 2>/dev/null) || return 1
-	[[ $'\n'${status}$'\n' == *$'\n'installed$'\n'* ]]
-}
-
-installed "${meta}" || die "${meta} is not installed"
-spinner_start
-
-## Print the relations in fields $2 of package $1 (the installed version, or
-##  else the archive candidate), one per line, with alternatives separated by
-##  spaces.
-relations() {
-	local field
-	if installed "$1"; then
-		for field in $2; do
-			dpkg-query -W -f="\${${field}}\n" "$1" 2>/dev/null || true
-		done
-	else
-		apt-cache show --no-all-versions "$1" 2>/dev/null \
-			| awk -v fields="$2" '
-				BEGIN { n = split(fields, f, " "); for (i = 1; i <= n; i++) want[f[i] ":"] = 1 }
-				/^[^ ]/ { take = ($1 in want) }
-				take { sub(/^[^ ]+: /, ""); print }'
-	fi \
-		| tr ',' '\n' \
-		| sed -e 's/([^)]*)//g' -e 's/\[[^]]*\]//g' -e 's/:any//g' -e 's/|/ /g' \
-			-e 's/  */ /g' -e 's/^ *//' -e 's/ *$//' \
-		| grep -v '^$' || true
-}
-
-## Print the packages of $@ that belong to the task (the Task field in the archive).
-of_task() {
-	[[ $# -gt 0 ]] || return 0
-	apt-cache show --no-all-versions "$@" 2>/dev/null \
-		| awk -v task="${task}" '
-			/^Package: / { pkg = $2 }
-			/^Task: / {
-				n = split(substr($0, 7), tasks, ", *")
-				for (i = 1; i <= n; i++) if (tasks[i] == task) print pkg
-			}' || true
-}
-
-declare -A manual=() keep=() in_list=()
-while read -r name; do
-	manual[${name%:*}]=1
-done < <(apt-mark showmanual)
-
-## Keep the first alternative of each g-unity7-desktop relation.
-while read -r name _; do
-	keep[${name}]=1
-done < <(relations "${meta}" "Depends Recommends Suggests")
-
-## Print the short description of a package, installed or from the archive.
-summary() {
-	if installed "$1"; then
-		dpkg-query -W -f='${binary:Summary}' "$1" 2>/dev/null || true
-	else
-		apt-cache show --no-all-versions "$1" 2>/dev/null \
-			| awk '/^Description(-[[:alnum:]_]+)?: / { sub(/^[^:]+: /, ""); print; exit }' || true
-	fi
-}
-
-## Succeed if the archive has a version of $1 to install. LC_ALL=C because the
-##  output of apt-cache policy is translated.
-has_candidate() {
-	local candidate
-	candidate=$(LC_ALL=C apt-cache policy "$1" 2>/dev/null | awk '/^  Candidate: / { print $2 }')
-	[[ -n ${candidate} && ${candidate} != "(none)" ]]
-}
-
-## Print the words of $@ as "a, b and c".
-and_list() {
-	local out=$1
-	shift
-	while [[ $# -gt 1 ]]; do
-		out+=", $1"
-		shift
-	done
-	[[ $# -eq 0 ]] || out+=" and $1"
-	echo "${out}"
-}
-
-## The g-unity7-desktop relations to choose from. Relations that share the
-##  first alternative and have one other alternative each become one relation:
-##  the first alternative or all the others as a set joined with "+". Debian
-##  has no "mate-utils | (baobab gnome-logs gnome-screenshot)", so
-##  g-unity7-desktop recommends "mate-utils | baobab, mate-utils | gnome-logs".
-mapfile -t relations_list < <(relations "${meta}" "Depends Recommends")
-declare -A pairs=() pair_set=()
-for group in "${relations_list[@]}"; do
-	read -ra names <<< "${group}"
-	[[ ${#names[@]} -eq 2 ]] || continue
-	pairs[${names[0]}]=$(( ${pairs[${names[0]}]:-0} + 1 ))
-	pair_set[${names[0]}]+=${pair_set[${names[0]}]:++}${names[1]}
-done
-groups=()
-for group in "${relations_list[@]}"; do
-	read -ra names <<< "${group}"
-	if [[ ${#names[@]} -eq 2 && ${pairs[${names[0]}]} -gt 1 ]]; then
-		[[ -n ${pair_set[${names[0]}]} ]] || continue
-		groups+=( "${names[0]} ${pair_set[${names[0]}]}" )
-		pair_set[${names[0]}]=
-	else
-		groups+=( "${group}" )
-	fi
-done
-
-## Print a relation as text, including its sets.
-relation_text() {
-	local text=${1// / | }
-	echo "${text//+/ + }"
-}
-
-## Print the installed packages of the alternatives $@. A set is joined with "+".
-installed_of() {
-	local name part parts
-	for name in "$@"; do
-		read -ra parts <<< "${name//+/ }"
-		for part in "${parts[@]}"; do
-			installed "${part}" && echo "${part}"
-		done
-	done
-	return 0
-}
-
-## Print the packages of alternative $1 that must be installed with it: not
-##  installed, but available in the archive.
-missing_of() {
-	local part
-	for part in ${1//+/ }; do
-		installed "${part}" || ! has_candidate "${part}" || echo "${part}"
-	done
-	return 0
-}
-
-## Succeed if a package of alternative $1 has already been decided.
-decided() {
-	local part
-	for part in ${1//+/ }; do
-		[[ -z ${spared[${part}]:-} && -z ${reason[${part}]:-} ]] || return 0
-	done
-	return 1
-}
-
-## Ask about the relations that have several installed alternatives, or a
-##  different alternative installed instead of the first one. Kept packages
-##  (spared[]) are not marked, installed packages of the other alternatives are
-##  removed (reason[]). With "change nothing", no package is marked or removed.
-declare -A spared=() reason=()
-## Packages given with --keep are kept like a choice
-for name in "${!keep_given[@]}"; do
-	spared[${name}]=1
-done
+  -n, --dry-run         show the changes without making them (no root
+                        needed)
+  -y, --yes             do not ask; keep or install the recommended
+                        alternatives and the G Unity⁷ Firefox and
+                        Thunderbird packages
+  -k, --keep <package>  neither mark nor remove the package
+"""
+PACKAGE_NAME = re.compile(r"[a-z0-9][a-z0-9+.-]+")
+PROFILE_SECTION = re.compile(r"\[Profile[0-9]+\]")
 ## Shown after the name of an alternative in the choice: what the G Unity⁷
 ##  package adds to a package that Ubuntu also has (the Breaks of
 ##  g-unity7-desktop keep the installed package at the G Unity⁷ version), or the
 ##  applications of a package that replaces a set of alternatives.
-declare -A adds=(
-	[eog]="with Unity's global menu"
-	[mate-utils]="with mate-screenshot, mate-disk-usage-analyzer and mate-system-log"
-)
-candidates_remove=() install=() unchanged=() asked=
-for group in "${groups[@]}"; do
-	read -ra names <<< "${group}"
-	[[ ${#names[@]} -gt 1 ]] || continue
-	first_name=${names[0]}
-	## The Thunderbird offer below handles "thunderbird | evolution": installing
-	##  thunderbird here would install the Ubuntu package with the snap
-	[[ ${first_name} != thunderbird ]] || continue
-	## Alternatives with an installed package that is not decided yet. The first
-	##  alternative of another relation does not count.
-	present=()
-	for name in "${names[@]}"; do
-		[[ ${name} == "${first_name}" || -z ${keep[${name}]:-} ]] || continue
-		[[ -n $(installed_of "${name}") ]] && ! decided "${name}" || continue
-		present+=( "${name}" )
-	done
-	[[ ${#present[@]} -gt 0 ]] || continue
-
-	## Ask when two alternatives are installed, or when another one is installed
-	##  instead of a first alternative that the archive has
-	if installed "${first_name}" || ! has_candidate "${first_name}" || decided "${first_name}"; then
-		[[ ${#present[@]} -gt 1 ]] || continue
-	fi
-
-	## List the alternatives in relation order: keep an installed one, or install
-	##  one that the archive has
-	options=() actions=() default=
-	for name in "${names[@]}"; do
-		[[ ${name} == "${first_name}" || -z ${keep[${name}]:-} ]] || continue
-		mapfile -t missing < <(missing_of "${name}")
-		about="${name}${adds[${name}]:+ ${adds[${name}]}}"
-		if [[ " ${present[*]} " == *" ${name} "* ]]; then
-			if [[ ${name} == *+* ]]; then
-				## A set: install its missing packages too
-				mapfile -t parts < <(installed_of "${name}")
-				label="Keep $(and_list "${parts[@]}")"
-				[[ ${#missing[@]} -eq 0 ]] || label+=", and install $(and_list "${missing[@]}")"
-			else
-				label="Keep ${about}: $(summary "${name}")"
-			fi
-			actions+=( "keep ${name}" )
-		else
-			[[ ${#missing[@]} -gt 0 ]] && ! decided "${name}" || continue
-			if [[ ${name} == *+* ]]; then
-				label="Install $(and_list "${missing[@]}")"
-			else
-				label="Install ${about}: $(summary "${name}")"
-			fi
-			actions+=( "install ${name}" )
-		fi
-		if [[ ${name} == "${first_name}" ]]; then
-			label+=" (recommended)"
-			default=${#actions[@]}
-		fi
-		options+=( "${label}" )
-	done
-	## With only one installed alternative, "Keep" already changes nothing
-	if [[ ${#present[@]} -gt 1 ]]; then
-		options+=( "Change nothing; I will handle it myself" )
-		actions+=( "nothing" )
-	fi
-	default=${default:-${#actions[@]}}
-
-	spinner_stop
-	if [[ -z ${asked} ]]; then
-		echo "For some applications (terminal, image viewer, …), a different package than"
-		echo "the recommended one, or more than one package, is installed."
-		if [[ -n ${yes} ]]; then
-			echo "The recommended packages are kept or installed, and the others are removed."
-		else
-			echo "Choose the package to keep; the others will be removed. Press Enter to accept"
-			echo "the number in brackets."
-		fi
-		echo
-		asked=1
-	fi
-	mapfile -t parts < <(installed_of "${present[@]}")
-	if [[ ${#present[@]} -gt 1 ]]; then
-		echo "$(and_list "${parts[@]}") are installed:"
-	elif [[ ${#parts[@]} -gt 1 ]]; then
-		echo "$(and_list "${parts[@]}") are installed instead of ${first_name}:"
-	else
-		echo "${parts[0]} is installed instead of ${first_name}:"
-	fi
-	if [[ -n ${yes} ]]; then
-		answer=${default}
-		echo "  ${options[answer - 1]}"
-	else
-		for i in "${!options[@]}"; do
-			echo "  $(( i + 1 ))) ${options[i]}"
-		done
-		while :; do
-			read -r -p "Choice [${default}]: " answer \
-				|| die "no answer; use --yes to accept the recommended choices"
-			answer=${answer:-${default}}
-			[[ ${answer} =~ ^[1-9][0-9]*$ && ${answer} -le ${#actions[@]} ]] && break
-			echo "Enter a number from 1 to ${#actions[@]}."
-		done
-	fi
-	echo
-	spinner_start
-
-	action=${actions[answer - 1]}
-	case ${action} in
-		nothing)
-			while read -r part; do
-				spared[${part}]=1
-			done < <(installed_of "${present[@]}")
-			unchanged+=( "$(relation_text "${group}")" )
-			;;
-		install\ *|keep\ *)
-			kept=${action#* }
-			if [[ ${action} == install\ * ]]; then
-				mapfile -t parts < <(missing_of "${kept}")
-				if [[ ${#parts[@]} -gt 1 ]]; then
-					why="$(and_list "${parts[@]}") are installed instead"
-				else
-					why="${parts[0]} is installed instead"
-				fi
-			else
-				read -ra parts <<< "${kept//+/ }"
-				if [[ ${#parts[@]} -gt 1 ]]; then
-					why="$(and_list "${parts[@]}") are kept"
-				else
-					why="${parts[0]} is kept"
-				fi
-			fi
-			## Keep the chosen alternative and install its missing packages
-			for part in ${kept//+/ }; do
-				spared[${part}]=1
-				installed "${part}" || ! has_candidate "${part}" || install+=( "${part}" )
-			done
-			for name in "${present[@]}"; do
-				[[ ${name} == "${kept}" ]] && continue
-				while read -r part; do
-					reason[${part}]=${why}
-					candidates_remove+=( "${part}" )
-				done < <(installed_of "${name}")
-			done
-			;;
-	esac
-done
-
+ADDS = {
+    "eog": "with Unity's global menu",
+    "mate-utils": "with mate-screenshot, mate-disk-usage-analyzer and mate-system-log",
+}
 ## The duplicates of the task and the unused packages of the Ubuntu Unity image
 ##  are removed only on a system installed from that image. Installing
 ##  g-unity7-desktop already removes the task, which depends on pulseaudio, but
 ##  not ubuntu-unity-settings, which only the task installs. The first run that
 ##  makes changes remembers it for later runs, as it removes
 ##  ubuntu-unity-settings as a duplicate.
-unity_marker=/var/lib/g-unity7/ubuntu-unity
-unity_image=
-if installed "${task}" || installed ubuntu-unity-settings || [[ -e ${unity_marker} ]]; then
-	unity_image=1
-fi
-
-## Firefox and Thunderbird: the Ubuntu packages install snaps, while the PPA
-##  provides regular packages with Unity's global menu, built from the Debian
-##  sources. Their version is lower, so g-unity7-apt-pin keeps the Ubuntu
-##  packages until this script installs the PPA package, which then links its
-##  own pin. When the user chooses the PPA package, its language packages for
-##  the languages in use are installed, the snap profiles of every user are
-##  copied as that user (added to the existing profiles, if any), and the snap
-##  is removed. The snap stays if a newer version of Firefox or Thunderbird
-##  used one of its profiles, which the PPA package cannot open (see
-##  moz_newer_profiles). Without the snap, the PPA package is offered
-##  as well; Evolution is mentioned if it is installed instead of Thunderbird.
-moz_install=() moz_snap_remove=() moz_copy=() moz_lines=() homes_noted=
-
+UNITY_MARKER = "/var/lib/g-unity7/ubuntu-unity"
 ## A switch from a snap to the package starts before the package is installed:
 ##  /var/lib/g-unity7/switch-<package> holds its ID until the snap is removed.
 ##  When a run stops in between, such as when the copy of a profile failed,
@@ -475,533 +111,11 @@ moz_install=() moz_snap_remove=() moz_copy=() moz_lines=() homes_noted=
 ##  .g-unity7-snap-copy to the package profile directory), unless the snap
 ##  changed the profiles since then. A run that does not remove the snap drops
 ##  the file of its switch.
-switch_dir=/var/lib/g-unity7
-copy_marker=.g-unity7-snap-copy
-## The KiB that the chosen copies need on each file system (mount point)
-declare -A space_needed=()
+SWITCH_DIR = "/var/lib/g-unity7"
+COPY_MARKER = ".g-unity7-snap-copy"
 ## The free space that a copy leaves at least, in KiB
-space_spare=102400
-
-## Print the free space in KiB and the mount point of the file system of path
-##  $1, or of its nearest existing parent directory.
-free_space() {
-	local path=$1
-	while [[ ! -e ${path} && ${path} == /?* ]]; do
-		path=${path%/*}
-	done
-	df -Pk -- "${path:-/}" 2>/dev/null | awk 'NR == 2 { print $4, $6 }'
-}
-
-## Print a size in KiB in MB, rounded up
-in_mb() {
-	echo "$(( ($1 + 1023) / 1024 )) MB"
-}
-
-## Print the version of $1 in the G Unity⁷ PPA or the staging PPA, if any.
-ppa_version() {
-	LC_ALL=C apt-cache madison "$1" 2>/dev/null \
-		| awk -F'|' '$3 ~ /c4pp4\/g-unity7/ { gsub(/ /, "", $2); print $2; exit }'
-}
-
-## Succeed if snap $1 is installed.
-snap_installed() {
-	command -v snap >/dev/null && snap list "$1" >/dev/null 2>&1
-}
-
-## Succeed if a program of snap $1 is running.
-snap_running() {
-	pgrep -f "/snap/$1/" >/dev/null
-}
-
-## Remove the empty revision directories in /var/snap/$1 that snapd does not
-##  know. The Ubuntu image leaves the directories of the snap revisions it was
-##  built with, and snapd then cannot remove /var/snap/$1 (directory not empty).
-snap_orphans_remove() {
-	local dir revs
-	revs=" $(LC_ALL=C snap list --all "$1" 2>/dev/null | awk 'NR > 1 { printf "%s ", $3 }')" || true
-	[[ ${revs} == *[0-9]* ]] || return 0
-	for dir in /var/snap/"$1"/[0-9]*/; do
-		[[ -d ${dir} && ${revs} != *" $(basename "${dir}") "* ]] || continue
-		rmdir "${dir}" 2>/dev/null || true
-	done
-}
-
-## Print "user:home" for each home directory that may have snap profiles: those
-##  of the users with a UID from 1000 to 59999, and the directories in /home
-##  with their owner, as snapd also looks there. This finds the users of a
-##  network directory (LDAP, SSSD) too, which may have a higher UID and which
-##  getent may not list.
-homes() {
-	local user uid home
-	local -A seen=()
-	while IFS=: read -r user _ uid _ _ home _; do
-		[[ ${uid} -ge 1000 && ${uid} -lt 60000 && -d ${home} && -z ${seen[${home}]:-} ]] || continue
-		seen[${home}]=1
-		echo "${user}:${home}"
-	done < <(getent passwd)
-	for home in /home/*; do
-		[[ -d ${home} && ! -L ${home} && -z ${seen[${home}]:-} ]] || continue
-		IFS=: read -r user uid < <(stat -c '%U:%u' "${home}")
-		[[ ${uid} -ge 1000 && ${user} != UNKNOWN ]] || continue
-		seen[${home}]=1
-		echo "${user}:${home}"
-	done
-	return 0
-}
-
-## Print "user:home:directory" for each user who has a profile directory of
-##  snap $1 with profiles.ini, where Firefox and Thunderbird look for it
-##  (nsXREDirProvider): the legacy directory $2 in $SNAP_USER_COMMON
-##  (~/snap/<snap>/common) if its first directory (.mozilla, .thunderbird)
-##  exists, or else the XDG directory $3 in $SNAP_USER_DATA, where the snap
-##  points XDG_CONFIG_HOME. $SNAP_USER_DATA is the directory of the installed
-##  revision $4 (~/snap/<snap>/<revision>), which snapd copies to each new
-##  revision. The "current" link in ~/snap/<snap> may point to an older or a
-##  removed revision, as only snap run updates it. The Firefox snap forces the
-##  legacy directory (MOZ_LEGACY_HOME), while Thunderbird 160 creates new
-##  profiles in the XDG directory.
-snap_profiles() {
-	local snap=$1 legacy=$2 xdg=$3 rev=$4 entry home dir
-	while read -r entry; do
-		home=${entry#*:}
-		if [[ -d ${home}/snap/${snap}/common/${legacy%%/*} ]]; then
-			dir=${home}/snap/${snap}/common/${legacy}
-		elif [[ -n ${rev} ]]; then
-			dir=${home}/snap/${snap}/${rev}/${xdg}
-		else
-			continue
-		fi
-		[[ -f ${dir}/profiles.ini ]] && echo "${entry}:${dir}"
-	done < <(homes)
-	return 0
-}
-
-## Print the languages in use: LANG and LANGUAGE in /etc/default/locale and the
-##  language that each user chose (AccountsService). Not locale -a: the Ubuntu
-##  installer keeps the language packs of the ISO's languages, which generate
-##  their locales.
-used_locales() {
-	local file
-	sed -n -e 's/^LANG=//p' -e 's/^LANGUAGE=//p' /etc/default/locale 2>/dev/null \
-		| tr -d '"' | tr ':' '\n'
-	for file in /var/lib/AccountsService/users/*; do
-		[[ -f ${file} ]] && sed -n 's/^Language=//p' "${file}"
-	done
-	return 0
-}
-
-## Print the language packages of PPA package $1 (version $2) that are not
-##  installed, for the languages in use: <package>-l10n-<language>-<country> if
-##  the PPA has it, or else <package>-l10n-<language>.
-moz_l10n() {
-	local pkg=$1 version=$2 locale name names
-	local -A seen=()
-	while read -r locale; do
-		[[ ${locale} =~ ^([a-z]{2,3})(_([A-Z]{2}))? ]] || continue
-		names=( "${pkg}-l10n-${BASH_REMATCH[1]}" )
-		[[ -z ${BASH_REMATCH[3]} ]] \
-			|| names=( "${pkg}-l10n-${BASH_REMATCH[1]}-${BASH_REMATCH[3],,}" "${names[@]}" )
-		for name in "${names[@]}"; do
-			[[ -n ${seen[${name}]:-} ]] && break
-			[[ $(ppa_version "${name}") == "${version}" ]] || continue
-			seen[${name}]=1
-			installed "${name}" || echo "${name}"
-			break
-		done
-	done < <(used_locales)
-	return 0
-}
-
-## Succeed if a home directory (see homes) is not accessible, as those of
-##  other users without root (mode 750)
-homes_hidden() {
-	local entry
-	while read -r entry; do
-		[[ -x ${entry#*:} ]] || return 0
-	done < <(homes)
-	return 1
-}
-
-## Print the package profile directory in home directory $1, where Firefox and
-##  Thunderbird look for it (nsXREDirProvider): the legacy directory $2 if its
-##  first directory (.mozilla, .thunderbird) exists, or else the XDG directory
-##  $3 if it exists (the XDG_CONFIG_HOME of the user is taken to be ~/.config),
-##  or else the legacy directory, which the copy creates.
-deb_profile_dir() {
-	if [[ ! -e $1/${2%%/*} && -d $1/$3 ]]; then
-		echo "$1/$3"
-	else
-		echo "$1/$2"
-	fi
-}
-
-## Print the paths of the profiles with an absolute path in profiles.ini $1
-##  that are in directory $2, such as one that the profile manager created in
-##  the snap directory. They are not copied.
-moz_absolute_profiles() {
-	awk -F= -v dir="$2" '
-		function out() { if (sec ~ /^\[Profile[0-9]+\]$/ && rel == "0" && index(path, dir) == 1) print path }
-		/^\[/ { out(); sec = $0; path = rel = ""; next }
-		$1 == "Path" { path = substr($0, 6) }
-		$1 == "IsRelative" { rel = $2 }
-		END { out() }' "$1" 2>/dev/null || true
-}
-
-## Print "<major> <profile>" for each profile in snap profile directory $1 that
-##  a version with a major number above $2 used last: LastVersion in its
-##  compatibility.ini, such as 161.0_20261124054846/20261124054846. Firefox and
-##  Thunderbird compare only the major numbers (CompareCompatVersions) and do
-##  not open such a profile. "Safe Mode" has no number and is not compared, as
-##  in Firefox.
-moz_newer_profiles() {
-	local file major
-	for file in "$1"/*/compatibility.ini; do
-		[[ -f ${file} && ! -L ${file} ]] || continue
-		major=$(sed -n 's/^LastVersion=\([0-9][0-9]*\).*/\1/p' "${file}" 2>/dev/null | head -n 1) || true
-		[[ ${major} =~ ^[0-9]{1,6}$ ]] || continue
-		(( 10#${major} > 10#$2 )) && echo "${major} ${file%/compatibility.ini}"
-	done
-	return 0
-}
-
-## moz_choice <package> <legacy snap profile> <XDG snap profile> <package profile> <name> <install hash> [<alternative>]
-##  The snap profile directories are relative to $SNAP_USER_COMMON and
-##  $SNAP_USER_DATA (see snap_profiles), the package profile directory (the
-##  legacy one) to the home directory. The package uses the XDG directory with
-##  the path of the one of the snap in the home directory instead if only that
-##  exists (see deb_profile_dir). The install hash belongs to the package
-##  directory (/usr/lib/<package>) in profiles.ini. Leave it empty if it is
-##  not known. The alternative is the other package of the g-unity7-desktop
-##  relation, mentioned if installed.
-moz_choice() {
-	local pkg=$1 legacy=$2 xdg=$3 deb_profile=$4 app=$5 hash=$6 alt=${7:-}
-	local ppa status deb_installed= snap= snap_rev= upstream users=() copy_users=() newer=() newer_text major
-	local copy_text options=() actions=() default=1 i answer entry user home src name dst path
-	local switch_id= adopt=adopt size free mount marker simulation reason l10n=()
-	local -A shared=() copied=() sizes=() need=() dsts=()
-	ppa=$(ppa_version "${pkg}")
-	[[ -n ${ppa} ]] || return 0
-	if [[ -n ${spared[${pkg}]:-} ]]; then
-		moz_lines+=( "${app}: unchanged (--keep ${pkg})" )
-		return 0
-	fi
-	status=$(dpkg-query -W -f='${db:Status-Status} ${Version}' "${pkg}" 2>/dev/null) || true
-	[[ ${status} == "installed "*+gu7* ]] && deb_installed=1
-	## A package from another source, such as Mozilla's APT repository, stays
-	##  as it is: it may be newer than the G Unity⁷ package, which then could not
-	##  open its profile. The Ubuntu package that installs the snap has "snap" in
-	##  its version (1:1snap1-0ubuntu11).
-	if [[ ${status} == "installed "* && -z ${deb_installed} && ${status} != *snap* ]]; then
-		moz_lines+=( "${app}: unchanged; ${pkg} ${status#installed } from another source is installed" )
-		return 0
-	fi
-	snap_installed "${pkg}" && snap=1
-	## Nothing to choose if the G Unity⁷ package is installed and the snap is not
-	[[ -n ${snap} || -z ${deb_installed} ]] || return 0
-
-	if [[ -n ${snap} ]]; then
-		read -r _ snap_rev < <(snap list "${pkg}" 2>/dev/null | awk 'NR == 2 { print $2, $3 }') || true
-		mapfile -t users < <(snap_profiles "${pkg}" "${legacy}" "${xdg}" "${snap_rev}")
-		## A profile that a newer version used does not open in the package. The
-		##  version of the snap does not tell: a snap that was not started since
-		##  its update has not used its profiles.
-		upstream=${ppa#*:}
-		upstream=${upstream%-*}
-		for entry in "${users[@]}"; do
-			IFS=: read -r user home src <<< "${entry}"
-			while read -r major path; do
-				newer+=( "${path} (last used by ${app} ${major})" )
-			done < <(moz_newer_profiles "${src}" "${upstream%%.*}")
-		done
-		if [[ ${#newer[@]} -gt 0 ]]; then
-			if [[ ${#newer[@]} -gt 1 ]]; then
-				newer_text="the snap profiles $(and_list "${newer[@]}")"
-			else
-				newer_text="the snap profile ${newer[0]}"
-			fi
-			if [[ ${upstream} == *esr ]]; then
-				moz_lines+=( "${app}: unchanged; the G Unity⁷ package ${ppa} cannot open ${newer_text}. It is the ESR, which stays behind the monthly releases of the snap; see NEWER PROFILES in g-unity7-cleanup(8)." )
-			else
-				moz_lines+=( "${app}: unchanged; the G Unity⁷ package ${ppa} cannot open ${newer_text}. Run g-unity7-cleanup again after the package is updated." )
-			fi
-			return 0
-		fi
-		## Do not touch a running snap: a copy of an open profile may be
-		##  inconsistent, and a profile that the package creates in the meantime
-		##  would stop the copy
-		if snap_running "${pkg}"; then
-			moz_lines+=( "${app}: the snap is running; close ${app} and run g-unity7-cleanup again" )
-			return 0
-		fi
-		## An unfinished switch installed the package, which was not used yet
-		[[ ! -f ${switch_dir}/switch-${pkg} ]] || switch_id=$(< "${switch_dir}/switch-${pkg}")
-		[[ -z ${deb_installed} || -n ${switch_id} ]] || adopt=
-		for entry in "${users[@]}"; do
-			IFS=: read -r user home src <<< "${entry}"
-			dst=$(deb_profile_dir "${home}" "${deb_profile}" "${xdg}")
-			dsts[${entry}]=${dst}
-			marker=${dst}/${copy_marker}
-			## The Thunderbird snap links its profile directory to
-			##  ~/.thunderbird if that has profiles when the snap starts for
-			##  the first time (Ubuntu's package before 24.04). The package
-			##  then uses the same profiles, so there is nothing to copy.
-			if [[ $(readlink -f -- "${src}") == "$(readlink -f -- "${dst}")" ]]; then
-				shared[${entry}]=1
-			elif [[ -n ${switch_id} && -f ${marker} && ! -L ${marker} && $(< "${marker}") == "${switch_id} ${src}" \
-				&& -z $(find "${src}/" -newer "${marker}" -print -quit 2>/dev/null) ]]; then
-				copied[${entry}]=1
-			else
-				copy_users+=( "${user}" )
-				size=$(du -sk -- "${src}/" 2>/dev/null | cut -f1) || size=
-				sizes[${entry}]=${size:-0}
-				read -r free mount < <(free_space "${dst}") || true
-				[[ -z ${mount} ]] || need[${mount}]=$(( ${need[${mount}]:-0} + ${size:-0} ))
-			fi
-		done
-		if [[ ${EUID} -ne 0 && -z ${homes_noted} ]] && homes_hidden; then
-			moz_lines+=( "Without root, the snap profiles of other users are not shown (sudo g-unity7-cleanup --dry-run shows them)" )
-			homes_noted=1
-		fi
-		## Root cannot read some home directories, such as a network one
-		if [[ ${EUID} -eq 0 ]]; then
-			while read -r entry; do
-				[[ -x ${entry#*:} ]] \
-					|| moz_lines+=( "${app}: the home directory ${entry#*:} is not accessible; its snap profiles are not copied" )
-			done < <(homes)
-		fi
-		## A copy must fit, with the copies already chosen
-		for mount in "${!need[@]}"; do
-			read -r free _ < <(free_space "${mount}") || true
-			if [[ -n ${free} ]] && (( ${space_needed[${mount}]:-0} + need[${mount}] + space_spare > free )); then
-				moz_lines+=( "${app}: unchanged; the copy of the snap profiles needs $(in_mb "${need[${mount}]}") in ${mount}, which has $(in_mb "${free}") free. Free some space and run g-unity7-cleanup again." )
-				return 0
-			fi
-		done
-	fi
-
-	## The G Unity⁷ Firefox and Thunderbird need the G Unity⁷ GTK 3, also for
-	##  each other architecture that has GTK 3 installed (Multi-Arch: same), such
-	##  as i386 for Steam or Wine. A package that apt cannot install is not
-	##  offered; the other changes are made.
-	mapfile -t l10n < <(moz_l10n "${pkg}" "${ppa}")
-	if [[ -z ${deb_installed} ]] \
-		&& ! simulation=$(apt-get -s --allow-downgrades install "${pkg}=${ppa}" "${l10n[@]/%/=${ppa}}" 2>&1); then
-		reason=$(grep -m 1 -E ' : (Pre)?Depends: | : (Conflicts|Breaks): ' <<< "${simulation}" | sed -e 's/^ *//') || true
-		[[ -n ${reason} ]] || reason=$(grep -m 1 '^E: ' <<< "${simulation}" | sed -e 's/^E: //') || true
-		if [[ -n ${snap} ]]; then
-			moz_lines+=( "${app}: unchanged; apt cannot install ${pkg} ${ppa} from G Unity⁷${reason:+ (${reason})}" )
-		else
-			moz_lines+=( "${app}: not installed; apt cannot install ${pkg} ${ppa} from G Unity⁷${reason:+ (${reason})}" )
-		fi
-		return 0
-	fi
-
-	copy_text=
-	if [[ ${#copy_users[@]} -gt 1 ]]; then
-		copy_text="copy the snap profiles for $(and_list "${copy_users[@]}")"
-	elif [[ ${#copy_users[@]} -eq 1 ]]; then
-		copy_text="copy the snap profile for ${copy_users[0]}"
-	fi
-	if [[ -z ${snap} ]]; then
-		options=( "Install the G Unity⁷ package (recommended)" "Do not install it" )
-		actions=( deb nothing )
-	elif [[ -n ${deb_installed} ]]; then
-		if [[ -n ${copy_text} ]]; then
-			options=( "${copy_text^} and remove the snap (recommended)" )
-		else
-			options=( "Remove the snap (recommended)" )
-		fi
-		options+=( "Keep the snap as well" )
-		actions=( snap nothing )
-	else
-		options=( "Install the G Unity⁷ package${copy_text:+, ${copy_text}} and remove the snap (recommended)"
-			"Keep the Ubuntu snap" )
-		actions=( deb nothing )
-	fi
-
-	spinner_stop
-	if [[ -z ${snap} ]]; then
-		if [[ -n ${alt} ]] && installed "${alt}"; then
-			echo "${alt^} is installed instead of ${app}."
-		else
-			echo "${app} is not installed."
-		fi
-		echo "G Unity⁷ provides a ${app} package with Unity's global menu:"
-	elif [[ -n ${deb_installed} ]]; then
-		echo "Both the G Unity⁷ ${app} package and the ${app} snap are installed:"
-	else
-		echo "${app} is installed as an Ubuntu snap."
-		echo "G Unity⁷ provides a ${app} package with Unity's global menu:"
-	fi
-	if [[ -n ${yes} ]]; then
-		answer=${default}
-		echo "  ${options[answer - 1]}"
-	else
-		for i in "${!options[@]}"; do
-			echo "  $(( i + 1 ))) ${options[i]}"
-		done
-		while :; do
-			read -r -p "Choice [${default}]: " answer \
-				|| die "no answer; use --yes to accept the recommended choices"
-			answer=${answer:-${default}}
-			[[ ${answer} =~ ^[1-9][0-9]*$ && ${answer} -le ${#actions[@]} ]] && break
-			echo "Enter a number from 1 to ${#actions[@]}."
-		done
-	fi
-	echo
-	spinner_start
-
-	case ${actions[answer - 1]} in
-		nothing)
-			if [[ -n ${snap} ]]; then
-				moz_lines+=( "${app}: unchanged" )
-			else
-				moz_lines+=( "${app}: not installed" )
-			fi
-			return 0
-			;;
-		deb)
-			moz_install+=( "${pkg}=${ppa}" )
-			moz_lines+=( "${app}: install ${pkg} ${ppa} from G Unity⁷" )
-			;;
-	esac
-	for name in "${l10n[@]}"; do
-		moz_install+=( "${name}=${ppa}" )
-		moz_lines+=( "${app}: install ${name} ${ppa} from G Unity⁷" )
-	done
-	[[ -n ${snap} ]] || return 0
-	for mount in "${!need[@]}"; do
-		space_needed[${mount}]=$(( ${space_needed[${mount}]:-0} + need[${mount}] ))
-	done
-	## The snap's default profile becomes the default, unless the package was
-	##  already installed and has its own default profile
-	for entry in "${users[@]}"; do
-		IFS=: read -r user home src <<< "${entry}"
-		dst=${dsts[${entry}]}
-		## A profile that the profile manager created elsewhere in the snap
-		##  directory goes with the snap
-		while read -r path; do
-			moz_lines+=( "${app}: the profile ${path} of ${user} is outside ${src}, so it is not copied and is removed with the snap" )
-		done < <(moz_absolute_profiles "${src}/profiles.ini" "${home}/snap/${pkg}/")
-		if [[ -n ${copied[${entry}]:-} ]]; then
-			moz_lines+=( "${app}: ${src} was copied to ${dst} before, nothing to copy" )
-			continue
-		fi
-		moz_copy+=( "${user}:${src}:${dst}:${hash}:${adopt}:${pkg}" )
-		size=
-		[[ -z ${sizes[${entry}]:-} ]] || size=" ($(in_mb "${sizes[${entry}]}"))"
-		if [[ -n ${shared[${entry}]:-} && -z ${adopt} ]]; then
-			moz_lines+=( "${app}: the snap uses ${dst}, nothing to copy" )
-		elif [[ -n ${shared[${entry}]:-} ]]; then
-			moz_lines+=( "${app}: the snap uses ${dst}, nothing to copy; make the snap's default profile the default" )
-		elif [[ ! -f ${dst}/profiles.ini ]]; then
-			moz_lines+=( "${app}: copy ${src} to ${dst}${size}" )
-		elif [[ -z ${adopt} ]]; then
-			moz_lines+=( "${app}: add the profiles in ${src} to ${dst}${size}; the default profile stays" )
-		else
-			moz_lines+=( "${app}: add the profiles in ${src} to ${dst}${size} and make the snap's default profile the default" )
-		fi
-	done
-	moz_snap_remove+=( "${pkg}" )
-	moz_lines+=( "${app}: remove the snap (snapd saves a snapshot of its data)" )
-}
-
-## The install hashes are CityHash64 (version 1.0.2) of the UTF-16 path of
-##  /usr/lib/firefox and /usr/lib/thunderbird. The Firefox hash is the one that
-##  the G Unity⁷ Firefox wrote.
-moz_choice firefox .mozilla/firefox .config/mozilla/firefox .mozilla/firefox Firefox 4F96D1932A9F858E
-moz_choice thunderbird .thunderbird .config/thunderbird .thunderbird Thunderbird FDC34C9F024745EB evolution
-
-## Desktop files of snaps that are not installed. The Ubuntu image leaves those
-##  of the snaps that the installer does not install, such as Thunderbird, and
-##  the Dash shows them with a missing icon. snapd writes them only for
-##  installed snaps. Nothing is removed if snap list fails.
-snap_desktop_dir=/var/lib/snapd/desktop/applications
-snap_desktop_remove=()
-snaps_listed=
-if command -v snap >/dev/null && snaps=$(LC_ALL=C snap list --all 2>/dev/null); then
-	snaps_listed=1
-	for file in "${snap_desktop_dir}"/*_*.desktop; do
-		[[ -f ${file} ]] || continue
-		## <snap>_<app>.desktop, or <snap>+<key>_<app>.desktop for an instance
-		name=${file##*/}
-		name=${name%%_*}
-		name=${name/+/_}
-		awk -v n="${name}" 'NR > 1 && $1 == n { found = 1 } END { exit !found }' <<< "${snaps}" \
-			|| snap_desktop_remove+=( "${file}" )
-	done
-fi
-
-## Mount units of snap revisions that are neither installed nor have their
-##  .snap file. Some remain on Ubuntu Unity (old revisions of the base snaps,
-##  Thunderbird), and they fail at every boot. Nothing is removed if snap list
-##  fails.
-snap_mount_remove=() snap_mount_lines=()
-if [[ -n ${snaps_listed} ]]; then
-	for file in /etc/systemd/system/snap-*.mount; do
-		[[ -f ${file} ]] || continue
-		what=$(awk -F= '$1 == "What" { print $2; exit }' "${file}")
-		[[ ${what} == /var/lib/snapd/snaps/*_*.snap && ! -e ${what} ]] || continue
-		## <snap>_<revision>.snap
-		name=${what##*/}
-		name=${name%.snap}
-		rev=${name##*_}
-		name=${name%_*}
-		awk -v n="${name}" -v r="${rev}" 'NR > 1 && $1 == n && $3 == r { found = 1 } END { exit !found }' \
-			<<< "${snaps}" && continue
-		snap_mount_remove+=( "${file##*/}" )
-		snap_mount_lines+=( "${name} ${rev} (${file##*/})" )
-	done
-fi
-
-## Configuration files of packages that installing g-unity7-desktop removed
-##  without purging them. The autostart file of PulseAudio, which PipeWire
-##  replaces, starts a program that no longer exists.
-conf_purge=()
-for name in pulseaudio; do
-	[[ $(dpkg-query -W -f='${db:Status-Status}' "${name}" 2>/dev/null) == config-files ]] \
-		&& conf_purge+=( "${name}" )
-done
-
-mark=()
-add_mark() {
-	local name
-	for name in "$@"; do
-		[[ -n ${manual[${name}]:-} && -z ${keep[${name}]:-} && -z ${spared[${name}]:-} ]] \
-			&& installed "${name}" || continue
-		[[ -n ${in_list[${name}]:-} ]] || { mark+=( "${name}" ); in_list[${name}]=1; }
-	done
-}
-
-## ubuntu-unity-desktop and the duplicates, on a system from the Ubuntu Unity
-##  image. If ubuntu-unity-desktop is already removed, its relations come from
-##  the archive.
-duplicates=()
-if [[ -n ${unity_image} ]]; then
-	add_mark "${task}"
-	mapfile -t duplicates < <(relations "${task}" "Depends Recommends" | tr ' ' '\n')
-	add_mark "${duplicates[@]}"
-fi
-
-## Task packages that the installed duplicates and the removed alternatives
-##  depend on or recommend, except those of packages kept by a choice.
-roots=( "${candidates_remove[@]}" )
-for name in "${duplicates[@]}"; do
-	[[ -z ${spared[${name}]:-} ]] && installed "${name}" && roots+=( "${name}" )
-done
-if [[ ${#roots[@]} -gt 0 ]]; then
-	mapfile -t closure < <(apt-cache depends --recurse --installed --no-suggests --no-conflicts \
-		--no-breaks --no-replaces --no-enhances "${roots[@]}" 2>/dev/null \
-		| grep -v '^[ <]' | sort -u || true)
-	candidates=()
-	for name in "${closure[@]}"; do
-		[[ -n ${manual[${name}]:-} && -z ${keep[${name}]:-} && -z ${spared[${name}]:-} ]] \
-			&& candidates+=( "${name}" )
-	done
-	mapfile -t closure_of_task < <(of_task "${candidates[@]}")
-	add_mark "${closure_of_task[@]}"
-fi
-
+SPACE_SPARE = 102400
+SNAP_DESKTOP_DIR = "/var/lib/snapd/desktop/applications"
 ## Packages of the Ubuntu Unity image that G Unity⁷ does not use, on a system
 ##  from that image. All packages of the image are manually installed, so
 ##  autoremove never removes them.
@@ -1016,415 +130,1476 @@ fi
 ##  - GParted, an advanced tool; gnome-disk-utility does the basic tasks
 ##  - the libraries and the snap seeding tool of the installer, which it does
 ##    not remove with Calamares
-leftovers=(
-	fcitx fcitx-bin fcitx-data fcitx-frontend-all fcitx-frontend-gtk2
-	fcitx-frontend-gtk3 fcitx-frontend-qt5 fcitx-frontend-qt6 fcitx-module-dbus
-	fcitx-module-kimpanel fcitx-module-lua fcitx-module-quickphrase-editor5
-	fcitx-module-x11 fcitx-modules fcitx-mozc fcitx-mozc-data fcitx-pinyin
-	fcitx-table fcitx-ui-classic kde-config-fcitx libfcitx-core0 libfcitx-qt5-1
-	libfcitx-qt5-data mozc-data mozc-server mozc-utils-gui
-	kactivitymanagerd kded5 kio kpackagetool6 kwayland-integration
-	kwayland5-data libgettextpo0 libkf5archive-data libkf5archive5
-	libkf5auth-data libkf5authcore5 libkf5codecs-data libkf5codecs5
-	libkf5completion-data libkf5completion5 libkf5config-bin libkf5config-data
-	libkf5configcore5 libkf5configgui5 libkf5configwidgets-data
-	libkf5configwidgets5 libkf5coreaddons-data libkf5coreaddons5 libkf5crash5
-	libkf5dbusaddons-bin libkf5dbusaddons-data libkf5dbusaddons5
-	libkf5doctools5 libkf5guiaddons-bin libkf5guiaddons-data libkf5guiaddons5
-	libkf5i18n-data libkf5i18n5 libkf5iconthemes-bin libkf5iconthemes-data
-	libkf5iconthemes5 libkf5itemviews-data libkf5itemviews5
-	libkf5jobwidgets-data libkf5jobwidgets5 libkf5kiocore5 libkf5kiogui5
-	libkf5kiontlm5 libkf5kiowidgets5 libkf5notifications-data
-	libkf5notifications5 libkf5service-bin libkf5service-data libkf5service5
-	libkf5solid5 libkf5solid5-data libkf5sonnet5-data libkf5sonnetcore5
-	libkf5sonnetui5 libkf5textwidgets-data libkf5textwidgets5 libkf5wallet-bin
-	libkf5wallet-data libkf5wallet5 libkf5waylandclient5
-	libkf5widgetsaddons-data libkf5widgetsaddons5 libkf5windowsystem-data
-	libkf5windowsystem5 libkf6auth-data libkf6authcore6 libkf6i18nqml6
-	libkf6itemmodels6 libkf6kcmutils-bin libkf6kcmutils-data libkf6kcmutils6
-	libkf6kcmutilscore6 libkf6kcmutilsquick6 libkf6package-data libkf6package6
-	libkf6runner6 libkirigami-data libkirigami6 libkirigamicontrols6
-	libkirigamidelegates6 libkirigamidialogs6 libkirigamiforms6
-	libkirigamiformsprivatecards6 libkirigamiformsprivateflat6
-	libkirigamiformsprivatetemplates6 libkirigamilayouts6
-	libkirigamilayoutsprivate6 libkirigamiplatform6 libkirigamipolyfill6
-	libkirigamiprimitives6 libkirigamiprivate6 libkirigamitemplates6
-	liblua5.1-0 libplasmaactivities-data libplasmaactivities7 libpolkit-qt5-1-1
-	libpolkit-qt6-1-1 libpresage-data libpresage1v5 libqt5texttospeech5
-	libqt5xml5t64 libqt6quickcontrols2-6 libqt6quickshapes6
-	libqt6quicktemplates2-6 libqt6quickwidgets6 libqt6sql6 libqt6sql6-sqlite
-	libtinyxml2.6.2v5 plasma-activities-bin presage
-	qml6-module-org-kde-kirigami qml6-module-qtqml qml6-module-qtqml-models
-	qml6-module-qtqml-workerscript qml6-module-qtquick
-	qml6-module-qtquick-controls qml6-module-qtquick-layouts
-	qml6-module-qtquick-shapes qml6-module-qtquick-templates
-	qml6-module-qtquick-window qtspeech5-speechd-plugin sonnet-plugins
-	systemsettings
-	qt-style-kvantum qt-style-kvantum-l10n qt-style-kvantum-themes
-	gparted gparted-common libatkmm-1.6-1v5 libcairomm-1.0-1v5
-	libgtkmm-3.0-1t64 libpangomm-1.4-1v5 libparted-fs-resize0t64
-	libappstreamqt3 libboost-python1.90.0 libcalamares3.3 libkpmcore13
-	libyaml-cpp0.9 snapd-seed-glue xdelta3
-)
-[[ -z ${unity_image} ]] || add_mark "${leftovers[@]}"
+LEFTOVERS = """
+    fcitx fcitx-bin fcitx-data fcitx-frontend-all fcitx-frontend-gtk2
+    fcitx-frontend-gtk3 fcitx-frontend-qt5 fcitx-frontend-qt6 fcitx-module-dbus
+    fcitx-module-kimpanel fcitx-module-lua fcitx-module-quickphrase-editor5
+    fcitx-module-x11 fcitx-modules fcitx-mozc fcitx-mozc-data fcitx-pinyin
+    fcitx-table fcitx-ui-classic kde-config-fcitx libfcitx-core0 libfcitx-qt5-1
+    libfcitx-qt5-data mozc-data mozc-server mozc-utils-gui
+    kactivitymanagerd kded5 kio kpackagetool6 kwayland-integration
+    kwayland5-data libgettextpo0 libkf5archive-data libkf5archive5
+    libkf5auth-data libkf5authcore5 libkf5codecs-data libkf5codecs5
+    libkf5completion-data libkf5completion5 libkf5config-bin libkf5config-data
+    libkf5configcore5 libkf5configgui5 libkf5configwidgets-data
+    libkf5configwidgets5 libkf5coreaddons-data libkf5coreaddons5 libkf5crash5
+    libkf5dbusaddons-bin libkf5dbusaddons-data libkf5dbusaddons5
+    libkf5doctools5 libkf5guiaddons-bin libkf5guiaddons-data libkf5guiaddons5
+    libkf5i18n-data libkf5i18n5 libkf5iconthemes-bin libkf5iconthemes-data
+    libkf5iconthemes5 libkf5itemviews-data libkf5itemviews5
+    libkf5jobwidgets-data libkf5jobwidgets5 libkf5kiocore5 libkf5kiogui5
+    libkf5kiontlm5 libkf5kiowidgets5 libkf5notifications-data
+    libkf5notifications5 libkf5service-bin libkf5service-data libkf5service5
+    libkf5solid5 libkf5solid5-data libkf5sonnet5-data libkf5sonnetcore5
+    libkf5sonnetui5 libkf5textwidgets-data libkf5textwidgets5 libkf5wallet-bin
+    libkf5wallet-data libkf5wallet5 libkf5waylandclient5
+    libkf5widgetsaddons-data libkf5widgetsaddons5 libkf5windowsystem-data
+    libkf5windowsystem5 libkf6auth-data libkf6authcore6 libkf6i18nqml6
+    libkf6itemmodels6 libkf6kcmutils-bin libkf6kcmutils-data libkf6kcmutils6
+    libkf6kcmutilscore6 libkf6kcmutilsquick6 libkf6package-data libkf6package6
+    libkf6runner6 libkirigami-data libkirigami6 libkirigamicontrols6
+    libkirigamidelegates6 libkirigamidialogs6 libkirigamiforms6
+    libkirigamiformsprivatecards6 libkirigamiformsprivateflat6
+    libkirigamiformsprivatetemplates6 libkirigamilayouts6
+    libkirigamilayoutsprivate6 libkirigamiplatform6 libkirigamipolyfill6
+    libkirigamiprimitives6 libkirigamiprivate6 libkirigamitemplates6
+    liblua5.1-0 libplasmaactivities-data libplasmaactivities7 libpolkit-qt5-1-1
+    libpolkit-qt6-1-1 libpresage-data libpresage1v5 libqt5texttospeech5
+    libqt5xml5t64 libqt6quickcontrols2-6 libqt6quickshapes6
+    libqt6quicktemplates2-6 libqt6quickwidgets6 libqt6sql6 libqt6sql6-sqlite
+    libtinyxml2.6.2v5 plasma-activities-bin presage
+    qml6-module-org-kde-kirigami qml6-module-qtqml qml6-module-qtqml-models
+    qml6-module-qtqml-workerscript qml6-module-qtquick
+    qml6-module-qtquick-controls qml6-module-qtquick-layouts
+    qml6-module-qtquick-shapes qml6-module-qtquick-templates
+    qml6-module-qtquick-window qtspeech5-speechd-plugin sonnet-plugins
+    systemsettings
+    qt-style-kvantum qt-style-kvantum-l10n qt-style-kvantum-themes
+    gparted gparted-common libatkmm-1.6-1v5 libcairomm-1.0-1v5
+    libgtkmm-3.0-1t64 libpangomm-1.4-1v5 libparted-fs-resize0t64
+    libappstreamqt3 libboost-python1.90.0 libcalamares3.3 libkpmcore13
+    libyaml-cpp0.9 snapd-seed-glue xdelta3
+""".split()
+## The bytes of the output of the tools and of file names that are not UTF-8
+##  stay as they are
+TEXT = {"encoding": "utf-8", "errors": "surrogateescape"}
 
-## Apply the marks to a copy of the apt state and find what autoremove then
-##  removes.
-tmp=$(mktemp -d)
-states=${tmp}/extended_states
-cp /var/lib/apt/extended_states "${states}" 2>/dev/null || : > "${states}"
-[[ ${#mark[@]} -eq 0 ]] || apt-mark -o Dir::State::extended_states="${states}" auto "${mark[@]}" >/dev/null
-## Packages given with --keep that are automatically installed become manually
-##  installed, so that autoremove keeps them
-keep_manual=()
-if [[ ${#keep_given[@]} -gt 0 ]]; then
-	while read -r name; do
-		if installed "${name}" && [[ -z ${manual[${name}]:-} ]]; then
-			keep_manual+=( "${name}" )
-		fi
-	done < <(printf '%s\n' "${!keep_given[@]}" | sort)
-fi
-[[ ${#keep_manual[@]} -eq 0 ]] \
-	|| apt-mark -o Dir::State::extended_states="${states}" manual "${keep_manual[@]}" >/dev/null
-declare -A autoremoved=()
-while read -r name; do
-	autoremoved[${name}]=1
-done < <(apt-get -s -o Dir::State::extended_states="${states}" --purge autoremove 2>/dev/null \
-	| awk '/^Purg / { print $2 }')
 
-install_args=( "${install[@]/%/+}" )
+class Exit(Exception):
+    """Ends the program with an exit status."""
 
-## Print the packages other than $1 that apt removes with it, except those that
-##  autoremove removes anyway, such as ubuntu-unity-desktop, separated by spaces.
-removed_with() {
-	local other others=
-	while read -r other; do
-		[[ ${other} == "$1" || -n ${autoremoved[${other}]:-} ]] || others+="${other} "
-	done < <(apt-get -s -o Dir::State::extended_states="${states}" --purge remove "$1" \
-		"${install_args[@]}" 2>/dev/null | awk '/^(Purg|Remv) / { print $2 }')
-	echo "${others% }"
-}
+    def __init__(self, status):
+        super().__init__(status)
+        self.status = status
 
-## The alternatives to remove, except those that other packages need.
-remove=() reasons=() needed_kept=()
-for name in "${candidates_remove[@]}"; do
-	others=$(removed_with "${name}")
-	if [[ -n ${others} ]]; then
-		needed_kept+=( "${name} (needed by ${others})" )
-		continue
-	fi
-	remove+=( "${name}" )
-	reasons+=( "${name} (${reason[${name}]})" )
-done
 
-## Duplicates that autoremove keeps as an installed alternative of another
-##  relation, such as lightdm-gtk-greeter for lightdm-greeter or xfwm4 for
-##  x-window-manager. They are removed if no other package would be removed
-##  with them. Alternatives of g-unity7-desktop are left to the choices above.
-declare -A of_meta=() in_remove=()
-while read -r name; do
-	of_meta[${name}]=1
-done < <(relations "${meta}" "Depends Recommends Suggests" | tr ' ' '\n')
-dup_remove=()
-for name in "${duplicates[@]}"; do
-	[[ -z ${of_meta[${name}]:-} && -z ${spared[${name}]:-} && -z ${autoremoved[${name}]:-} \
-		&& -z ${in_remove[${name}]:-} ]] && installed "${name}" || continue
-	in_remove[${name}]=1
-	[[ -z $(removed_with "${name}") ]] || continue
-	remove+=( "${name}" )
-	dup_remove+=( "${name}" )
-done
+class Spinner:
+    """Progress spinner, shown only on a terminal, as in the overlay's
+    version_control.sh."""
+    FRAMES = ("|", "/", "-", "\\")
 
-## Packages of the image that apt keeps only as an installed alternative of
-##  another relation: kdialog of "zenity | kdialog" (im-config). It pulls in the
-##  KIO of KDE Frameworks 6, which suggests systemsettings. It is automatically
-##  installed, so marking does not remove it. On a system from the Ubuntu Unity
-##  image, it is removed if no other package would be removed with it.
-leftover_remove=()
-for name in kdialog; do
-	[[ -n ${unity_image} && -z ${of_meta[${name}]:-} && -z ${spared[${name}]:-} \
-		&& -z ${autoremoved[${name}]:-} && -z ${in_remove[${name}]:-} ]] && installed "${name}" || continue
-	in_remove[${name}]=1
-	[[ -z $(removed_with "${name}") ]] || continue
-	remove+=( "${name}" )
-	leftover_remove+=( "${name}" )
-done
+    def __init__(self):
+        self.thread = None
+        self.stopping = threading.Event()
 
-## Preview the result with the marks applied to a copy of the apt state.
-if [[ ${#remove[@]} -gt 0 || ${#install[@]} -gt 0 ]]; then
-	apt_args=( --purge --autoremove remove "${remove[@]}" "${install_args[@]}" )
-else
-	apt_args=( --purge autoremove )
-fi
-simulation=$(apt-get -s -o Dir::State::extended_states="${states}" "${apt_args[@]}" 2>&1) \
-	|| die "apt cannot make these changes:"$'\n'"${simulation}"
-mapfile -t removed < <(awk '/^Purg / { print $2 }' <<< "${simulation}")
+    def start(self):
+        if self.thread or not sys.stderr.isatty():
+            return
+        self.stopping.clear()
+        self.thread = threading.Thread(target=self.spin, daemon=True)
+        self.thread.start()
 
-## Add the packages that the apt simulation $1 installs, upgrades or
-##  downgrades to installs, upgrades or downgrades, each package once.
-## "Inst <package> [<installed version>] (<new version> <release> [<arch>])"
-installs=() upgrades=() downgrades=()
-declare -A listed=()
-read_installs() {
-	local name old new
-	while read -r name old new; do
-		[[ -z ${listed[${name}]:-} ]] || continue
-		listed[${name}]=1
-		if [[ ${old} == - ]]; then
-			installs+=( "${name}" )
-		elif dpkg --compare-versions "${new}" gt "${old}"; then
-			upgrades+=( "${name}" )
-		else
-			downgrades+=( "${name}" )
-		fi
-	done < <(awk '/^Inst / {
-		old = "-"; new = $3
-		if ($3 ~ /^\[/) { old = $3; new = $4 }
-		gsub(/[][]/, "", old); gsub(/[()]/, "", new)
-		print $2, old, new }' <<< "$1")
-}
-read_installs "${simulation}"
-## apt-get -y refuses to downgrade packages unless it is allowed. The list
-##  below shows them before the confirmation.
-main_downgrades=${#downgrades[@]}
+    def spin(self):
+        sys.stderr.write(f"Looking for packages {self.FRAMES[0]}")
+        sys.stderr.flush()
+        pos = 1
+        while not self.stopping.wait(0.1):
+            sys.stderr.write(f"\b{self.FRAMES[pos]}")
+            sys.stderr.flush()
+            pos = (pos + 1) % len(self.FRAMES)
 
-## Keep only the marked packages that apt then removes. The others are still
-##  needed by G Unity⁷ or by another desktop (ubuntu-desktop shares most of the
-##  task), so marking them would only change their state. apt removes the same
-##  packages without them, because a kept package and its dependencies are
-##  still needed.
-declare -A removed_set=()
-for name in "${removed[@]}"; do
-	removed_set[${name}]=1
-done
-## Packages that are removed directly are not marked.
-for name in "${remove[@]}"; do
-	removed_set[${name}]=
-done
-marked=()
-for name in "${mark[@]}"; do
-	[[ -z ${removed_set[${name}]:-} ]] || marked+=( "${name}" )
-done
-mark=( "${marked[@]}" )
+    def stop(self):
+        if not self.thread:
+            return
+        self.stopping.set()
+        self.thread.join()
+        self.thread = None
+        sys.stderr.write("\r" + " " * 22 + "\r")
+        sys.stderr.flush()
 
-## The G Unity⁷ Firefox and Thunderbird packages are installed after the
-##  changes above, as a downgrade of the Ubuntu packages. Their simulation on
-##  the current state adds what apt installs and removes with them.
-moz_removed=()
-if [[ ${#moz_install[@]} -gt 0 ]]; then
-	simulation=$(apt-get -s -o Dir::State::extended_states="${states}" --allow-downgrades \
-		install "${moz_install[@]}" 2>&1) \
-		|| die "apt cannot install $(and_list "${moz_install[@]%%=*}"):"$'\n'"${simulation}"
-	read_installs "${simulation}"
-	mapfile -t moz_removed < <(awk '/^(Remv|Purg) / { print $2 }' <<< "${simulation}")
-fi
 
-## Print what apt does with the marks applied to a new copy ($1) of the apt
-##  state: the changes above and the G Unity⁷ Firefox and Thunderbird
-##  packages, sorted
-plan_of() {
-	cp /var/lib/apt/extended_states "$1" 2>/dev/null || : > "$1"
-	[[ ${#mark[@]} -eq 0 ]] || apt-mark -o Dir::State::extended_states="$1" auto "${mark[@]}" >/dev/null || true
-	[[ ${#keep_manual[@]} -eq 0 ]] \
-		|| apt-mark -o Dir::State::extended_states="$1" manual "${keep_manual[@]}" >/dev/null || true
-	{
-		if [[ ${#mark[@]} -gt 0 || ${#remove[@]} -gt 0 || ${#install[@]} -gt 0 ]]; then
-			apt-get -s -o Dir::State::extended_states="$1" "${apt_args[@]}" 2>&1 || true
-		fi
-		if [[ ${#moz_install[@]} -gt 0 ]]; then
-			apt-get -s -o Dir::State::extended_states="$1" --allow-downgrades install "${moz_install[@]}" 2>&1 || true
-		fi
-	} | awk '/^(Inst|Remv|Purg) / { print $1, $2 }' | sort
-}
-plan=
-[[ -n ${dry_run} ]] || plan=$(plan_of "${tmp}"/extended_states.plan)
+SPINNER = Spinner()
 
-if [[ ${#mark[@]} -eq 0 && ${#remove[@]} -eq 0 && ${#install[@]} -eq 0 \
-	&& ${#moz_install[@]} -eq 0 && ${#moz_snap_remove[@]} -eq 0 \
-	&& ${#snap_desktop_remove[@]} -eq 0 && ${#snap_mount_remove[@]} -eq 0 \
-	&& ${#conf_purge[@]} -eq 0 ]]; then
-	spinner_stop
-	echo "Nothing to do. No Ubuntu Unity packages replaced by G Unity⁷ are left."
-	[[ ${#unchanged[@]} -eq 0 ]] || printf 'Left unchanged by your choice: %s\n' "${unchanged[@]}"
-	[[ ${#needed_kept[@]} -eq 0 ]] || printf 'Kept because other packages need it: %s\n' "${needed_kept[@]}"
-	[[ ${#moz_lines[@]} -eq 0 ]] || printf '%s\n' "${moz_lines[@]}"
-	exit 0
-fi
 
-spinner_stop
+def die(text):
+    SPINNER.stop()
+    print(f"g-unity7-cleanup: {text}", file=sys.stderr)
+    raise Exit(1)
 
-## Print a list of packages side by side as apt does, or one item per line.
-list_words() {
-	local title=$1 width
-	shift
-	[[ $# -gt 0 ]] || return 0
-	width=$(tput cols 2>/dev/null) || width=80
-	echo "${title} ($#):"
-	printf '%s\n' "$@" | awk -v width="${width}" '
-		length(line) && length(line) + 1 + length($0) > width { print line; line = "" }
-		{ line = length(line) ? line " " $0 : "  " $0 }
-		END { if (length(line)) print line }'
-	echo
-}
 
-list_lines() {
-	local title=$1
-	shift
-	[[ $# -gt 0 ]] || return 0
-	echo "${title} ($#):"
-	printf '  %s\n' "$@"
-	echo
-}
+def c_locale():
+    """The environment with LC_ALL=C, for the output that tools translate."""
+    return dict(os.environ, LC_ALL="C")
 
-list_words "Alternatives to install" "${install[@]}"
-list_lines "Alternatives to remove" "${reasons[@]}"
-## The duplicates and image packages that are removed directly, and the
-##  packages that are marked for autoremove
-list_words "Replaced by G Unity⁷ or not used by it, to be removed" \
-	"${dup_remove[@]}" "${leftover_remove[@]}" "${mark[@]}"
-list_lines "Left unchanged by your choice" "${unchanged[@]}"
-list_lines "Alternatives kept because other packages need them" "${needed_kept[@]}"
-list_lines "Firefox and Thunderbird" "${moz_lines[@]}"
-list_lines "Desktop files of snaps that are not installed, to be removed" "${snap_desktop_remove[@]}"
-list_lines "Mount units of snap revisions that are not installed, to be removed" "${snap_mount_lines[@]}"
-list_words "Configuration files of removed packages, to be purged" "${conf_purge[@]}"
-list_words "Kept with --keep and marked as manually installed" "${keep_manual[@]}"
-list_words "Packages apt will install" "${installs[@]}"
-list_words "Packages apt will upgrade" "${upgrades[@]}"
-list_words "Packages apt will downgrade" "${downgrades[@]}"
-## Purged with their configuration files and marked with * as apt does
-if [[ ${#removed[@]} -gt 0 || ${#moz_removed[@]} -gt 0 ]]; then
-	list_words "Packages apt will remove" "${removed[@]/%/*}" "${moz_removed[@]}"
-else
-	echo "Packages apt will remove: none"
-	echo
-fi
-echo "To keep a package, run: sudo g-unity7-cleanup --keep <package>"
 
-[[ -z ${dry_run} ]] || exit 0
+def query(*command, env=None, merge=False):
+    """Run a command that only reads and return its exit status and output.
+    Its errors are left out, or with merge mixed into the output (2>&1)."""
+    sys.stdout.flush()
+    try:
+        done = subprocess.run(command, stdout=subprocess.PIPE, env=env,
+                              stderr=subprocess.STDOUT if merge else subprocess.DEVNULL, **TEXT)
+    except OSError:
+        return 127, ""
+    return done.returncode, done.stdout
 
-if [[ -z ${yes} ]]; then
-	read -r -p "Do you want to continue? [y/N] " answer || answer=
-	[[ ${answer} == [yY]* ]] || { echo "No changes were made."; exit 0; }
-fi
 
-[[ ${#moz_copy[@]} -eq 0 || -x ${copy_profiles} ]] \
-	|| die "${copy_profiles} is missing; reinstall g-unity7-desktop"
-## apt-mark does not wait for another apt, which would write back its own marks
-##  when it finishes. apt-get check waits until it has finished.
-apt-get -qq "${apt_lock[@]}" check
-## That apt, such as unattended-upgrades, may have changed the package lists or
-##  the marks since the preview
-[[ $(plan_of "${tmp}"/extended_states.now) == "${plan}" ]] \
-	|| die "apt would now make other changes than shown, as another apt changed the package lists or marks in the meantime; no changes were made; run g-unity7-cleanup again"
-## Later runs remember that the system comes from the Ubuntu Unity image
-if [[ -n ${unity_image} && ! -e ${unity_marker} ]]; then
-	mkdir -p "${unity_marker%/*}"
-	touch "${unity_marker}"
-fi
-[[ ${#keep_manual[@]} -eq 0 ]] || apt-mark manual "${keep_manual[@]}" >/dev/null
-[[ ${#mark[@]} -eq 0 ]] || apt-mark auto "${mark[@]}" >/dev/null
-if [[ ${#mark[@]} -gt 0 || ${#remove[@]} -gt 0 || ${#install[@]} -gt 0 ]]; then
-	if [[ ${main_downgrades} -gt 0 ]]; then
-		apt-get -y "${apt_lock[@]}" --allow-downgrades "${apt_args[@]}"
-	else
-		apt-get -y "${apt_lock[@]}" "${apt_args[@]}"
-	fi
-fi
-## Installed first alternatives are needed only by g-unity7-desktop. Other
-##  alternatives were chosen by the user and stay manual, like a package in
-##  @world.
-install_auto=()
-for name in "${install[@]}"; do
-	[[ -z ${keep[${name}]:-} ]] || install_auto+=( "${name}" )
-done
-[[ ${#install_auto[@]} -eq 0 ]] || apt-mark auto "${install_auto[@]}" >/dev/null
+def run(*command, stdout=None, stderr=None):
+    """Run a command with the output of this program and return its exit
+    status. On Ctrl+C, the command gets the signal too: wait until it ends, as
+    a shell does, and then stop."""
+    sys.stdout.flush()
+    sys.stderr.flush()
+    try:
+        process = subprocess.Popen(command, stdout=stdout, stderr=stderr)
+    except OSError as error:
+        print(f"g-unity7-cleanup: {command[0]}: {error.strerror}", file=sys.stderr)
+        return 127
+    interrupted = False
+    while True:
+        try:
+            status = process.wait()
+            break
+        except KeyboardInterrupt:
+            interrupted = True
+    if interrupted:
+        raise KeyboardInterrupt
+    return status
 
-if [[ ${#snap_desktop_remove[@]} -gt 0 ]]; then
-	rm -f "${snap_desktop_remove[@]}"
-	! command -v update-desktop-database >/dev/null \
-		|| update-desktop-database "${snap_desktop_dir}" || true
-fi
-if [[ ${#snap_mount_remove[@]} -gt 0 ]]; then
-	systemctl disable --no-reload "${snap_mount_remove[@]}" 2>/dev/null || true
-	for unit in "${snap_mount_remove[@]}"; do
-		rm -f /etc/systemd/system/"${unit}" /etc/systemd/system/*.wants/"${unit}"
-	done
-	systemctl daemon-reload
-	systemctl reset-failed "${snap_mount_remove[@]}" 2>/dev/null || true
-fi
-[[ ${#conf_purge[@]} -eq 0 ]] || apt-get -y -qq "${apt_lock[@]}" purge "${conf_purge[@]}" >/dev/null
-## The G Unity⁷ Firefox and Thunderbird packages (a lower version than the
-##  Ubuntu packages; their pin comes with them), then the snap profiles and the
-##  snaps.
-## The switch from each snap starts before its package is installed (see
-##  switch_dir). The file of a snap that this run does not remove is from a
-##  switch that was given up.
-for file in "${switch_dir}"/switch-*; do
-	[[ -e ${file} ]] || continue
-	[[ " ${moz_snap_remove[*]} " == *" ${file##*/switch-} "* ]] || rm -f -- "${file}"
-done
-for name in "${moz_snap_remove[@]}"; do
-	[[ ! -s ${switch_dir}/switch-${name} ]] || continue
-	mkdir -p "${switch_dir}"
-	printf '%s-%s\n' "$(date -u +%Y%m%dT%H%M%SZ)" "$$" > "${switch_dir}/switch-${name}"
-done
-if [[ ${#moz_install[@]} -gt 0 ]]; then
-	apt-get -y "${apt_lock[@]}" --allow-downgrades install "${moz_install[@]}"
-fi
-## The users own their home directories and can replace any path in them with
-##  a link, so the profiles of each user are copied as that user (setpriv is
-##  part of util-linux, which is essential).
-## A snap that was started after the analysis keeps its profiles and stays
-##  installed: a copy of an open profile may be inconsistent.
-cd /
-declare -A moz_running=()
-for name in "${moz_snap_remove[@]}"; do
-	if snap_running "${name}"; then
-		moz_running[${name}]=1
-	fi
-done
-## A copy that fails keeps its snap installed, and the copies of the other
-##  users are still made; the next run does not make them again.
-declare -A moz_copy_failed=()
-for entry in "${moz_copy[@]}"; do
-	IFS=: read -r user src dst hash adopt name <<< "${entry}"
-	[[ -z ${moz_running[${name}]:-} ]] || continue
-	if ! setpriv --reuid="${user}" --regid="$(id -g "${user}")" --init-groups --reset-env \
-		"${copy_profiles}" "${src}" "${dst}" "${hash}" "${adopt}" "$(< "${switch_dir}/switch-${name}")"; then
-		echo "g-unity7-cleanup: cannot copy the ${name} profiles of ${user}" >&2
-		moz_copy_failed[${name}]=1
-	fi
-done
-moz_failed=() moz_left=()
-for name in "${moz_snap_remove[@]}"; do
-	if [[ -n ${moz_copy_failed[${name}]:-} ]]; then
-		echo "g-unity7-cleanup: the ${name} snap stays installed, because a copy of its profiles failed; fix the error, such as a full disk, and run g-unity7-cleanup again" >&2
-		moz_left+=( "${name}" )
-		continue
-	fi
-	if [[ -n ${moz_running[${name}]:-} ]]; then
-		echo "g-unity7-cleanup: the ${name} snap was started; close it and run g-unity7-cleanup again" >&2
-		moz_left+=( "${name}" )
-		continue
-	fi
-	## Copying a large profile takes a while
-	if snap_running "${name}"; then
-		echo "g-unity7-cleanup: the ${name} snap was started after its profiles were copied; close it and remove it with: sudo snap remove ${name}" >&2
-		moz_left+=( "${name}" )
-		continue
-	fi
-	snap_orphans_remove "${name}"
-	if snap remove "${name}"; then
-		rm -f -- "${switch_dir}/switch-${name}"
-	else
-		moz_failed+=( "${name}" )
-	fi
-done
-if [[ ${#moz_failed[@]} -gt 1 ]]; then
-	echo "g-unity7-cleanup: cannot remove the $(and_list "${moz_failed[@]}") snaps; the profiles have been copied" >&2
-elif [[ ${#moz_failed[@]} -eq 1 ]]; then
-	echo "g-unity7-cleanup: cannot remove the ${moz_failed[0]} snap; the profiles have been copied" >&2
-fi
-[[ ${#moz_failed[@]} -eq 0 ]] || echo "Remove the snap with: sudo snap remove ${moz_failed[*]}" >&2
-[[ ${#moz_failed[@]} -eq 0 && ${#moz_left[@]} -eq 0 ]] || exit 1
+
+def must(*command, stdout=None):
+    """Run a command and stop with its exit status if it fails."""
+    status = run(*command, stdout=stdout)
+    if status:
+        raise Exit(status)
+
+
+def read_lines(path):
+    """Return the lines of file path as awk and sed read them (split at a
+    newline only, without the newline), or None if it cannot be read."""
+    try:
+        with open(path, newline="", **TEXT) as file:
+            lines = file.read().split("\n")
+    except (OSError, ValueError):
+        return None
+    if lines[-1] == "":
+        lines.pop()
+    return lines
+
+
+def file_text(path):
+    """Return the text of file path without the newlines at its end, as $(< path)
+    does, or "" if it cannot be read."""
+    try:
+        with open(path, newline="", **TEXT) as file:
+            return file.read().rstrip("\n")
+    except (OSError, ValueError):
+        return ""
+
+
+def names_in(directory):
+    """Return the names in directory as the glob directory/* lists them: without
+    those that start with a dot, sorted by bytes."""
+    try:
+        names = os.listdir(directory)
+    except OSError:
+        return []
+    return sorted((n for n in names if not n.startswith(".")), key=os.fsencode)
+
+
+def and_list(words):
+    """Return the words as "a, b and c"."""
+    if len(words) < 2:
+        return "".join(words)
+    return ", ".join(words[:-1]) + " and " + words[-1]
+
+
+def in_mb(kib):
+    """Return a size in KiB in MB, rounded up."""
+    return f"{(int(kib) + 1023) // 1024} MB"
+
+
+def version_gt(a, b):
+    return query("dpkg", "--compare-versions", a, "gt", b)[0] == 0
+
+
+def installed(name):
+    """Succeed if package name is installed, for any architecture (a Multi-Arch
+    package has a status for each one)."""
+    status, out = query("dpkg-query", "-W", "-f=${db:Status-Status}\n", name)
+    return status == 0 and "installed" in out.split("\n")
+
+
+def show_fields(text, fields):
+    """Return the lines of fields in the output of apt-cache show, without the
+    field names."""
+    want = {f"{field}:" for field in fields}
+    out, take = [], False
+    for line in text.split("\n"):
+        if line and line[0] != " ":
+            take = line.split()[0] in want if line.split() else False
+        if take:
+            out.append(re.sub(r"^[^ ]+: ", "", line, count=1))
+    return "\n".join(out)
+
+
+def clean_relations(text):
+    """Return the relations in text, one per item, without versions,
+    architectures and :any, with alternatives separated by spaces."""
+    found = []
+    for line in text.replace(",", "\n").split("\n"):
+        line = re.sub(r"\([^)]*\)", "", line)
+        line = re.sub(r"\[[^]]*\]", "", line)
+        line = line.replace(":any", "").replace("|", " ")
+        line = re.sub(r" +", " ", line).strip(" ")
+        if line:
+            found.append(line)
+    return found
+
+
+def relations(name, fields):
+    """Return the relations in fields of package name (the installed version,
+    or else the archive candidate), with alternatives separated by spaces."""
+    if installed(name):
+        text = "".join(query("dpkg-query", "-W", f"-f=${{{field}}}\n", name)[1] for field in fields.split())
+    else:
+        text = show_fields(query("apt-cache", "show", "--no-all-versions", name)[1], fields.split())
+    return clean_relations(text)
+
+
+def task_packages(text, task):
+    """Return the packages in the output of apt-cache show that belong to task
+    (the Task field)."""
+    found, package = [], ""
+    for line in text.split("\n"):
+        if line.startswith("Package: "):
+            fields = line.split()
+            package = fields[1] if len(fields) > 1 else ""
+        elif line.startswith("Task: "):
+            found.extend(package for name in re.split(r", *", line[6:]) if name == task)
+    return found
+
+
+def of_task(names):
+    """Return the packages of names that belong to the task (the Task field in
+    the archive)."""
+    if not names:
+        return []
+    return task_packages(query("apt-cache", "show", "--no-all-versions", *names)[1], TASK)
+
+
+def summary(name):
+    """Return the short description of a package, installed or from the archive."""
+    if installed(name):
+        return query("dpkg-query", "-W", "-f=${binary:Summary}", name)[1].rstrip("\n")
+    for line in query("apt-cache", "show", "--no-all-versions", name)[1].split("\n"):
+        if re.match(r"Description(-[A-Za-z0-9_]+)?: ", line):
+            return re.sub(r"^[^:]+: ", "", line, count=1)
+    return ""
+
+
+def has_candidate(name):
+    """Succeed if the archive has a version of name to install. LC_ALL=C because
+    the output of apt-cache policy is translated."""
+    for line in query("apt-cache", "policy", name, env=c_locale())[1].split("\n"):
+        if line.startswith("  Candidate: "):
+            fields = line.split()
+            return len(fields) > 1 and fields[1] != "(none)"
+    return False
+
+
+def relation_text(group):
+    """Return a relation as text, including its sets."""
+    return group.replace(" ", " | ").replace("+", " + ")
+
+
+def installed_of(names):
+    """Return the installed packages of the alternatives names. A set is joined
+    with "+"."""
+    return [part for name in names for part in name.split("+") if installed(part)]
+
+
+def missing_of(name):
+    """Return the packages of alternative name that must be installed with it:
+    not installed, but available in the archive."""
+    return [part for part in name.split("+") if not installed(part) and has_candidate(part)]
+
+
+def ppa_version(name):
+    """Return the version of name in the G Unity⁷ PPA or the staging PPA, if any."""
+    for line in query("apt-cache", "madison", name, env=c_locale())[1].split("\n"):
+        fields = line.split("|")
+        if len(fields) > 2 and "c4pp4/g-unity7" in fields[2]:
+            return fields[1].replace(" ", "")
+    return ""
+
+
+def snap_installed(name):
+    return shutil.which("snap") is not None and query("snap", "list", name)[0] == 0
+
+
+def snap_running(name):
+    """Succeed if a program of snap name is running."""
+    return query("pgrep", "-f", f"/snap/{name}/")[0] == 0
+
+
+def snap_orphans_remove(name):
+    """Remove the empty revision directories in /var/snap/name that snapd does
+    not know. The Ubuntu image leaves the directories of the snap revisions it
+    was built with, and snapd then cannot remove /var/snap/name (directory not
+    empty)."""
+    lines = query("snap", "list", "--all", name, env=c_locale())[1].split("\n")[1:]
+    revisions = {line.split()[2] for line in lines if len(line.split()) > 2}
+    if not any(re.search(r"[0-9]", revision) for revision in revisions):
+        return
+    for entry in names_in(f"/var/snap/{name}"):
+        directory = f"/var/snap/{name}/{entry}/"
+        if entry[0] in "0123456789" and os.path.isdir(directory) and entry not in revisions:
+            try:
+                os.rmdir(directory)
+            except OSError:
+                pass
+
+
+def homes():
+    """Return (user, home) for each home directory that may have snap profiles:
+    those of the users with a UID from 1000 to 59999, and the directories in
+    /home with their owner, as snapd also looks there. This finds the users of
+    a network directory (LDAP, SSSD) too, which may have a higher UID and which
+    getent may not list."""
+    found, seen = [], set()
+    for entry in pwd.getpwall():
+        if 1000 <= entry.pw_uid < 60000 and os.path.isdir(entry.pw_dir) and entry.pw_dir not in seen:
+            seen.add(entry.pw_dir)
+            found.append((entry.pw_name, entry.pw_dir))
+    for name in names_in("/home"):
+        home = f"/home/{name}"
+        if not os.path.isdir(home) or os.path.islink(home) or home in seen:
+            continue
+        try:
+            uid = os.stat(home).st_uid
+        except OSError:
+            continue
+        try:
+            user = pwd.getpwuid(uid).pw_name
+        except KeyError:
+            user = "UNKNOWN"
+        if uid >= 1000 and user != "UNKNOWN":
+            seen.add(home)
+            found.append((user, home))
+    return found
+
+
+def snap_profiles(snap, legacy, xdg, revision):
+    """Return (user, home, directory) for each user who has a profile directory
+    of snap with profiles.ini, where Firefox and Thunderbird look for it
+    (nsXREDirProvider): the legacy directory in $SNAP_USER_COMMON
+    (~/snap/<snap>/common) if its first directory (.mozilla, .thunderbird)
+    exists, or else the XDG directory in $SNAP_USER_DATA, where the snap points
+    XDG_CONFIG_HOME. $SNAP_USER_DATA is the directory of the installed revision
+    (~/snap/<snap>/<revision>), which snapd copies to each new revision. The
+    "current" link in ~/snap/<snap> may point to an older or a removed
+    revision, as only snap run updates it. The Firefox snap forces the legacy
+    directory (MOZ_LEGACY_HOME), while Thunderbird 160 creates new profiles in
+    the XDG directory."""
+    found = []
+    for user, home in homes():
+        if os.path.isdir(f"{home}/snap/{snap}/common/{legacy.split('/')[0]}"):
+            directory = f"{home}/snap/{snap}/common/{legacy}"
+        elif revision:
+            directory = f"{home}/snap/{snap}/{revision}/{xdg}"
+        else:
+            continue
+        if os.path.isfile(f"{directory}/profiles.ini"):
+            found.append((user, home, directory))
+    return found
+
+
+def used_locales(default="/etc/default/locale", accounts="/var/lib/AccountsService/users"):
+    """Return the languages in use: LANG and LANGUAGE in /etc/default/locale and
+    the language that each user chose (AccountsService). Not locale -a: the
+    Ubuntu installer keeps the language packs of the ISO's languages, which
+    generate their locales."""
+    values = []
+    for line in read_lines(default) or []:
+        if line.startswith("LANG="):
+            line = line[5:]
+            values.append(line)
+        if line.startswith("LANGUAGE="):
+            values.append(line[9:])
+    found = "\n".join(values).replace('"', "").replace(":", "\n").split("\n") if values else []
+    for name in names_in(accounts):
+        if os.path.isfile(f"{accounts}/{name}"):
+            found.extend(line[9:] for line in read_lines(f"{accounts}/{name}") or []
+                         if line.startswith("Language="))
+    return found
+
+
+def moz_l10n(package, version):
+    """Return the language packages of PPA package (version) that are not
+    installed, for the languages in use: <package>-l10n-<language>-<country> if
+    the PPA has it, or else <package>-l10n-<language>."""
+    found, seen = [], set()
+    for locale in used_locales():
+        match = re.match(r"([a-z]{2,3})(_([A-Z]{2}))?", locale)
+        if not match:
+            continue
+        names = [f"{package}-l10n-{match.group(1)}"]
+        if match.group(3):
+            names.insert(0, f"{package}-l10n-{match.group(1)}-{match.group(3).lower()}")
+        for name in names:
+            if name in seen:
+                break
+            if ppa_version(name) != version:
+                continue
+            seen.add(name)
+            if not installed(name):
+                found.append(name)
+            break
+    return found
+
+
+def homes_hidden():
+    """Succeed if a home directory (see homes) is not accessible, as those of
+    other users without root (mode 750)."""
+    return any(not os.access(home, os.X_OK) for _, home in homes())
+
+
+def deb_profile_dir(home, legacy, xdg):
+    """Return the package profile directory in home, where Firefox and
+    Thunderbird look for it (nsXREDirProvider): the legacy directory if its
+    first directory (.mozilla, .thunderbird) exists, or else the XDG directory
+    if it exists (the XDG_CONFIG_HOME of the user is taken to be ~/.config), or
+    else the legacy directory, which the copy creates."""
+    if not os.path.exists(f"{home}/{legacy.split('/')[0]}") and os.path.isdir(f"{home}/{xdg}"):
+        return f"{home}/{xdg}"
+    return f"{home}/{legacy}"
+
+
+def moz_absolute_profiles(ini, directory):
+    """Return the paths of the profiles with an absolute path in profiles.ini
+    ini that are in directory, such as one that the profile manager created in
+    the snap directory. They are not copied."""
+    found, section, path, relative = [], "", "", ""
+
+    def out():
+        if PROFILE_SECTION.fullmatch(section) and relative == "0" and path.startswith(directory):
+            found.append(path)
+
+    for line in read_lines(ini) or []:
+        if line.startswith("["):
+            out()
+            section, path, relative = line, "", ""
+            continue
+        fields = line.split("=")
+        if fields[0] == "Path":
+            path = line[5:]
+        if fields[0] == "IsRelative":
+            relative = fields[1] if len(fields) > 1 else ""
+    out()
+    return found
+
+
+def moz_newer_profiles(src, major):
+    """Return (major, profile) for each profile in snap profile directory src
+    that a version with a major number above major used last: LastVersion in
+    its compatibility.ini, such as 161.0_20261124054846/20261124054846. Firefox
+    and Thunderbird compare only the major numbers (CompareCompatVersions) and
+    do not open such a profile. "Safe Mode" has no number and is not compared,
+    as in Firefox."""
+    if not major.isdigit():
+        return []
+    found = []
+    for name in names_in(src):
+        file = f"{src}/{name}/compatibility.ini"
+        if not os.path.isfile(file) or os.path.islink(file):
+            continue
+        last = next((m.group(1) for line in read_lines(file) or []
+                     if (m := re.match(r"LastVersion=([0-9]+)", line))), "")
+        if re.fullmatch(r"[0-9]{1,6}", last) and int(last) > int(major):
+            found.append((last, f"{src}/{name}"))
+    return found
+
+
+def free_space(path):
+    """Return the free space in KiB and the mount point of the file system of
+    path, or of its nearest existing parent directory."""
+    while not os.path.exists(path) and path.startswith("/") and len(path) > 1:
+        path = path.rsplit("/", 1)[0]
+    lines = query("df", "-Pk", "--", path or "/")[1].split("\n")
+    fields = lines[1].split() if len(lines) > 1 else []
+    return (fields[3] if len(fields) > 3 else ""), (fields[5] if len(fields) > 5 else "")
+
+
+def du_size(path):
+    """Return the size of path in KiB, or "" if du fails."""
+    status, out = query("du", "-sk", "--", path)
+    return out.split("\n")[0].split("\t")[0] if status == 0 else ""
+
+
+def readlink_f(path):
+    """Return the canonical path as readlink -f does: all parts but the last
+    must exist, or else ""."""
+    resolved = os.path.realpath(path)
+    return resolved if os.path.isdir(os.path.dirname(resolved) or "/") else ""
+
+
+def newer_than(top, reference):
+    """Succeed if directory top, or a file in it, was modified after reference,
+    as find "top/" -newer reference -print -quit: links are not followed, and
+    what cannot be read is left out."""
+    try:
+        since = os.lstat(reference).st_mtime_ns
+        if os.stat(f"{top}/").st_mtime_ns > since:
+            return True
+    except OSError:
+        return False
+    for dirpath, dirnames, filenames in os.walk(f"{top}/"):
+        for name in dirnames + filenames:
+            try:
+                if os.lstat(os.path.join(dirpath, name)).st_mtime_ns > since:
+                    return True
+            except OSError:
+                pass
+    return False
+
+
+def read_answer(prompt):
+    """Read a line as read -r -p does: the prompt goes to stderr only on a
+    terminal, the line is read byte by byte, so that the commands that run
+    later get the rest of the input, and its spaces at both ends are left out.
+    Return None at the end of the input."""
+    if sys.stdin.isatty():
+        sys.stderr.write(prompt)
+        sys.stderr.flush()
+    sys.stdout.flush()
+    data = b""
+    while True:
+        try:
+            byte = os.read(0, 1)
+        except OSError:
+            return None
+        if not byte:
+            return None
+        if byte == b"\n":
+            return data.decode(**TEXT).strip(" \t")
+        data += byte
+
+
+def terminal_width():
+    """Return the width of the terminal, as tput cols does, or 80."""
+    if os.environ.get("COLUMNS", "").isdigit():
+        return int(os.environ["COLUMNS"])
+    for fd in (1, 2, 0):
+        try:
+            return os.get_terminal_size(fd).columns
+        except OSError:
+            pass
+    return 80
+
+
+def list_words(title, words, width):
+    """Return a list of packages side by side as apt prints it."""
+    if not words:
+        return ""
+    out, line = [f"{title} ({len(words)}):"], ""
+    for word in words:
+        if line and len(line) + 1 + len(word) > width:
+            out.append(line)
+            line = ""
+        line = f"{line} {word}" if line else f"  {word}"
+    if line:
+        out.append(line)
+    return "\n".join(out) + "\n\n"
+
+
+def list_lines(title, items):
+    """Return a list with one item per line."""
+    if not items:
+        return ""
+    return f"{title} ({len(items)}):\n" + "".join(f"  {item}\n" for item in items) + "\n"
+
+
+def simulated(text, *actions):
+    """Return the packages of the lines of the apt simulation text that start
+    with one of actions (Inst, Remv, Purg)."""
+    found = []
+    for line in text.split("\n"):
+        fields = line.split()
+        if len(fields) > 1 and fields[0] in actions and line.startswith(f"{fields[0]} "):
+            found.append(fields[1])
+    return found
+
+
+class Cleanup:
+    def __init__(self, dry_run, yes, keep_given):
+        self.dry_run, self.yes, self.keep_given = dry_run, yes, keep_given
+        self.tmp = None
+        ## Kept packages (spared) are not marked, installed packages of the other
+        ##  alternatives are removed (reason). With "change nothing", no package is
+        ##  marked or removed. Packages given with --keep are kept like a choice.
+        self.spared = set(keep_given)
+        self.reason = {}
+        self.candidates_remove, self.install, self.unchanged = [], [], []
+        self.mark, self.in_list = [], set()
+        self.moz_install, self.moz_snap_remove, self.moz_copy, self.moz_lines = [], [], [], []
+        self.homes_noted = False
+        ## The KiB that the chosen copies need on each file system (mount point)
+        self.space_needed = {}
+        self.installs, self.upgrades, self.downgrades, self.listed = [], [], [], set()
+
+    def choose(self, options, default):
+        """Show the options and return the chosen number, or the default with
+        --yes."""
+        if self.yes:
+            print(f"  {options[default - 1]}")
+            return default
+        for i, option in enumerate(options, 1):
+            print(f"  {i}) {option}")
+        while True:
+            answer = read_answer(f"Choice [{default}]: ")
+            if answer is None:
+                die("no answer; use --yes to accept the recommended choices")
+            answer = answer or str(default)
+            if re.fullmatch(r"[1-9][0-9]*", answer) and int(answer) <= len(options):
+                return int(answer)
+            print(f"Enter a number from 1 to {len(options)}.")
+
+    def decided(self, name):
+        """Succeed if a package of alternative name has already been decided."""
+        return any(part in self.spared or part in self.reason for part in name.split("+"))
+
+    def choose_alternatives(self):
+        """Ask about the relations that have several installed alternatives, or a
+        different alternative installed instead of the first one.
+
+        The g-unity7-desktop relations to choose from: relations that share the
+        first alternative and have one other alternative each become one
+        relation, the first alternative or all the others as a set joined with
+        "+". Debian has no "mate-utils | (baobab gnome-logs gnome-screenshot)",
+        so g-unity7-desktop recommends "mate-utils | baobab, mate-utils |
+        gnome-logs"."""
+        relations_list = relations(META, "Depends Recommends")
+        pairs, pair_set = {}, {}
+        for group in relations_list:
+            names = group.split()
+            if len(names) != 2:
+                continue
+            pairs[names[0]] = pairs.get(names[0], 0) + 1
+            pair_set[names[0]] = f"{pair_set[names[0]]}+{names[1]}" if pair_set.get(names[0]) else names[1]
+        groups = []
+        for group in relations_list:
+            names = group.split()
+            if len(names) == 2 and pairs[names[0]] > 1:
+                if not pair_set[names[0]]:
+                    continue
+                groups.append(f"{names[0]} {pair_set[names[0]]}")
+                pair_set[names[0]] = ""
+            else:
+                groups.append(group)
+
+        asked = False
+        for group in groups:
+            names = group.split()
+            if len(names) < 2:
+                continue
+            first_name = names[0]
+            ## The Thunderbird offer below handles "thunderbird | evolution":
+            ##  installing thunderbird here would install the Ubuntu package with
+            ##  the snap
+            if first_name == "thunderbird":
+                continue
+            ## Alternatives with an installed package that is not decided yet. The
+            ##  first alternative of another relation does not count.
+            present = [name for name in names
+                       if (name == first_name or name not in self.keep)
+                       and installed_of([name]) and not self.decided(name)]
+            if not present:
+                continue
+            ## Ask when two alternatives are installed, or when another one is
+            ##  installed instead of a first alternative that the archive has
+            if installed(first_name) or not has_candidate(first_name) or self.decided(first_name):
+                if len(present) < 2:
+                    continue
+
+            ## List the alternatives in relation order: keep an installed one, or
+            ##  install one that the archive has
+            options, actions, default = [], [], None
+            for name in names:
+                if name != first_name and name in self.keep:
+                    continue
+                missing = missing_of(name)
+                about = f"{name} {ADDS[name]}" if ADDS.get(name) else name
+                if name in present:
+                    if "+" in name:
+                        ## A set: install its missing packages too
+                        label = f"Keep {and_list(installed_of([name]))}"
+                        if missing:
+                            label += f", and install {and_list(missing)}"
+                    else:
+                        label = f"Keep {about}: {summary(name)}"
+                    actions.append(("keep", name))
+                else:
+                    if not missing or self.decided(name):
+                        continue
+                    if "+" in name:
+                        label = f"Install {and_list(missing)}"
+                    else:
+                        label = f"Install {about}: {summary(name)}"
+                    actions.append(("install", name))
+                if name == first_name:
+                    label += " (recommended)"
+                    default = len(actions)
+                options.append(label)
+            ## With only one installed alternative, "Keep" already changes nothing
+            if len(present) > 1:
+                options.append("Change nothing; I will handle it myself")
+                actions.append(("nothing", ""))
+            default = default or len(actions)
+
+            SPINNER.stop()
+            if not asked:
+                print("For some applications (terminal, image viewer, …), a different package than")
+                print("the recommended one, or more than one package, is installed.")
+                if self.yes:
+                    print("The recommended packages are kept or installed, and the others are removed.")
+                else:
+                    print("Choose the package to keep; the others will be removed. Press Enter to accept")
+                    print("the number in brackets.")
+                print()
+                asked = True
+            parts = installed_of(present)
+            if len(present) > 1:
+                print(f"{and_list(parts)} are installed:")
+            elif len(parts) > 1:
+                print(f"{and_list(parts)} are installed instead of {first_name}:")
+            else:
+                print(f"{parts[0]} is installed instead of {first_name}:")
+            answer = self.choose(options, default)
+            print()
+            SPINNER.start()
+
+            action, kept = actions[answer - 1]
+            if action == "nothing":
+                self.spared.update(installed_of(present))
+                self.unchanged.append(relation_text(group))
+                continue
+            if action == "install":
+                parts = missing_of(kept)
+                why = f"{and_list(parts)} are installed instead" if len(parts) > 1 else f"{parts[0]} is installed instead"
+            else:
+                parts = kept.split("+")
+                why = f"{and_list(parts)} are kept" if len(parts) > 1 else f"{parts[0]} is kept"
+            ## Keep the chosen alternative and install its missing packages
+            for part in kept.split("+"):
+                self.spared.add(part)
+                if not installed(part) and has_candidate(part):
+                    self.install.append(part)
+            for name in present:
+                if name == kept:
+                    continue
+                for part in installed_of([name]):
+                    self.reason[part] = why
+                    self.candidates_remove.append(part)
+
+    def moz_choice(self, package, legacy, xdg, deb_profile, app, install_hash, alt=""):
+        """Firefox and Thunderbird: the Ubuntu packages install snaps, while the
+        PPA provides regular packages with Unity's global menu, built from the
+        Debian sources. Their version is lower, so g-unity7-apt-pin keeps the
+        Ubuntu packages until this script installs the PPA package, which then
+        links its own pin. When the user chooses the PPA package, its language
+        packages for the languages in use are installed, the snap profiles of
+        every user are copied as that user (added to the existing profiles, if
+        any), and the snap is removed. The snap stays if a newer version of
+        Firefox or Thunderbird used one of its profiles, which the PPA package
+        cannot open (see moz_newer_profiles). Without the snap, the PPA package
+        is offered as well; Evolution is mentioned if it is installed instead of
+        Thunderbird.
+
+        The snap profile directories legacy and xdg are relative to
+        $SNAP_USER_COMMON and $SNAP_USER_DATA (see snap_profiles), the package
+        profile directory deb_profile (the legacy one) to the home directory.
+        The package uses the XDG directory with the path of the one of the snap
+        in the home directory instead if only that exists (see
+        deb_profile_dir). The install hash belongs to the package directory
+        (/usr/lib/<package>) in profiles.ini. Leave it empty if it is not
+        known. The alternative alt is the other package of the g-unity7-desktop
+        relation, mentioned if installed."""
+        ppa = ppa_version(package)
+        if not ppa:
+            return
+        if package in self.spared:
+            self.moz_lines.append(f"{app}: unchanged (--keep {package})")
+            return
+        status = query("dpkg-query", "-W", "-f=${db:Status-Status} ${Version}", package)[1]
+        deb_installed = status.startswith("installed ") and "+gu7" in status
+        ## A package from another source, such as Mozilla's APT repository, stays
+        ##  as it is: it may be newer than the G Unity⁷ package, which then could
+        ##  not open its profile. The Ubuntu package that installs the snap has
+        ##  "snap" in its version (1:1snap1-0ubuntu11).
+        if status.startswith("installed ") and not deb_installed and "snap" not in status:
+            self.moz_lines.append(f"{app}: unchanged; {package} {status[len('installed '):]} "
+                                  "from another source is installed")
+            return
+        snap = snap_installed(package)
+        ## Nothing to choose if the G Unity⁷ package is installed and the snap is not
+        if not snap and deb_installed:
+            return
+
+        users, copy_users, adopt, switch_id = [], [], "adopt", ""
+        shared, copied, sizes, need, dsts = set(), set(), {}, {}, {}
+        if snap:
+            listing = query("snap", "list", package)[1].split("\n")
+            fields = listing[1].split() if len(listing) > 1 else []
+            revision = fields[2] if len(fields) > 2 else ""
+            users = snap_profiles(package, legacy, xdg, revision)
+            ## A profile that a newer version used does not open in the package.
+            ##  The version of the snap does not tell: a snap that was not
+            ##  started since its update has not used its profiles.
+            upstream = ppa.split(":", 1)[-1].rsplit("-", 1)[0]
+            newer = [f"{path} (last used by {app} {major})"
+                     for _, _, src in users for major, path in moz_newer_profiles(src, upstream.split(".")[0])]
+            if newer:
+                text = f"the snap profiles {and_list(newer)}" if len(newer) > 1 else f"the snap profile {newer[0]}"
+                if upstream.endswith("esr"):
+                    self.moz_lines.append(f"{app}: unchanged; the G Unity⁷ package {ppa} cannot open {text}. "
+                                          "It is the ESR, which stays behind the monthly releases of the snap; "
+                                          "see NEWER PROFILES in g-unity7-cleanup(8).")
+                else:
+                    self.moz_lines.append(f"{app}: unchanged; the G Unity⁷ package {ppa} cannot open {text}. "
+                                          "Run g-unity7-cleanup again after the package is updated.")
+                return
+            ## Do not touch a running snap: a copy of an open profile may be
+            ##  inconsistent, and a profile that the package creates in the
+            ##  meantime would stop the copy
+            if snap_running(package):
+                self.moz_lines.append(f"{app}: the snap is running; close {app} and run g-unity7-cleanup again")
+                return
+            ## An unfinished switch installed the package, which was not used yet
+            if os.path.isfile(f"{SWITCH_DIR}/switch-{package}"):
+                switch_id = file_text(f"{SWITCH_DIR}/switch-{package}")
+            if deb_installed and not switch_id:
+                adopt = ""
+            for entry in users:
+                user, home, src = entry
+                dst = deb_profile_dir(home, deb_profile, xdg)
+                dsts[entry] = dst
+                marker = f"{dst}/{COPY_MARKER}"
+                ## The Thunderbird snap links its profile directory to
+                ##  ~/.thunderbird if that has profiles when the snap starts for
+                ##  the first time (Ubuntu's package before 24.04). The package
+                ##  then uses the same profiles, so there is nothing to copy.
+                if readlink_f(src) == readlink_f(dst):
+                    shared.add(entry)
+                elif (switch_id and os.path.isfile(marker) and not os.path.islink(marker)
+                      and file_text(marker) == f"{switch_id} {src}" and not newer_than(src, marker)):
+                    copied.add(entry)
+                else:
+                    copy_users.append(user)
+                    size = du_size(f"{src}/")
+                    sizes[entry] = int(size or 0)
+                    _, mount = free_space(dst)
+                    if mount:
+                        need[mount] = need.get(mount, 0) + int(size or 0)
+            if os.geteuid() != 0 and not self.homes_noted and homes_hidden():
+                self.moz_lines.append("Without root, the snap profiles of other users are not shown "
+                                      "(sudo g-unity7-cleanup --dry-run shows them)")
+                self.homes_noted = True
+            ## Root cannot read some home directories, such as a network one
+            if os.geteuid() == 0:
+                self.moz_lines.extend(f"{app}: the home directory {home} is not accessible; its snap profiles "
+                                      "are not copied" for _, home in homes() if not os.access(home, os.X_OK))
+            ## A copy must fit, with the copies already chosen
+            for mount, kib in need.items():
+                free, _ = free_space(mount)
+                if free and self.space_needed.get(mount, 0) + kib + SPACE_SPARE > int(free):
+                    self.moz_lines.append(f"{app}: unchanged; the copy of the snap profiles needs {in_mb(kib)} "
+                                          f"in {mount}, which has {in_mb(free)} free. Free some space and run "
+                                          "g-unity7-cleanup again.")
+                    return
+
+        ## The G Unity⁷ Firefox and Thunderbird need the G Unity⁷ GTK 3, also for
+        ##  each other architecture that has GTK 3 installed (Multi-Arch: same),
+        ##  such as i386 for Steam or Wine. A package that apt cannot install is
+        ##  not offered; the other changes are made.
+        l10n = moz_l10n(package, ppa)
+        if not deb_installed:
+            status, simulation = query("apt-get", "-s", "--allow-downgrades", "install", f"{package}={ppa}",
+                                       *(f"{name}={ppa}" for name in l10n), merge=True)
+            if status:
+                reason = next((line.lstrip(" ") for line in simulation.split("\n")
+                               if re.search(r" : (Pre)?Depends: | : (Conflicts|Breaks): ", line)), "")
+                reason = reason or next((line[3:] for line in simulation.split("\n") if line.startswith("E: ")), "")
+                reason = f" ({reason})" if reason else ""
+                state = "unchanged" if snap else "not installed"
+                self.moz_lines.append(f"{app}: {state}; apt cannot install {package} {ppa} from G Unity⁷{reason}")
+                return
+
+        copy_text = ""
+        if len(copy_users) > 1:
+            copy_text = f"copy the snap profiles for {and_list(copy_users)}"
+        elif copy_users:
+            copy_text = f"copy the snap profile for {copy_users[0]}"
+        if not snap:
+            options = ["Install the G Unity⁷ package (recommended)", "Do not install it"]
+            actions = ["deb", "nothing"]
+        elif deb_installed:
+            options = [f"{copy_text[:1].upper()}{copy_text[1:]} and remove the snap (recommended)" if copy_text
+                       else "Remove the snap (recommended)", "Keep the snap as well"]
+            actions = ["snap", "nothing"]
+        else:
+            options = [f"Install the G Unity⁷ package{', ' + copy_text if copy_text else ''} and remove the snap "
+                       "(recommended)", "Keep the Ubuntu snap"]
+            actions = ["deb", "nothing"]
+
+        SPINNER.stop()
+        if not snap:
+            if alt and installed(alt):
+                print(f"{alt[:1].upper()}{alt[1:]} is installed instead of {app}.")
+            else:
+                print(f"{app} is not installed.")
+            print(f"G Unity⁷ provides a {app} package with Unity's global menu:")
+        elif deb_installed:
+            print(f"Both the G Unity⁷ {app} package and the {app} snap are installed:")
+        else:
+            print(f"{app} is installed as an Ubuntu snap.")
+            print(f"G Unity⁷ provides a {app} package with Unity's global menu:")
+        answer = self.choose(options, 1)
+        print()
+        SPINNER.start()
+
+        action = actions[answer - 1]
+        if action == "nothing":
+            self.moz_lines.append(f"{app}: unchanged" if snap else f"{app}: not installed")
+            return
+        if action == "deb":
+            self.moz_install.append(f"{package}={ppa}")
+            self.moz_lines.append(f"{app}: install {package} {ppa} from G Unity⁷")
+        for name in l10n:
+            self.moz_install.append(f"{name}={ppa}")
+            self.moz_lines.append(f"{app}: install {name} {ppa} from G Unity⁷")
+        if not snap:
+            return
+        for mount, kib in need.items():
+            self.space_needed[mount] = self.space_needed.get(mount, 0) + kib
+        ## The snap's default profile becomes the default, unless the package was
+        ##  already installed and has its own default profile
+        for entry in users:
+            user, home, src = entry
+            dst = dsts[entry]
+            ## A profile that the profile manager created elsewhere in the snap
+            ##  directory goes with the snap
+            for path in moz_absolute_profiles(f"{src}/profiles.ini", f"{home}/snap/{package}/"):
+                self.moz_lines.append(f"{app}: the profile {path} of {user} is outside {src}, so it is not "
+                                      "copied and is removed with the snap")
+            if entry in copied:
+                self.moz_lines.append(f"{app}: {src} was copied to {dst} before, nothing to copy")
+                continue
+            self.moz_copy.append((user, src, dst, install_hash, adopt, package))
+            size = f" ({in_mb(sizes[entry])})" if entry in sizes else ""
+            if entry in shared and not adopt:
+                self.moz_lines.append(f"{app}: the snap uses {dst}, nothing to copy")
+            elif entry in shared:
+                self.moz_lines.append(f"{app}: the snap uses {dst}, nothing to copy; make the snap's default "
+                                      "profile the default")
+            elif not os.path.isfile(f"{dst}/profiles.ini"):
+                self.moz_lines.append(f"{app}: copy {src} to {dst}{size}")
+            elif not adopt:
+                self.moz_lines.append(f"{app}: add the profiles in {src} to {dst}{size}; the default profile stays")
+            else:
+                self.moz_lines.append(f"{app}: add the profiles in {src} to {dst}{size} and make the snap's "
+                                      "default profile the default")
+        self.moz_snap_remove.append(package)
+        self.moz_lines.append(f"{app}: remove the snap (snapd saves a snapshot of its data)")
+
+    def add_mark(self, names):
+        for name in names:
+            if name in self.manual and name not in self.keep and name not in self.spared and installed(name):
+                if name not in self.in_list:
+                    self.mark.append(name)
+                    self.in_list.add(name)
+
+    def read_installs(self, simulation):
+        """Add the packages that the apt simulation installs, upgrades or
+        downgrades to installs, upgrades or downgrades, each package once.
+        "Inst <package> [<installed version>] (<new version> <release> [<arch>])\""""
+        for line in simulation.split("\n"):
+            if not line.startswith("Inst "):
+                continue
+            fields = line.split()
+            name = fields[1] if len(fields) > 1 else ""
+            old, new = "-", fields[2] if len(fields) > 2 else ""
+            if new.startswith("["):
+                old, new = new, fields[3] if len(fields) > 3 else ""
+            old = old.replace("[", "").replace("]", "")
+            new = new.replace("(", "").replace(")", "")
+            if name in self.listed:
+                continue
+            self.listed.add(name)
+            if old == "-":
+                self.installs.append(name)
+            elif version_gt(new, old):
+                self.upgrades.append(name)
+            else:
+                self.downgrades.append(name)
+
+    def apt_state(self, path):
+        """Copy the apt state to path, with the marks applied."""
+        try:
+            shutil.copyfile("/var/lib/apt/extended_states", path)
+        except OSError:
+            open(path, "w").close()
+
+    def plan_of(self, path):
+        """Return what apt does with the marks applied to a new copy (path) of
+        the apt state: the changes above and the G Unity⁷ Firefox and
+        Thunderbird packages, sorted."""
+        self.apt_state(path)
+        states = f"Dir::State::extended_states={path}"
+        if self.mark:
+            run("apt-mark", "-o", states, "auto", *self.mark, stdout=subprocess.DEVNULL)
+        if self.keep_manual:
+            run("apt-mark", "-o", states, "manual", *self.keep_manual, stdout=subprocess.DEVNULL)
+        text = ""
+        if self.mark or self.remove or self.install:
+            text += query("apt-get", "-s", "-o", states, *self.apt_args, merge=True)[1]
+        if self.moz_install:
+            text += query("apt-get", "-s", "-o", states, "--allow-downgrades", "install", *self.moz_install,
+                          merge=True)[1]
+        return sorted(f"{line.split()[0]} {line.split()[1]}" for line in text.split("\n")
+                      if re.match(r"(Inst|Remv|Purg) ", line) and len(line.split()) > 1)
+
+    def main(self):
+        if not self.dry_run and os.geteuid() != 0:
+            die("run as root (sudo g-unity7-cleanup) or with --dry-run")
+        if not installed(META):
+            die(f"{META} is not installed")
+        SPINNER.start()
+
+        self.manual = {line.split(":", 1)[0] for line in query("apt-mark", "showmanual")[1].split("\n") if line}
+        ## Keep the first alternative of each g-unity7-desktop relation.
+        self.keep = {group.split()[0] for group in relations(META, "Depends Recommends Suggests")}
+
+        self.choose_alternatives()
+
+        unity_image = installed(TASK) or installed("ubuntu-unity-settings") or os.path.exists(UNITY_MARKER)
+
+        ## The install hashes are CityHash64 (version 1.0.2) of the UTF-16 path of
+        ##  /usr/lib/firefox and /usr/lib/thunderbird. The Firefox hash is the one
+        ##  that the G Unity⁷ Firefox wrote.
+        self.moz_choice("firefox", ".mozilla/firefox", ".config/mozilla/firefox", ".mozilla/firefox", "Firefox",
+                        "4F96D1932A9F858E")
+        self.moz_choice("thunderbird", ".thunderbird", ".config/thunderbird", ".thunderbird", "Thunderbird",
+                        "FDC34C9F024745EB", "evolution")
+
+        ## Desktop files of snaps that are not installed. The Ubuntu image leaves
+        ##  those of the snaps that the installer does not install, such as
+        ##  Thunderbird, and the Dash shows them with a missing icon. snapd writes
+        ##  them only for installed snaps. Nothing is removed if snap list fails.
+        snap_desktop_remove, snaps, snaps_listed = [], [], False
+        if shutil.which("snap"):
+            status, out = query("snap", "list", "--all", env=c_locale())
+            if status == 0:
+                snaps_listed = True
+                snaps = [line.split() for line in out.split("\n")[1:] if line.split()]
+        if snaps_listed:
+            for name in names_in(SNAP_DESKTOP_DIR):
+                file = f"{SNAP_DESKTOP_DIR}/{name}"
+                if not re.fullmatch(r".*_.*\.desktop", name) or not os.path.isfile(file):
+                    continue
+                ## <snap>_<app>.desktop, or <snap>+<key>_<app>.desktop for an instance
+                snap = name.split("_", 1)[0].replace("+", "_", 1)
+                if not any(fields[0] == snap for fields in snaps):
+                    snap_desktop_remove.append(file)
+
+        ## Mount units of snap revisions that are neither installed nor have their
+        ##  .snap file. Some remain on Ubuntu Unity (old revisions of the base
+        ##  snaps, Thunderbird), and they fail at every boot. Nothing is removed if
+        ##  snap list fails.
+        snap_mount_remove, snap_mount_lines = [], []
+        if snaps_listed:
+            for name in names_in("/etc/systemd/system"):
+                file = f"/etc/systemd/system/{name}"
+                if not re.fullmatch(r"snap-.*\.mount", name) or not os.path.isfile(file):
+                    continue
+                what = next((line.split("=")[1] if len(line.split("=")) > 1 else ""
+                             for line in read_lines(file) or [] if line.split("=")[0] == "What"), "")
+                if not re.fullmatch(r"/var/lib/snapd/snaps/.*_.*\.snap", what) or os.path.exists(what):
+                    continue
+                ## <snap>_<revision>.snap
+                snap, revision = what.rsplit("/", 1)[1][:-len(".snap")].rsplit("_", 1)
+                if any(len(fields) > 2 and fields[0] == snap and fields[2] == revision for fields in snaps):
+                    continue
+                snap_mount_remove.append(name)
+                snap_mount_lines.append(f"{snap} {revision} ({name})")
+
+        ## Configuration files of packages that installing g-unity7-desktop removed
+        ##  without purging them. The autostart file of PulseAudio, which PipeWire
+        ##  replaces, starts a program that no longer exists.
+        conf_purge = [name for name in ("pulseaudio",)
+                      if query("dpkg-query", "-W", "-f=${db:Status-Status}", name)[1] == "config-files"]
+
+        ## ubuntu-unity-desktop and the duplicates, on a system from the Ubuntu
+        ##  Unity image. If ubuntu-unity-desktop is already removed, its relations
+        ##  come from the archive.
+        duplicates = []
+        if unity_image:
+            self.add_mark([TASK])
+            duplicates = [name for group in relations(TASK, "Depends Recommends") for name in group.split()]
+            self.add_mark(duplicates)
+
+        ## Task packages that the installed duplicates and the removed
+        ##  alternatives depend on or recommend, except those of packages kept by
+        ##  a choice.
+        roots = self.candidates_remove + [name for name in duplicates if name not in self.spared and installed(name)]
+        if roots:
+            out = query("apt-cache", "depends", "--recurse", "--installed", "--no-suggests", "--no-conflicts",
+                        "--no-breaks", "--no-replaces", "--no-enhances", *roots)[1]
+            closure = sorted({line for line in out.split("\n") if line and line[0] not in " <"})
+            candidates = [name for name in closure
+                          if name in self.manual and name not in self.keep and name not in self.spared]
+            self.add_mark(of_task(candidates))
+
+        if unity_image:
+            self.add_mark(LEFTOVERS)
+
+        ## Apply the marks to a copy of the apt state and find what autoremove
+        ##  then removes.
+        self.tmp = tempfile.mkdtemp()
+        states_file = f"{self.tmp}/extended_states"
+        states = f"Dir::State::extended_states={states_file}"
+        self.apt_state(states_file)
+        if self.mark:
+            must("apt-mark", "-o", states, "auto", *self.mark, stdout=subprocess.DEVNULL)
+        ## Packages given with --keep that are automatically installed become
+        ##  manually installed, so that autoremove keeps them
+        self.keep_manual = [name for name in sorted(self.keep_given) if installed(name) and name not in self.manual]
+        if self.keep_manual:
+            must("apt-mark", "-o", states, "manual", *self.keep_manual, stdout=subprocess.DEVNULL)
+        autoremoved = set(simulated(query("apt-get", "-s", "-o", states, "--purge", "autoremove")[1], "Purg"))
+
+        install_args = [f"{name}+" for name in self.install]
+
+        def removed_with(name):
+            """Return the packages other than name that apt removes with it,
+            except those that autoremove removes anyway, such as
+            ubuntu-unity-desktop, separated by spaces."""
+            out = query("apt-get", "-s", "-o", states, "--purge", "remove", name, *install_args)[1]
+            return " ".join(other for other in simulated(out, "Purg", "Remv")
+                            if other != name and other not in autoremoved)
+
+        ## The alternatives to remove, except those that other packages need.
+        self.remove, reasons, needed_kept = [], [], []
+        for name in self.candidates_remove:
+            others = removed_with(name)
+            if others:
+                needed_kept.append(f"{name} (needed by {others})")
+                continue
+            self.remove.append(name)
+            reasons.append(f"{name} ({self.reason[name]})")
+
+        ## Duplicates that autoremove keeps as an installed alternative of another
+        ##  relation, such as lightdm-gtk-greeter for lightdm-greeter or xfwm4 for
+        ##  x-window-manager. They are removed if no other package would be
+        ##  removed with them. Alternatives of g-unity7-desktop are left to the
+        ##  choices above.
+        of_meta = {name for group in relations(META, "Depends Recommends Suggests") for name in group.split()}
+        in_remove, dup_remove = set(), []
+        for name in duplicates:
+            if (name in of_meta or name in self.spared or name in autoremoved or name in in_remove
+                    or not installed(name)):
+                continue
+            in_remove.add(name)
+            if removed_with(name):
+                continue
+            self.remove.append(name)
+            dup_remove.append(name)
+
+        ## Packages of the image that apt keeps only as an installed alternative
+        ##  of another relation: kdialog of "zenity | kdialog" (im-config). It
+        ##  pulls in the KIO of KDE Frameworks 6, which suggests systemsettings. It
+        ##  is automatically installed, so marking does not remove it. On a system
+        ##  from the Ubuntu Unity image, it is removed if no other package would be
+        ##  removed with it.
+        leftover_remove = []
+        for name in ("kdialog",):
+            if (not unity_image or name in of_meta or name in self.spared or name in autoremoved
+                    or name in in_remove or not installed(name)):
+                continue
+            in_remove.add(name)
+            if removed_with(name):
+                continue
+            self.remove.append(name)
+            leftover_remove.append(name)
+
+        ## Preview the result with the marks applied to a copy of the apt state.
+        if self.remove or self.install:
+            self.apt_args = ["--purge", "--autoremove", "remove", *self.remove, *install_args]
+        else:
+            self.apt_args = ["--purge", "autoremove"]
+        status, simulation = query("apt-get", "-s", "-o", states, *self.apt_args, merge=True)
+        if status:
+            die("apt cannot make these changes:\n" + simulation.rstrip("\n"))
+        removed = simulated(simulation, "Purg")
+        self.read_installs(simulation)
+        ## apt-get -y refuses to downgrade packages unless it is allowed. The list
+        ##  below shows them before the confirmation.
+        main_downgrades = len(self.downgrades)
+
+        ## Keep only the marked packages that apt then removes. The others are
+        ##  still needed by G Unity⁷ or by another desktop (ubuntu-desktop shares
+        ##  most of the task), so marking them would only change their state. apt
+        ##  removes the same packages without them, because a kept package and its
+        ##  dependencies are still needed. Packages that are removed directly are
+        ##  not marked.
+        removed_set = set(removed) - set(self.remove)
+        self.mark = [name for name in self.mark if name in removed_set]
+
+        ## The G Unity⁷ Firefox and Thunderbird packages are installed after the
+        ##  changes above, as a downgrade of the Ubuntu packages. Their simulation
+        ##  on the current state adds what apt installs and removes with them.
+        moz_removed = []
+        if self.moz_install:
+            status, simulation = query("apt-get", "-s", "-o", states, "--allow-downgrades", "install",
+                                       *self.moz_install, merge=True)
+            if status:
+                die(f"apt cannot install {and_list([name.split('=', 1)[0] for name in self.moz_install])}:\n"
+                    + simulation.rstrip("\n"))
+            self.read_installs(simulation)
+            moz_removed = simulated(simulation, "Remv", "Purg")
+
+        plan = None if self.dry_run else self.plan_of(f"{self.tmp}/extended_states.plan")
+
+        if not (self.mark or self.remove or self.install or self.moz_install or self.moz_snap_remove
+                or snap_desktop_remove or snap_mount_remove or conf_purge):
+            SPINNER.stop()
+            print("Nothing to do. No Ubuntu Unity packages replaced by G Unity⁷ are left.")
+            for item in self.unchanged:
+                print(f"Left unchanged by your choice: {item}")
+            for item in needed_kept:
+                print(f"Kept because other packages need it: {item}")
+            for line in self.moz_lines:
+                print(line)
+            return 0
+
+        SPINNER.stop()
+        width = terminal_width()
+        print(list_words("Alternatives to install", self.install, width)
+              + list_lines("Alternatives to remove", reasons)
+              ## The duplicates and image packages that are removed directly, and
+              ##  the packages that are marked for autoremove
+              + list_words("Replaced by G Unity⁷ or not used by it, to be removed",
+                           dup_remove + leftover_remove + self.mark, width)
+              + list_lines("Left unchanged by your choice", self.unchanged)
+              + list_lines("Alternatives kept because other packages need them", needed_kept)
+              + list_lines("Firefox and Thunderbird", self.moz_lines)
+              + list_lines("Desktop files of snaps that are not installed, to be removed", snap_desktop_remove)
+              + list_lines("Mount units of snap revisions that are not installed, to be removed",
+                           snap_mount_lines)
+              + list_words("Configuration files of removed packages, to be purged", conf_purge, width)
+              + list_words("Kept with --keep and marked as manually installed", self.keep_manual, width)
+              + list_words("Packages apt will install", self.installs, width)
+              + list_words("Packages apt will upgrade", self.upgrades, width)
+              + list_words("Packages apt will downgrade", self.downgrades, width), end="")
+        ## Purged with their configuration files and marked with * as apt does
+        if removed or moz_removed:
+            print(list_words("Packages apt will remove", [f"{name}*" for name in removed] + moz_removed, width),
+                  end="")
+        else:
+            print("Packages apt will remove: none")
+            print()
+        print("To keep a package, run: sudo g-unity7-cleanup --keep <package>")
+
+        if self.dry_run:
+            return 0
+
+        if not self.yes:
+            answer = read_answer("Do you want to continue? [y/N] ") or ""
+            if not answer[:1] in ("y", "Y"):
+                print("No changes were made.")
+                return 0
+
+        if self.moz_copy and not os.access(COPY_PROFILES, os.X_OK):
+            die(f"{COPY_PROFILES} is missing; reinstall g-unity7-desktop")
+        ## apt-mark does not wait for another apt, which would write back its own
+        ##  marks when it finishes. apt-get check waits until it has finished.
+        must("apt-get", "-qq", *APT_LOCK, "check")
+        ## That apt, such as unattended-upgrades, may have changed the package
+        ##  lists or the marks since the preview
+        if self.plan_of(f"{self.tmp}/extended_states.now") != plan:
+            die("apt would now make other changes than shown, as another apt changed the package lists or marks "
+                "in the meantime; no changes were made; run g-unity7-cleanup again")
+        ## Later runs remember that the system comes from the Ubuntu Unity image
+        if unity_image and not os.path.exists(UNITY_MARKER):
+            os.makedirs(os.path.dirname(UNITY_MARKER), exist_ok=True)
+            open(UNITY_MARKER, "a").close()
+        if self.keep_manual:
+            must("apt-mark", "manual", *self.keep_manual, stdout=subprocess.DEVNULL)
+        if self.mark:
+            must("apt-mark", "auto", *self.mark, stdout=subprocess.DEVNULL)
+        if self.mark or self.remove or self.install:
+            if main_downgrades:
+                must("apt-get", "-y", *APT_LOCK, "--allow-downgrades", *self.apt_args)
+            else:
+                must("apt-get", "-y", *APT_LOCK, *self.apt_args)
+        ## Installed first alternatives are needed only by g-unity7-desktop. Other
+        ##  alternatives were chosen by the user and stay manual, like a package in
+        ##  @world.
+        install_auto = [name for name in self.install if name in self.keep]
+        if install_auto:
+            must("apt-mark", "auto", *install_auto, stdout=subprocess.DEVNULL)
+
+        if snap_desktop_remove:
+            must("rm", "-f", "--", *snap_desktop_remove)
+            if shutil.which("update-desktop-database"):
+                run("update-desktop-database", SNAP_DESKTOP_DIR)
+        if snap_mount_remove:
+            run("systemctl", "disable", "--no-reload", *snap_mount_remove, stderr=subprocess.DEVNULL)
+            for unit in snap_mount_remove:
+                must("rm", "-f", "--", f"/etc/systemd/system/{unit}",
+                     *sorted(glob.glob(f"/etc/systemd/system/*.wants/{glob.escape(unit)}"), key=os.fsencode))
+            must("systemctl", "daemon-reload")
+            run("systemctl", "reset-failed", *snap_mount_remove, stderr=subprocess.DEVNULL)
+        if conf_purge:
+            must("apt-get", "-y", "-qq", *APT_LOCK, "purge", *conf_purge, stdout=subprocess.DEVNULL)
+        ## The G Unity⁷ Firefox and Thunderbird packages (a lower version than the
+        ##  Ubuntu packages; their pin comes with them), then the snap profiles and
+        ##  the snaps.
+        ## The switch from each snap starts before its package is installed (see
+        ##  SWITCH_DIR). The file of a snap that this run does not remove is from a
+        ##  switch that was given up.
+        for name in sorted(glob.glob(f"{SWITCH_DIR}/switch-*"), key=os.fsencode):
+            if name.split("/switch-", 1)[1] not in self.moz_snap_remove:
+                try:
+                    os.remove(name)
+                except FileNotFoundError:
+                    pass
+        for name in self.moz_snap_remove:
+            switch = f"{SWITCH_DIR}/switch-{name}"
+            if os.path.isfile(switch) and os.path.getsize(switch) > 0:
+                continue
+            os.makedirs(SWITCH_DIR, exist_ok=True)
+            stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+            with open(switch, "w", **TEXT) as file:
+                file.write(f"{stamp}-{os.getpid()}\n")
+        if self.moz_install:
+            must("apt-get", "-y", *APT_LOCK, "--allow-downgrades", "install", *self.moz_install)
+        ## The users own their home directories and can replace any path in them
+        ##  with a link, so the profiles of each user are copied as that user
+        ##  (setpriv is part of util-linux, which is essential).
+        ## A snap that was started after the analysis keeps its profiles and stays
+        ##  installed: a copy of an open profile may be inconsistent.
+        os.chdir("/")
+        moz_running = {name for name in self.moz_snap_remove if snap_running(name)}
+        ## A copy that fails keeps its snap installed, and the copies of the other
+        ##  users are still made; the next run does not make them again.
+        copy_failed = set()
+        for user, src, dst, install_hash, adopt, name in self.moz_copy:
+            if name in moz_running:
+                continue
+            if run("setpriv", f"--reuid={user}", f"--regid={pwd.getpwnam(user).pw_gid}", "--init-groups",
+                   "--reset-env", COPY_PROFILES, src, dst, install_hash, adopt,
+                   file_text(f"{SWITCH_DIR}/switch-{name}")):
+                print(f"g-unity7-cleanup: cannot copy the {name} profiles of {user}", file=sys.stderr)
+                copy_failed.add(name)
+        failed, left = [], []
+        for name in self.moz_snap_remove:
+            if name in copy_failed:
+                print(f"g-unity7-cleanup: the {name} snap stays installed, because a copy of its profiles failed; "
+                      "fix the error, such as a full disk, and run g-unity7-cleanup again", file=sys.stderr)
+                left.append(name)
+                continue
+            if name in moz_running:
+                print(f"g-unity7-cleanup: the {name} snap was started; close it and run g-unity7-cleanup again",
+                      file=sys.stderr)
+                left.append(name)
+                continue
+            ## Copying a large profile takes a while
+            if snap_running(name):
+                print(f"g-unity7-cleanup: the {name} snap was started after its profiles were copied; close it "
+                      f"and remove it with: sudo snap remove {name}", file=sys.stderr)
+                left.append(name)
+                continue
+            snap_orphans_remove(name)
+            if run("snap", "remove", name) == 0:
+                try:
+                    os.remove(f"{SWITCH_DIR}/switch-{name}")
+                except FileNotFoundError:
+                    pass
+            else:
+                failed.append(name)
+        if len(failed) > 1:
+            print(f"g-unity7-cleanup: cannot remove the {and_list(failed)} snaps; the profiles have been copied",
+                  file=sys.stderr)
+        elif failed:
+            print(f"g-unity7-cleanup: cannot remove the {failed[0]} snap; the profiles have been copied",
+                  file=sys.stderr)
+        if failed:
+            print(f"Remove the snap with: sudo snap remove {' '.join(failed)}", file=sys.stderr)
+        return 1 if failed or left else 0
+
+    def remove_tmp(self):
+        if self.tmp:
+            shutil.rmtree(self.tmp, ignore_errors=True)
+
+
+def parse_args(argv):
+    """Return dry_run, yes and the packages given with --keep, or stop with the
+    usage."""
+    dry_run, yes, keep_given = False, False, []
+    i = 0
+    while i < len(argv):
+        arg = argv[i]
+        if arg in ("-n", "--dry-run"):
+            dry_run = True
+        elif arg in ("-y", "--yes"):
+            yes = True
+        elif arg in ("-k", "--keep"):
+            if i + 1 >= len(argv) or not PACKAGE_NAME.fullmatch(argv[i + 1]):
+                sys.stderr.write(USAGE)
+                raise Exit(2)
+            keep_given.append(argv[i + 1])
+            i += 1
+        elif arg.startswith("--keep="):
+            if not PACKAGE_NAME.fullmatch(arg[len("--keep="):]):
+                sys.stderr.write(USAGE)
+                raise Exit(2)
+            keep_given.append(arg[len("--keep="):])
+        elif arg in ("-h", "--help"):
+            sys.stdout.write(USAGE)
+            raise Exit(0)
+        else:
+            sys.stderr.write(USAGE)
+            raise Exit(2)
+        i += 1
+    return dry_run, yes, list(dict.fromkeys(keep_given))
+
+
+def main(argv):
+    cleanup = None
+    try:
+        cleanup = Cleanup(*parse_args(argv))
+        return cleanup.main()
+    except Exit as stop:
+        return stop.status
+    except KeyboardInterrupt:
+        return 130
+    finally:
+        SPINNER.stop()
+        if cleanup:
+            cleanup.remove_tmp()
+
+
+if __name__ == "__main__":
+    sys.stdout.reconfigure(line_buffering=True)
+    sys.exit(main(sys.argv[1:]))
