@@ -10,6 +10,9 @@ GROUP="desktop"
 ##  merges the translations of these panels into unity-control-center
 ##  (unity-base/unity-language-pack), which the Ubuntu language packs hide, so
 ##  g-unity7-l10n installs them in their own domains.
+## network-handle-missing-rfkill-plugin.patch is left out: it hides the
+##  airplane mode switch when unity-settings-daemon has no rfkill plugin, as
+##  with USE=-rfkill in Gentoo, but the unity-settings-daemon of the PPA has it.
 PATCHES=(
 	appearance-ignore_screenshots_from_mate_screenshot.patch
 	appearance-process_filename_dark_files.patch
@@ -25,6 +28,8 @@ PATCHES=(
 )
 
 debian_edit() {
+	local policy
+
 	# The metadata is installed to usr/share/metainfo (Fix metadata path) #
 	sed -i -e "s:usr/share/appdata:usr/share/metainfo:" debian/unity-control-center.install || return 1
 	grep -Fq "usr/share/metainfo" debian/unity-control-center.install || return 1
@@ -55,17 +60,14 @@ debian_edit() {
 	# dh_translations adds gettext-domain="unity-control-center" also to the #
 	#  messages of the remote login policy, which have the domain of the sharing #
 	#  panel (sharing-use-own-translation-domain.patch): drop the duplicate #
-	cat >> debian/rules <<-EOF || return 1
-
-		execute_after_dh_translations:
-		$(printf '\t')sed -i -e 's/ gettext-domain="unity-control-center"//' \\
-		$(printf '\t\t')debian/unity-control-center/usr/share/polkit-1/actions/com.canonical.controlcenter.remote-login-helper.policy
-		$(printf '\t')! grep -Fq 'gettext-domain="unity-control-center"' \\
-		$(printf '\t\t')debian/unity-control-center/usr/share/polkit-1/actions/com.canonical.controlcenter.remote-login-helper.policy
-		$(printf '\t')[ \$\$(grep -Fc 'gettext-domain="unity-control-center-sharing"' \\
-		$(printf '\t\t')debian/unity-control-center/usr/share/polkit-1/actions/com.canonical.controlcenter.remote-login-helper.policy) -eq 2 ]
-	EOF
-	grep -qx "execute_after_dh_translations:" debian/rules || return 1
+	policy=debian/unity-control-center/usr/share/polkit-1/actions/com.canonical.controlcenter.remote-login-helper.policy
+	rules_add_target execute_after_dh_translations \
+		"sed -i -e 's/ gettext-domain=\"unity-control-center\"//' \\" \
+		$'\t'"${policy}" \
+		"! grep -Fq 'gettext-domain=\"unity-control-center\"' \\" \
+		$'\t'"${policy}" \
+		"[ \$\$(grep -Fc 'gettext-domain=\"unity-control-center-sharing\"' \\" \
+		$'\t'"${policy}) -eq 2 ]" || return 1
 
 	# The services of the sharing panel, which the ebuild depends on with its #
 	#  default sharing USE flag. gnome-user-share and rygel start only when #

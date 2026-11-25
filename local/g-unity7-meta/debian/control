@@ -91,7 +91,7 @@ Depends: ${misc:Depends},
 Recommends:
 # Unity indicators, lenses, scopes and tools ported to G Unity⁷
             activity-log-manager (>= 0.9.7-0ubuntu31+gu7),
-            compizconfig-settings-manager (>= 0.9.14.2+25.10.20250930-0ubuntu3+gu7),
+            compizconfig-settings-manager (>= 1:0.9.14.2+25.10.20250930-0ubuntu3+gu7),
             gnome-online-accounts-gtk (>= 3.50.9-1a+gu7),
             indicator-application (>= 12.10.1+19.04.20190308.1-0ubuntu6+gu7),
             indicator-bluetooth (>= 0.0.6+17.10.20170605-0ubuntu7+gu7),
@@ -252,7 +252,7 @@ Suggests:
           diodon (>= 1.13.0-1build4+gu7),
           mailnag (>= 2.2.0-3build1+gu7)
 Breaks: activity-log-manager (<< 0.9.7-0ubuntu31+gu7),
-        compizconfig-settings-manager (<< 0.9.14.2+25.10.20250930-0ubuntu3+gu7),
+        compizconfig-settings-manager (<< 1:0.9.14.2+25.10.20250930-0ubuntu3+gu7),
         deja-dup (<< 50.1-2a+gu7),
         diodon (<< 1.13.0-1build4+gu7),
         eog (<< 50.3-1a+gu7),

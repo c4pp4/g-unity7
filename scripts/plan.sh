@@ -82,14 +82,13 @@ decide() {
 	else
 		read -r base _ < <(python3 -I "${REPO_ROOT}"/scripts/lp.py ubuntu-version "${UBUNTU_SRC}" --series "${UBUNTU_SERIES:-${series}}")
 	fi
-	## The mark between the base and +gu7 (see version_mark in build-source.sh);
-	##  a version from before the mark counts until it is deleted
+	## The mark between the base and +gu7 (see version_mark in build-source.sh)
 	[[ -n ${LOCAL:-} || -n ${DEBIAN_SUITE:-} || -n ${UBUNTU_SERIES:-} ]] || mark=$(version_mark "${base}")
 	input=$(input_hash "${OVERLAY_DIR}")
 	staging_version=$(json_get "${listing}" "${SOURCE_NAME}")
 	staging_base=${staging_version%+"${VERSION_TAG}".*}
 
-	if [[ -n ${staging_version} && ( ${staging_base} == "${base}${mark}" || ${staging_base} == "${base}" ) ]]; then
+	if [[ -n ${staging_version} && ${staging_base} == "${base}${mark}" ]]; then
 		## The approval issue knows the input of the staging version: the last
 		##  build found it up to date with this input, or it was uploaded from it
 		if [[ $(json_get "${state_json}" uptodate "${pkg}" version) == "${staging_version}" \

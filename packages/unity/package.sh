@@ -48,11 +48,8 @@ debian_edit() {
 	for f in "${FILESDIR}"/resources/dash_*.png; do
 		install -m 644 "${f}" debian/g-unity7/ || return 1
 	done
-	printf '\n%s\n\t%s\n' \
-		"execute_after_dh_install:" \
-		"install -m 644 debian/g-unity7/*.png debian/libunity-core-6.0-9/usr/share/unity/icons/" \
-		>> debian/rules || return 1
-	grep -Pq "^\tinstall -m 644 debian/g-unity7/\*\.png " debian/rules || return 1
+	rules_add_target execute_after_dh_install \
+		"install -m 644 debian/g-unity7/*.png debian/libunity-core-6.0-9/usr/share/unity/icons/" || return 1
 
 	# The autostart file is not executable, as the ebuild installs it #
 	#  (systemd warned at every login that it is marked executable) #

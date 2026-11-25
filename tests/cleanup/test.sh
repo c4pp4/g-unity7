@@ -15,6 +15,11 @@
 ##  alternatives  questions about the alternatives, marking and removal
 ##  mozilla       the G Unity⁷ Firefox and Thunderbird packages and the copy of
 ##                the snap profiles
+##  copies        a copy that fails, the next run that continues the switch,
+##                and too little free space
+##  profiles      a profile group of Firefox, profiles that profiles.ini does
+##                not list or that have an absolute path, package profiles in
+##                the XDG directories, and a Firefox that apt cannot install
 ##  locations     snap profiles in the XDG directory of the installed revision,
 ##                in the legacy directory, and linked to the package profiles
 ##  links        snap profiles with links to other files, which the copy must
@@ -610,6 +615,83 @@ group_locations() {
 	cat "${frank}"/.thunderbird/installs.ini
 }
 
+## Profiles that the copy must not lose or hide. A profile group of Firefox
+##  has profiles that only its database lists, which keep their names, so a
+##  taken name stops the copy; a profile directory that profiles.ini does not
+##  list is copied too; a profile with an absolute path in the snap directory
+##  is named in the preview. The package profiles in the XDG directories, which
+##  Firefox and Thunderbird use when the legacy ones do not exist, get the
+##  copies. A G Unity⁷ Firefox that apt cannot install, as with GTK 3 for i386
+##  from Ubuntu, is not offered, and the rest goes on.
+group_profiles() {
+	local gina=/home/gina ivan=/home/ivan hank=/home/hank ppa=${repos}/c4pp4/g-unity7
+	local ffs=snap/firefox/common/.mozilla/firefox
+	setup_mozilla
+	useradd -m -u 1007 gina
+	useradd -m -u 1008 ivan
+	useradd -m -u 1009 hank
+	printf '159.0.1-1 6000\n' > /tmp/snaps/firefox
+	printf '159.0-1 400\n' > /tmp/snaps/thunderbird
+	## gina: a profile group, a profile that profiles.ini does not list and one
+	##  with an absolute path in the snap, added to her package profiles
+	mkdir -p "${gina}/${ffs}"/aaa.default "${gina}/${ffs}"/bbb.work "${gina}/${ffs}"/zzz.old \
+		"${gina}/${ffs}/Profile Groups" "${gina}"/snap/firefox/common/elsewhere "${gina}"/.mozilla/firefox/old.default
+	echo prefs > "${gina}/${ffs}"/aaa.default/prefs.js
+	echo 'user_pref("toolkit.profiles.storeID", "1a2b3c4d");' > "${gina}/${ffs}"/bbb.work/prefs.js
+	echo '{}' > "${gina}/${ffs}"/zzz.old/times.json
+	echo db > "${gina}/${ffs}/Profile Groups/1a2b3c4d.sqlite"
+	printf '[Profile1]\nName=elsewhere\nIsRelative=0\nPath=%s\n\n[Profile0]\nName=default\nIsRelative=1\nPath=aaa.default\nDefault=1\nStoreID=1a2b3c4d\nShowSelector=1\n\n[General]\nStartWithLastProfile=1\nVersion=2\n' \
+		"${gina}"/snap/firefox/common/elsewhere > "${gina}/${ffs}"/profiles.ini
+	printf '[Profile0]\nName=old\nIsRelative=1\nPath=old.default\nDefault=1\n' > "${gina}"/.mozilla/firefox/profiles.ini
+	## ivan: package profiles only in the XDG directories
+	mkdir -p "${ivan}/${ffs}"/i.default "${ivan}"/snap/thunderbird/common/.thunderbird/t.default \
+		"${ivan}"/.config/mozilla/firefox/x.default "${ivan}"/.config/thunderbird/y.default
+	printf '[Profile0]\nName=default\nIsRelative=1\nPath=i.default\nDefault=1\n' > "${ivan}/${ffs}"/profiles.ini
+	printf '[Profile0]\nName=default\nIsRelative=1\nPath=t.default\nDefault=1\n' \
+		> "${ivan}"/snap/thunderbird/common/.thunderbird/profiles.ini
+	printf '[Profile0]\nName=xdg\nIsRelative=1\nPath=x.default\nDefault=1\n' > "${ivan}"/.config/mozilla/firefox/profiles.ini
+	printf '[Profile0]\nName=xdg\nIsRelative=1\nPath=y.default\nDefault=1\n' > "${ivan}"/.config/thunderbird/profiles.ini
+	chown -R gina:gina "${gina}"
+	chown -R ivan:ivan "${ivan}"
+
+	## A G Unity⁷ Firefox that apt cannot install. The Release file has the
+	##  checksums, so that apt-get update reads the changed Packages file.
+	reindex() {
+		(cd "${ppa}" && apt-ftparchive packages . > Packages 2>/dev/null \
+			&& apt-ftparchive -o APT::FTPArchive::Release::Origin=LP-PPA-c4pp4-g-unity7 \
+				-o APT::FTPArchive::Release::Suite=stonking release . > Release)
+		apt-get update -qq 2>/dev/null
+	}
+	mkdeb "${ppa}" firefox 159.0.1-1+gu7.2~26.10 "Depends: libgtk-3-0t64-test-i386"
+	reindex
+	run "Firefox cannot be installed: --dry-run, Enter" bash -c "printf '\n' | ${cleanup} --dry-run"
+	rm "${ppa}"/firefox_159.0.1-1+gu7.2~26.10_all.deb
+	reindex
+
+	run "dry-run: Enter, Enter" bash -c "printf '\n\n' | ${cleanup} --dry-run"
+	run "--yes" "${cleanup}" --yes
+	echo "-- snaps: $(ls /tmp/snaps | tr '\n' ' ')"
+	files "${gina}"/.mozilla "${ivan}"/.mozilla "${ivan}"/.thunderbird "${ivan}"/.config
+	echo "-- profiles.ini of gina"
+	cat "${gina}"/.mozilla/firefox/profiles.ini
+	echo "-- Firefox profiles.ini of ivan"
+	cat "${ivan}"/.config/mozilla/firefox/profiles.ini
+	echo
+
+	## hank: a profile of the group has the name of one of his package profiles
+	rm -rf "${gina}"/snap "${ivan}"/snap
+	printf '159.0.1-1 6001\n' > /tmp/snaps/firefox
+	mkdir -p "${hank}/${ffs}"/h.default "${hank}/${ffs}"/h.work "${hank}"/.mozilla/firefox/h.work
+	echo 'user_pref("toolkit.profiles.storeID", "5e6f7a8b");' > "${hank}/${ffs}"/h.work/prefs.js
+	printf '[Profile0]\nName=default\nIsRelative=1\nPath=h.default\nDefault=1\nStoreID=5e6f7a8b\nShowSelector=1\n' \
+		> "${hank}/${ffs}"/profiles.ini
+	printf '[Profile0]\nName=work\nIsRelative=1\nPath=h.work\nDefault=1\n' > "${hank}"/.mozilla/firefox/profiles.ini
+	chown -R hank:hank "${hank}"
+	run "a profile of the group has a taken name: --yes" "${cleanup}" --yes
+	echo "-- snaps: $(ls /tmp/snaps | tr '\n' ' ')"
+	files "${hank}"/.mozilla
+}
+
 ## Snap profiles with links that point outside the profile of the user. The
 ##  copy runs as the user, so it fails and no snap is removed, and no file
 ##  outside the home directory changes.
@@ -801,6 +883,7 @@ case ${group} in
 	alternatives) group_alternatives ;;
 	mozilla) group_mozilla ;;
 	copies) group_copies ;;
+	profiles) group_profiles ;;
 	locations) group_locations ;;
 	links) group_links ;;
 	snaps) group_snaps ;;

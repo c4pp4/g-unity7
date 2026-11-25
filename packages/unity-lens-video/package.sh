@@ -24,11 +24,7 @@ debian_edit() {
 
 	# debhelper installs a single binary package to debian/<package>, but #
 	#  debian/*.install (dh_install --fail-missing) takes the files from debian/tmp #
-	printf '\n%s\n\t%s\n' \
-		"override_dh_auto_install:" \
-		"dh_auto_install --destdir=debian/tmp" \
-		>> debian/rules || return 1
-	grep -Pqx "\tdh_auto_install --destdir=debian/tmp" debian/rules || return 1
+	rules_add_target override_dh_auto_install "dh_auto_install --destdir=debian/tmp" || return 1
 
 	# Only the remote video scope uses libsoup-gnome. cinnamon-desktop's thumbnail #
 	#  factory replaces totem-video-thumbnailer (Use-Nemo-thumbnail-factory.patch) #

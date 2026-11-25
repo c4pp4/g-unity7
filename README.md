@@ -18,6 +18,9 @@ changed in the overlay is included in the next package version automatically.
 
 ## Installing
 
+The packages are for amd64. Until the first packages are promoted from the
+staging PPA (see Uploading and promoting), `ppa:c4pp4/g-unity7` is empty.
+
 On Ubuntu 26.10 (Ubuntu Unity or any other flavor):
 
 ```
@@ -135,6 +138,10 @@ scripts/
   lp_login.py             create Launchpad credentials for lp_write.py (public write access only)
   dep3.py                 convert an overlay patch header to a DEP-3 header
 local/<package>/          own packages (package.sh and the whole source)
+tests/
+  scripts/                unit tests of the scripts (python3 -m unittest discover -s tests/scripts)
+  cleanup/                g-unity7-cleanup with dummy packages in Ubuntu containers (run.sh)
+  staging/                apt simulation (check.sh) and a real installation (install.sh) from a PPA
 Containerfile             the build container (Ubuntu of the series)
 ```
 
@@ -265,7 +272,7 @@ Nothing reaches users without the owner's approval:
    while a member waits for review, failed its last build, or is in neither
    PPA; `--force` promotes it anyway. `/retry` retries failed builds.
    `/upload` and `/promote` take only the versions that the issue showed before
-   the command.
+   the command, and `/upload <package>=<version>` only that version.
 3. `g-unity7-apt-pin` keeps the PPA versions on users' systems until a newer
    version is promoted.
 
@@ -291,6 +298,15 @@ A local upload signs with the gpg-agent outside the container:
 ```sh
 scripts/run-local.sh --gpg scripts/upload.sh libunity
 ```
+
+## Launchpad setup
+
+Both PPAs build for amd64 and i386 (Processors in the settings of the PPA).
+Launchpad builds only the sources of its i386 list for i386; of the ports,
+these are `gtk+3.0` and `ibus`. Steam and Wine install the i386 libraries of
+GTK 3 and IBus, which must have the same version as the amd64 ones
+(Multi-Arch: same), so without them G Unity⁷ does not install next to Steam or
+Wine. `tests/staging/check.sh` checks it once the PPA has these builds.
 
 ## GitHub setup
 

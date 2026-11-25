@@ -109,6 +109,28 @@ prerm_remove_on_downgrade() {
 	grep -qF 'grep -q "+gu7"' "${file}"
 }
 
+## Append make target $1 with the recipe lines $2... (each after a tab) to
+##  debian/rules, after an empty line; --comment <text> first adds a comment
+##  line before the target. Fail if debian/rules has the target already: make
+##  would replace that recipe with this one without a word.
+rules_add_target() {
+	local comment= target
+	if [[ $1 == --comment ]]; then
+		comment=$2
+		shift 2
+	fi
+	target=$1
+	shift
+	! grep -Eq "^${target}[[:space:]]*:" debian/rules || return 1
+	{
+		echo
+		[[ -z ${comment} ]] || echo "# ${comment}"
+		echo "${target}:"
+		printf '\t%s\n' "$@"
+	} >> debian/rules || return 1
+	grep -Fqx "${target}:" debian/rules
+}
+
 ## Print only the added and removed lines of a diff on stdin, so that the
 ##  hash of a change does not depend on its context. A "--- " line is a file
 ##  header only when a "+++ " line follows it; otherwise it is a removed line

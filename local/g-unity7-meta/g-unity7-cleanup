@@ -622,19 +622,46 @@ homes_hidden() {
 	return 1
 }
 
+## Print the package profile directory in home directory $1, where Firefox and
+##  Thunderbird look for it (nsXREDirProvider): the legacy directory $2 if its
+##  first directory (.mozilla, .thunderbird) exists, or else the XDG directory
+##  $3 if it exists (the XDG_CONFIG_HOME of the user is taken to be ~/.config),
+##  or else the legacy directory, which the copy creates.
+deb_profile_dir() {
+	if [[ ! -e $1/${2%%/*} && -d $1/$3 ]]; then
+		echo "$1/$3"
+	else
+		echo "$1/$2"
+	fi
+}
+
+## Print the paths of the profiles with an absolute path in profiles.ini $1
+##  that are in directory $2, such as one that the profile manager created in
+##  the snap directory. They are not copied.
+moz_absolute_profiles() {
+	awk -F= -v dir="$2" '
+		function out() { if (sec ~ /^\[Profile[0-9]+\]$/ && rel == "0" && index(path, dir) == 1) print path }
+		/^\[/ { out(); sec = $0; path = rel = ""; next }
+		$1 == "Path" { path = substr($0, 6) }
+		$1 == "IsRelative" { rel = $2 }
+		END { out() }' "$1" 2>/dev/null || true
+}
+
 ## moz_choice <package> <legacy snap profile> <XDG snap profile> <package profile> <name> <install hash> [<alternative>]
 ##  The snap profile directories are relative to $SNAP_USER_COMMON and
-##  $SNAP_USER_DATA (see snap_profiles), the package profile directory to the
-##  home directory. The install hash belongs to the package directory
-##  (/usr/lib/<package>) in profiles.ini. Leave it empty if it is not known.
-##  The alternative is the other package of the g-unity7-desktop relation,
-##  mentioned if installed.
+##  $SNAP_USER_DATA (see snap_profiles), the package profile directory (the
+##  legacy one) to the home directory. The package uses the XDG directory with
+##  the path of the one of the snap in the home directory instead if only that
+##  exists (see deb_profile_dir). The install hash belongs to the package
+##  directory (/usr/lib/<package>) in profiles.ini. Leave it empty if it is
+##  not known. The alternative is the other package of the g-unity7-desktop
+##  relation, mentioned if installed.
 moz_choice() {
 	local pkg=$1 legacy=$2 xdg=$3 deb_profile=$4 app=$5 hash=$6 alt=${7:-}
 	local ppa status deb_installed= snap= snap_version= snap_rev= upstream users=() copy_users=()
-	local copy_text options=() actions=() default=1 i answer entry user home src name
-	local switch_id= adopt=adopt size free mount marker
-	local -A shared=() copied=() sizes=() need=()
+	local copy_text options=() actions=() default=1 i answer entry user home src name dst path
+	local switch_id= adopt=adopt size free mount marker simulation reason l10n=()
+	local -A shared=() copied=() sizes=() need=() dsts=()
 	ppa=$(ppa_version "${pkg}")
 	[[ -n ${ppa} ]] || return 0
 	if [[ -n ${spared[${pkg}]:-} ]]; then
@@ -677,12 +704,14 @@ moz_choice() {
 		[[ -z ${deb_installed} || -n ${switch_id} ]] || adopt=
 		for entry in "${users[@]}"; do
 			IFS=: read -r user home src <<< "${entry}"
-			marker=${home}/${deb_profile}/${copy_marker}
+			dst=$(deb_profile_dir "${home}" "${deb_profile}" "${xdg}")
+			dsts[${entry}]=${dst}
+			marker=${dst}/${copy_marker}
 			## The Thunderbird snap links its profile directory to
 			##  ~/.thunderbird if that has profiles when the snap starts for
 			##  the first time (Ubuntu's package before 24.04). The package
 			##  then uses the same profiles, so there is nothing to copy.
-			if [[ $(readlink -f -- "${src}") == "$(readlink -f -- "${home}/${deb_profile}")" ]]; then
+			if [[ $(readlink -f -- "${src}") == "$(readlink -f -- "${dst}")" ]]; then
 				shared[${entry}]=1
 			elif [[ -n ${switch_id} && -f ${marker} && ! -L ${marker} && $(< "${marker}") == "${switch_id} ${src}" \
 				&& -z $(find "${src}/" -newer "${marker}" -print -quit 2>/dev/null) ]]; then
@@ -691,7 +720,7 @@ moz_choice() {
 				copy_users+=( "${user}" )
 				size=$(du -sk -- "${src}/" 2>/dev/null | cut -f1) || size=
 				sizes[${entry}]=${size:-0}
-				read -r free mount < <(free_space "${home}/${deb_profile}") || true
+				read -r free mount < <(free_space "${dst}") || true
 				[[ -z ${mount} ]] || need[${mount}]=$(( ${need[${mount}]:-0} + ${size:-0} ))
 			fi
 		done
@@ -714,6 +743,23 @@ moz_choice() {
 				return 0
 			fi
 		done
+	fi
+
+	## The G Unity⁷ Firefox and Thunderbird need the G Unity⁷ GTK 3, also for
+	##  each other architecture that has GTK 3 installed (Multi-Arch: same), such
+	##  as i386 for Steam or Wine. A package that apt cannot install is not
+	##  offered; the other changes are made.
+	mapfile -t l10n < <(moz_l10n "${pkg}" "${ppa}")
+	if [[ -z ${deb_installed} ]] \
+		&& ! simulation=$(apt-get -s --allow-downgrades install "${pkg}=${ppa}" "${l10n[@]/%/=${ppa}}" 2>&1); then
+		reason=$(grep -m 1 -E ' : (Pre)?Depends: | : (Conflicts|Breaks): ' <<< "${simulation}" | sed -e 's/^ *//') || true
+		[[ -n ${reason} ]] || reason=$(grep -m 1 '^E: ' <<< "${simulation}" | sed -e 's/^E: //') || true
+		if [[ -n ${snap} ]]; then
+			moz_lines+=( "${app}: unchanged; apt cannot install ${pkg} ${ppa} from G Unity⁷${reason:+ (${reason})}" )
+		else
+			moz_lines+=( "${app}: not installed; apt cannot install ${pkg} ${ppa} from G Unity⁷${reason:+ (${reason})}" )
+		fi
+		return 0
 	fi
 
 	copy_text=
@@ -785,10 +831,10 @@ moz_choice() {
 			moz_lines+=( "${app}: install ${pkg} ${ppa} from G Unity⁷" )
 			;;
 	esac
-	while read -r name; do
+	for name in "${l10n[@]}"; do
 		moz_install+=( "${name}=${ppa}" )
 		moz_lines+=( "${app}: install ${name} ${ppa} from G Unity⁷" )
-	done < <(moz_l10n "${pkg}" "${ppa}")
+	done
 	[[ -n ${snap} ]] || return 0
 	for mount in "${!need[@]}"; do
 		space_needed[${mount}]=$(( ${space_needed[${mount}]:-0} + need[${mount}] ))
@@ -797,23 +843,29 @@ moz_choice() {
 	##  already installed and has its own default profile
 	for entry in "${users[@]}"; do
 		IFS=: read -r user home src <<< "${entry}"
+		dst=${dsts[${entry}]}
+		## A profile that the profile manager created elsewhere in the snap
+		##  directory goes with the snap
+		while read -r path; do
+			moz_lines+=( "${app}: the profile ${path} of ${user} is outside ${src}, so it is not copied and is removed with the snap" )
+		done < <(moz_absolute_profiles "${src}/profiles.ini" "${home}/snap/${pkg}/")
 		if [[ -n ${copied[${entry}]:-} ]]; then
-			moz_lines+=( "${app}: ${src} was copied to ${home}/${deb_profile} before, nothing to copy" )
+			moz_lines+=( "${app}: ${src} was copied to ${dst} before, nothing to copy" )
 			continue
 		fi
-		moz_copy+=( "${user}:${src}:${home}/${deb_profile}:${hash}:${adopt}:${pkg}" )
+		moz_copy+=( "${user}:${src}:${dst}:${hash}:${adopt}:${pkg}" )
 		size=
 		[[ -z ${sizes[${entry}]:-} ]] || size=" ($(in_mb "${sizes[${entry}]}"))"
 		if [[ -n ${shared[${entry}]:-} && -z ${adopt} ]]; then
-			moz_lines+=( "${app}: the snap uses ${home}/${deb_profile}, nothing to copy" )
+			moz_lines+=( "${app}: the snap uses ${dst}, nothing to copy" )
 		elif [[ -n ${shared[${entry}]:-} ]]; then
-			moz_lines+=( "${app}: the snap uses ${home}/${deb_profile}, nothing to copy; make the snap's default profile the default" )
-		elif [[ ! -f ${home}/${deb_profile}/profiles.ini ]]; then
-			moz_lines+=( "${app}: copy ${src} to ${home}/${deb_profile}${size}" )
+			moz_lines+=( "${app}: the snap uses ${dst}, nothing to copy; make the snap's default profile the default" )
+		elif [[ ! -f ${dst}/profiles.ini ]]; then
+			moz_lines+=( "${app}: copy ${src} to ${dst}${size}" )
 		elif [[ -z ${adopt} ]]; then
-			moz_lines+=( "${app}: add the profiles in ${src} to ${home}/${deb_profile}${size}; the default profile stays" )
+			moz_lines+=( "${app}: add the profiles in ${src} to ${dst}${size}; the default profile stays" )
 		else
-			moz_lines+=( "${app}: add the profiles in ${src} to ${home}/${deb_profile}${size} and make the snap's default profile the default" )
+			moz_lines+=( "${app}: add the profiles in ${src} to ${dst}${size} and make the snap's default profile the default" )
 		fi
 	done
 	moz_snap_remove+=( "${pkg}" )

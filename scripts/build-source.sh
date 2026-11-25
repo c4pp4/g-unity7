@@ -349,7 +349,7 @@ debian_diff="${work}/debian.diff"
 		!skip && !(series && /^\+g-unity7\//)' > "${debian_diff}"
 if [[ -n ${LOCAL:-} ]]; then
 	## The whole source of an own package.
-	patch_lines+=( "source $(find . -type f ! -path ./debian/changelog -print0 | sort -z \
+	patch_lines+=( "source $(find . -type f ! -path ./debian/changelog -print0 | LC_ALL=C sort -z \
 		| xargs -0 sha256sum | short_hash)" )
 elif [[ -n $(changed_lines < "${debian_diff}") ]]; then
 	## Only changed lines count, because a series file with only the overlay
@@ -386,9 +386,7 @@ if [[ ${staging_version} =~ ${suffix_re} ]]; then
 	staging_base=${BASH_REMATCH[1]}
 	staging_n=${BASH_REMATCH[2]}
 	[[ ${staging_fingerprint} == "${fingerprint}" ]] && needs_review=
-	## A version from before the mark stays up to date until it is deleted;
-	##  Launchpad refuses the lower version with the mark until then
-	if [[ ${staging_base} == "${marked}" || ( -n ${mark} && ${staging_base} == "${ubuntu_version}" ) ]]; then
+	if [[ ${staging_base} == "${marked}" ]]; then
 		if [[ -z ${needs_review} && -z ${force} ]]; then
 			einfo "${SOURCE_NAME} ${staging_version} in ${PPA_STAGING} is up to date."
 			cat > "${base_dir}"/result.env <<-EOF
@@ -403,7 +401,7 @@ if [[ ${staging_version} =~ ${suffix_re} ]]; then
 			remove_trees
 			exit 0
 		fi
-		[[ ${staging_base} != "${marked}" ]] || n=$(( staging_n + 1 ))
+		n=$(( staging_n + 1 ))
 	fi
 fi
 ## Launchpad refuses a version that the staging PPA had, also a deleted one,
@@ -432,7 +430,7 @@ if [[ -n ${main_version} ]]; then
 	EOF
 	)
 	if [[ ${#changes_since[@]} -eq 0 ]]; then
-		if [[ ${main_version} =~ ${suffix_re} && ${BASH_REMATCH[1]} != "${ubuntu_version}" ]]; then
+		if [[ ${main_version} =~ ${suffix_re} && ${BASH_REMATCH[1]} != "${marked}" ]]; then
 			changes_since=( "rebased on ${ubuntu_version}" )
 		else
 			changes_since=( "No-change rebuild" )

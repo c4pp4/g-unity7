@@ -11,12 +11,10 @@ debian_edit() {
 	# Yaru-dark drop-down menu icon as "go-down-symbolic" for all dark accents #
 	install -d debian/g-unity7 || return 1
 	install -m 644 "${FILESDIR}"/go-down-icon/Yaru-dark/scalable/actions/go-down-symbolic.svg debian/g-unity7/ || return 1
-	printf '\n%s\n\t%s\n\t%s\n' \
-		"execute_after_dh_install:" \
+	rules_add_target execute_after_dh_install \
 		"install -D -m 644 debian/g-unity7/go-down-symbolic.svg debian/yaru-theme-icon/usr/share/icons/Yaru-dark/scalable/actions/go-down-symbolic.svg" \
 		'for d in debian/yaru-theme-icon/usr/share/icons/Yaru-*-dark; do mkdir -p $$d/scalable/actions && ln -sf ../../../Yaru-dark/scalable/actions/go-down-symbolic.svg $$d/scalable/actions/go-down-symbolic.svg; done' \
-		>> debian/rules || return 1
-	grep -Pq "^\tinstall -D -m 644 debian/g-unity7/go-down-symbolic.svg " debian/rules || return 1
+		|| return 1
 }
 
 src_edit() {

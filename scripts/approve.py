@@ -5,7 +5,8 @@ builds that are behind Ubuntu and Debian, overlay and archive changes for the
 ports, and the commands given in its comments.
 
 Commands (in comments by the repository owner):
-  /upload [<package>...]   upload the reviewed source packages to staging
+  /upload [<package>[=<version>]...]
+                           upload the reviewed source packages to staging
   /reject <package>...     drop versions waiting for review
   /promote [<package>...] [--force] [--dry-run]
                            copy built versions from staging to the main PPA
@@ -398,10 +399,23 @@ def overlay_new_dirs(base, head):
         capture_output=True).returncode)
 
 
+def overlay_pkg_dir(path):
+    """Return the package directory of an overlay file, ehooks/<category>/<name>
+    or <category>/<name> (a category has a hyphen, unlike docs, eclass,
+    metadata and profiles), or None."""
+    parts = path.split("/")
+    if parts[0] == "ehooks" and len(parts) >= 4:
+        return "/".join(parts[:3])
+    if len(parts) >= 3 and "-" in parts[0]:
+        return "/".join(parts[:2])
+    return None
+
+
 def check_drift(state, pkgs):
     """Find what may need a change of the ports: overlay changes of the ebuilds,
     ehooks and eclasses that they follow since they were last checked, new
-    packages of the overlay that no port follows, a new version of the seeds of
+    packages of the overlay that no port follows and changes of the others, a
+    new version of the seeds of
     Ubuntu Unity (ubuntu-unity-meta), a source of the archive with the name of a
     derived source, and a source from an older series that is back in the
     series (not for a derived source, such as unity-docs from the ubuntu-docs of
@@ -437,6 +451,22 @@ def check_drift(state, pkgs):
             shown = ", ".join(f"`{d}`" for d in new[:10]) + (", …" if len(new) > 10 else "")
             drift["overlay:new"] = {"value": head,
                                     "text": f"packages added since `{base[:7]}` that no port follows: {shown}"}
+
+    ## Changes of the overlay packages that no port follows, such as the ehooks
+    ##  of Shotwell and libadwaita, which have no port: one item to check, like
+    ##  the new packages
+    base = ported.get("overlay:other", PORTED_BASE)
+    if base != head:
+        patterns = [p for name in followed for p in followed[name]]
+        files, url = overlay_changes(base, head)
+        new = set(overlay_new_dirs(base, head))
+        dirs = sorted({d for d in map(overlay_pkg_dir, files) if d} - new)
+        dirs = [d for d in dirs if not any(p.match(d + "/") for p in patterns)]
+        if dirs:
+            shown = ", ".join(f"`{d}`" for d in dirs[:10]) + (", …" if len(dirs) > 10 else "")
+            drift["overlay:other"] = {"value": head,
+                                      "text": f"[changes since `{base[:7]}`]({url}) of packages that no port "
+                                              f"follows: {shown}"}
 
     seeds, _ = lp.ubuntu_version("ubuntu-unity-meta", series)
     if seeds:
@@ -582,7 +612,8 @@ def render(state, pkgs=None):
             out.append(f"| `{name}` | `{r['version']}` | {r['reason']} | "
                        f"[run summary]({run}) · artifact `{r['artifact']}` |")
         out += ["", "`/upload` uploads all of them to staging, and `/upload <package>…` only the "
-                "given ones. `/reject <package>…` drops the version.", ""]
+                "given ones; `<package>=<version>` uploads only that version. `/reject <package>…` drops "
+                "the version.", ""]
     else:
         out += ["Nothing is waiting.", ""]
 
@@ -817,6 +848,13 @@ def cmd_add_review(args):
                 state["failed_builds"][name] = {"run_id": args.run_id, "since": since}
             elif conclusions.get(name) == "success":
                 state["failed_builds"].pop(name, None)
+    ## A failed build no longer matters when plan.sh finds the staging version
+    ##  up to date and does not build the package, such as after the change that
+    ##  broke the build was reverted
+    if args.plan:
+        for name in json.loads(args.plan).get("checked", []):
+            if name not in planned:
+                state["failed_builds"].pop(name, None)
     for directory in args.dirs:
         name = os.path.basename(directory.rstrip("/"))
         result = read_result(os.path.join(directory, "result.env"))
@@ -832,8 +870,13 @@ def cmd_add_review(args):
         state["uptodate"].pop(name, None)
         with open(os.path.join(directory, "patches.txt")) as f:
             new = dict(line.split(" ", 1) for line in f.read().split("\n") if line)
-        staging = lp.ppa_latest(result["SOURCE"], CONFIG["staging"], CONFIG["series"])
-        reason = describe_changes(new, staging.get("patches")) if staging else "new package"
+        ## A Launchpad error must not lose the record of the whole run
+        try:
+            staging = lp.ppa_latest(result["SOURCE"], CONFIG["staging"], CONFIG["series"])
+            reason = describe_changes(new, staging.get("patches")) if staging else "new package"
+        except Exception as error:
+            print(f"::warning::{name}: cannot read the staging version from Launchpad: {error}", file=sys.stderr)
+            staging, reason = None, f"not compared with staging (Launchpad error: {error.__class__.__name__})"
         ## With STAGING_FROZEN, ppa.yml uploads nothing by itself
         if staging and not result.get("NEEDS_REVIEW"):
             reason = "the same patches on a new base; staging is frozen"
@@ -882,17 +925,24 @@ def rebuild_hint(name):
 
 def do_upload(issue, state, names, pkgs, before=None):
     """Upload the given versions, or without names those that were added for
-    review before the command (before), which the owner could see."""
+    review before the command (before), which the owner could see. A name with
+    =<version> uploads only that version, also when the command has no time,
+    such as from workflow_dispatch."""
     messages = []
     started = time.monotonic()
     if not names:
         names = sorted(n for n, r in state["review"].items() if not before or r.get("added", "") <= before)
         messages += [f"- `{n}`: added for review after the command. Check it and give the command again."
                      for n, r in sorted(state["review"].items()) if before and r.get("added", "") > before]
-    for index, name in enumerate(names):
+    for index, item in enumerate(names):
+        name, _, wanted = item.partition("=")
         r = state["review"].get(name)
         if not r:
             messages.append(f"- `{name}`: not waiting for review.")
+            continue
+        if wanted and r["version"] != wanted:
+            messages.append(f"- `{name}`: `{r['version']}` is waiting for review, not `{wanted}`. "
+                            "Check it and give the command again.")
             continue
         if before and r.get("added", "") > before:
             messages.append(f"- `{name}`: added for review after the command. Check it and give the command again.")

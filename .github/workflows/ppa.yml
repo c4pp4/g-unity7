@@ -73,11 +73,14 @@ jobs:
           echo "result=$(cat plan.json)" >> "$GITHUB_OUTPUT"
           # The upload job also runs without builds to show the packages that
           #  could not be checked in the issue, or to drop them once they can be
+          #  and to drop a failed build of a package that is up to date again
           record=$(python3 -I -c '
-          import json
+          import json, sys
           plan, state = json.load(open("plan.json")), json.load(open("state.json"))
-          known = state.get("plan_errors", {})
-          print("true" if plan["errors"] or any(n in known for n in plan["checked"]) else "false")')
+          planned = json.loads(sys.argv[1])
+          known, failed = state.get("plan_errors", {}), state.get("failed_builds", {})
+          print("true" if plan["errors"] or any(n in known or (n in failed and n not in planned)
+                                                for n in plan["checked"]) else "false")' "$packages")
           echo "record=$record" >> "$GITHUB_OUTPUT"
 
   build:

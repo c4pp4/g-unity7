@@ -99,7 +99,19 @@ and of the owner of each directory in
 (which finds the users of a network directory too), if the home directory is
 accessible, to the profile directory of the package
 .RI ( ~/.mozilla/firefox ,
-.IR ~/.thunderbird ),
+.IR ~/.thunderbird ,
+or
+.I ~/.config/mozilla/firefox
+and
+.I ~/.config/thunderbird
+if only they exist, as Firefox and Thunderbird create them when
+.I ~/.mozilla
+or
+.I ~/.thunderbird
+does not exist;
+.B XDG_CONFIG_HOME
+is taken to be
+.IR ~/.config ),
 as that user, so that a link in a home directory cannot make it change
 anything else. Each copy goes to a temporary directory first and is moved into
 place when it is complete, so that an error, such as a full disk, leaves no
@@ -127,7 +139,14 @@ If the user already has profiles in the package directory, for example from
 the Ubuntu package used before the snap, the snap profiles are added to them
 with
 .B (snap)
-after their names, and no profile is replaced. The snap's default profile
+after their names, and no profile is replaced. A profile group of Firefox
+(the Profiles menu) is copied whole: its other profiles, which only the
+database of the group in
+.I Profile Groups
+lists, keep their names, so the copy fails if one of them is taken. Other
+profile directories that profiles.ini does not list are copied too. A
+profile with an absolute path is not copied; the preview names those in the
+snap directory, which are removed with the snap. The snap's default profile
 becomes the default profile of the package, unless the package was installed
 before; then its default profile stays, and the snap profiles can be opened
 from
@@ -155,6 +174,10 @@ script again. If the snap is started while the script runs, the script
 leaves it installed and says what to do. A G Unity⁷ package older than
 the snap is not offered, because Firefox and Thunderbird do not open a profile
 that a newer version used. Run the script again after the package is updated.
+A G Unity⁷ package that apt cannot install is not offered either, and the
+other changes are made. This happens when GTK 3 is installed for another
+architecture too, such as i386 for Steam or Wine, and the PPA does not have
+its G Unity⁷ version for that architecture.
 A Firefox or Thunderbird package from another source, such as Mozilla's APT
 repository, stays as it is, because it may be newer than the G Unity⁷
 package.

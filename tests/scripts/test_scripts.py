@@ -5,6 +5,7 @@ compares the versions, so run them on Ubuntu or Debian:
 """
 
 import argparse
+import io
 import json
 import os
 import shutil
@@ -229,6 +230,15 @@ class Commands(unittest.TestCase):
         self.assertIn("`later`: added for review after the command", messages[0])
         self.assertIn("later", s["review"])
 
+    def test_upload_of_a_named_version(self):
+        s = state(review={"eog": {"source": "eog", "version": "50.3-1a+gu7.2~26.10", "input": "x"}})
+        with mock.patch.object(lp, "ppa_latest", return_value={"version": "50.3-1a+gu7.2~26.10"}):
+            messages = approve.do_upload(None, s, ["eog=50.3-1a+gu7.1~26.10"], {"eog": {"input": "x"}})
+            self.assertIn("`50.3-1a+gu7.2~26.10` is waiting for review, not `50.3-1a+gu7.1~26.10`", messages[0])
+            self.assertIn("eog", s["review"])
+            messages = approve.do_upload(None, s, ["eog=50.3-1a+gu7.2~26.10"], {"eog": {"input": "x"}})
+        self.assertIn("staging already has `50.3-1a+gu7.2~26.10`", messages[0])
+
     def test_upload_keeps_a_version_lower_than_staging(self):
         s = state(review={"eog": {"source": "eog", "version": "50.3-1a+gu7.1~26.10", "input": "x"}})
         with mock.patch.object(lp, "ppa_latest", return_value={"version": "50.3-1+gu7.3~26.10"}):
@@ -331,6 +341,24 @@ class CheckDrift(unittest.TestCase):
         body = approve.render(s)
         self.assertIn("## Overlay and archive changes to check", body)
         self.assertIn("- `unity`: [1 file since `611f038`]", body)
+
+    def test_changes_of_packages_that_no_port_follows(self):
+        files = ("ehooks/media-gfx/shotwell/files/global-menu.patch", "ehooks/gui-libs/libadwaita:1/a.ehooks",
+                 "unity-base/unity/unity-7.7.1-r261008.ebuild", "profiles/gentoo-unity7.use",
+                 "unity-indicators/indicator-new/indicator-new-1.ebuild")
+        s = state()
+        self.run_check(s, {"ubuntu-unity-meta": ("0.30", "Release")}, new_dirs=["unity-indicators/indicator-new"],
+                       files=files)
+        self.assertIn("overlay:other", s["drift"])
+        self.assertIn("`ehooks/gui-libs/libadwaita:1`, `ehooks/media-gfx/shotwell`",
+                      s["drift"]["overlay:other"]["text"])
+        self.assertNotIn("unity-base/unity", s["drift"]["overlay:other"]["text"])
+        self.assertNotIn("indicator-new", s["drift"]["overlay:other"]["text"])
+        ## /ported overlay:other records the commit
+        s = state(ported={"overlay:other": "h" * 40, "overlay:new": "h" * 40})
+        self.run_check(s, {"ubuntu-unity-meta": ("0.30", "Release")}, new_dirs=["unity-indicators/indicator-new"],
+                       files=files)
+        self.assertNotIn("overlay:other", s["drift"])
 
     def test_variants_follow_and_new_packages(self):
         pkgs = dict(self.pkgs)
@@ -458,14 +486,15 @@ elif sys.argv[1] == "ppa-latest":
     def test_uptodate(self):
         input_hash = subprocess.run(["bash", "-c", "source scripts/lib.sh; load_package foo; input_hash overlay"],
                                     cwd=self.tmp, capture_output=True, text=True, check=True).stdout.strip()
-        uptodate = {"version": "1.0-1+gu7.1~26.10", "base": "1.0-1", "input": input_hash}
-        self.assertEqual(self.plan("1.0-1", "1.0-1+gu7.1~26.10", uptodate), [])
-        self.assertEqual(self.plan("1.0-2", "1.0-1+gu7.1~26.10", uptodate), ["foo"])
-        self.assertEqual(self.plan("1.0-1", "1.0-1+gu7.1~26.10", dict(uptodate, input="other")), ["foo"])
         ## The version with the mark of the base (see VersionMark)
-        marked = dict(uptodate, version="1.0-1a+gu7.1~26.10")
-        self.assertEqual(self.plan("1.0-1", "1.0-1a+gu7.1~26.10", marked), [])
-        self.assertEqual(self.plan("1.0-1ubuntu0.1", "1.0-1a+gu7.1~26.10", marked), ["foo"])
+        uptodate = {"version": "1.0-1a+gu7.1~26.10", "base": "1.0-1", "input": input_hash}
+        self.assertEqual(self.plan("1.0-1", "1.0-1a+gu7.1~26.10", uptodate), [])
+        self.assertEqual(self.plan("1.0-2", "1.0-1a+gu7.1~26.10", uptodate), ["foo"])
+        self.assertEqual(self.plan("1.0-1ubuntu0.1", "1.0-1a+gu7.1~26.10", uptodate), ["foo"])
+        self.assertEqual(self.plan("1.0-1", "1.0-1a+gu7.1~26.10", dict(uptodate, input="other")), ["foo"])
+        ## A version from before the mark is no longer current
+        unmarked = dict(uptodate, version="1.0-1+gu7.1~26.10")
+        self.assertEqual(self.plan("1.0-1", "1.0-1+gu7.1~26.10", unmarked), ["foo"])
 
     def test_a_package_that_cannot_be_checked_does_not_stop_the_others(self):
         os.makedirs(os.path.join(self.tmp, "packages", "bar"))
@@ -651,10 +680,6 @@ class DebianVersion(unittest.TestCase):
                              ("1:131.0-1", "experimental"))
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class AddReviewPlan(unittest.TestCase):
     def test_plan_errors_and_uploaded_versions(self):
         s = state(plan_errors={"hud": {"run_id": "1", "since": "2026-11-20T00:00:00Z", "error": "old"},
@@ -675,6 +700,46 @@ class AddReviewPlan(unittest.TestCase):
         self.assertEqual(sorted(s["plan_errors"]), ["nux", "zim"])
         self.assertEqual(s["plan_errors"]["nux"], {"run_id": "7", "since": "2026-11-20T00:00:00Z", "error": "new"})
         self.assertEqual(s["uptodate"]["eog"], {"version": "50.3-1a+gu7.1~26.10", "base": "50.3-1", "input": "i"})
+
+    def test_a_failed_build_goes_when_the_package_is_up_to_date(self):
+        """After the change that broke the build is reverted, plan.sh finds the
+        package up to date and does not build it: its group is complete again."""
+        s = state(failed_builds={"hud": {"run_id": "1", "since": "2026-11-20T00:00:00Z"},
+                                 "nux": {"run_id": "1", "since": "2026-11-20T00:00:00Z"}})
+        args = argparse.Namespace(run_id="7", artifact_prefix="source-", dirs=[], planned=json.dumps(["nux"]),
+                                  plan=json.dumps({"checked": ["hud", "nux"], "errors": {}}), uploaded=[])
+        with mock.patch.object(approve, "find_issue", return_value=None), \
+                mock.patch.object(approve, "load_state", return_value=s), \
+                mock.patch.object(approve, "build_conclusions", return_value={"nux": "failure"}), \
+                mock.patch.object(approve, "refresh"):
+            approve.cmd_add_review(args)
+        self.assertEqual(sorted(s["failed_builds"]), ["nux"])
+
+    def test_a_launchpad_error_keeps_the_record_of_the_run(self):
+        s = state()
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = os.path.join(tmp, "eog")
+            os.makedirs(directory)
+            with open(os.path.join(directory, "result.env"), "w") as f:
+                f.write("STATUS=built\nPACKAGE=eog\nSOURCE=eog\nVERSION=50.3-1a+gu7.2~26.10\nBASE=50.3-1\n"
+                        "FINGERPRINT=f\nINPUT=i\nNEEDS_REVIEW=1\n")
+            with open(os.path.join(directory, "patches.txt"), "w") as f:
+                f.write("a.patch 123\n")
+            args = argparse.Namespace(run_id="7", artifact_prefix="source-", dirs=[directory],
+                                      planned=json.dumps(["eog", "hud"]),
+                                      plan=json.dumps({"checked": ["eog", "hud"], "errors": {"zim": "e"}}),
+                                      uploaded=[])
+            with mock.patch.object(approve, "find_issue", return_value=None), \
+                    mock.patch.object(approve, "load_state", return_value=s), \
+                    mock.patch.object(approve, "build_conclusions", return_value={"eog": "success", "hud": "failure"}), \
+                    mock.patch.object(approve.lp, "ppa_latest", side_effect=RuntimeError("503")), \
+                    mock.patch.object(approve, "refresh"), \
+                    mock.patch("sys.stderr", new=io.StringIO()):
+                approve.cmd_add_review(args)
+        self.assertEqual(s["review"]["eog"]["version"], "50.3-1a+gu7.2~26.10")
+        self.assertIn("Launchpad error", s["review"]["eog"]["reason"])
+        self.assertEqual(sorted(s["failed_builds"]), ["hud"])
+        self.assertEqual(sorted(s["plan_errors"]), ["zim"])
 
 
 class Notices(unittest.TestCase):
@@ -718,6 +783,31 @@ class ChangedLines(unittest.TestCase):
         self.assertEqual(out.splitlines(), ["--- removed comment", "-old", "+new", "+++ added line", "-- "])
 
 
+class RulesAddTarget(unittest.TestCase):
+    """rules_add_target in lib.sh appends a target to debian/rules, but not one
+    that debian/rules has already, whose recipe make would replace."""
+
+    def add(self, tmp, *args):
+        return subprocess.run(["bash", "-c", 'source "$1"/scripts/lib.sh; shift; rules_add_target "$@"', "-",
+                               ROOT, *args], cwd=tmp, capture_output=True, text=True)
+
+    def test_add_and_refuse(self):
+        rules_text = "%:\n\tdh $@\n\noverride_dh_auto_install:\n\tdh_auto_install\n"
+        with tempfile.TemporaryDirectory() as tmp:
+            os.makedirs(os.path.join(tmp, "debian"))
+            rules = os.path.join(tmp, "debian", "rules")
+            with open(rules, "w") as f:
+                f.write(rules_text)
+            self.assertNotEqual(self.add(tmp, "override_dh_auto_install", "true").returncode, 0)
+            with open(rules) as f:
+                self.assertEqual(f.read(), rules_text)
+            self.assertEqual(self.add(tmp, "--comment", "G Unity⁷: why", "execute_after_dh_install",
+                                      "install a \\", "\tb").returncode, 0)
+            with open(rules) as f:
+                self.assertEqual(f.read(), rules_text + "\n# G Unity⁷: why\nexecute_after_dh_install:\n"
+                                 "\tinstall a \\\n\t\tb\n")
+
+
 class VersionMark(unittest.TestCase):
     """The mark between the base and +gu7 (version_mark in lib.sh): the version
     built on an Ubuntu update of the base is higher than the one built on the
@@ -746,3 +836,16 @@ class VersionMark(unittest.TestCase):
             self.assertGreater(lp.version_cmp(new, old), 0, (new, old))
             self.assertGreater(lp.version_cmp(old, base), 0, (old, base))
             self.assertLess(lp.version_cmp(old, update), 0, (old, update))
+
+    def test_base_with_its_mark_is_the_same_version(self):
+        """dpkg sorts a base that ends with a letter and the base with the mark 0
+        the same; the check for packages behind must not see a newer version."""
+        self.assertEqual(lp.version_cmp("26.10.2ubuntu", "26.10.2ubuntu0"), 0)
+        self.assertEqual(lp.version_cmp("26.10.2ubuntu0", "26.10.2ubuntu"), 0)
+        self.assertEqual(lp.version_cmp("1.0", "1.0"), 0)
+        self.assertEqual(lp.version_cmp("1.0", "1.0.1"), -1)
+        self.assertEqual(lp.version_cmp("1.0.1", "1.0"), 1)
+
+
+if __name__ == "__main__":
+    unittest.main()

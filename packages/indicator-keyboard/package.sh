@@ -25,9 +25,5 @@ debian_edit() {
 		-e "/^ *gir1.2-fcitx-1.0,$/d" \
 		debian/control || return 1
 	! grep -q "fcitx" debian/control || return 1
-	printf '\n%s\n\t%s\n' \
-		"override_dh_auto_configure:" \
-		"dh_auto_configure -- --disable-fcitx" \
-		>> debian/rules || return 1
-	grep -Pqx "\tdh_auto_configure -- --disable-fcitx" debian/rules || return 1
+	rules_add_target override_dh_auto_configure "dh_auto_configure -- --disable-fcitx" || return 1
 }

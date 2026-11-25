@@ -1,0 +1,193 @@
+### Firefox cannot be installed: --dry-run, Enter
+Thunderbird is installed as an Ubuntu snap.
+G Unity⁷ provides a Thunderbird package with Unity's global menu:
+  1) Install the G Unity⁷ package, copy the snap profile for ivan and remove the snap (recommended)
+  2) Keep the Ubuntu snap
+
+Firefox and Thunderbird (5):
+  Firefox: unchanged; apt cannot install firefox 159.0.1-1+gu7.2~26.10 from G Unity⁷ (firefox : Depends: libgtk-3-0t64-test-i386 but it is not installable)
+  Thunderbird: install thunderbird 1:159.0-1+gu7.1~26.10 from G Unity⁷
+  Thunderbird: install thunderbird-l10n-cs 1:159.0-1+gu7.1~26.10 from G Unity⁷
+  Thunderbird: add the profiles in /home/ivan/snap/thunderbird/common/.thunderbird to /home/ivan/.config/thunderbird (1 MB) and make the snap's default profile the default
+  Thunderbird: remove the snap (snapd saves a snapshot of its data)
+
+Packages apt will install (1):
+  thunderbird-l10n-cs
+
+Packages apt will downgrade (1):
+  thunderbird
+
+Packages apt will remove: none
+
+To keep a package, run: sudo g-unity7-cleanup --keep <package>
+state: firefox thunderbird 
+
+### dry-run: Enter, Enter
+Firefox is installed as an Ubuntu snap.
+G Unity⁷ provides a Firefox package with Unity's global menu:
+  1) Install the G Unity⁷ package, copy the snap profiles for gina and ivan and remove the snap (recommended)
+  2) Keep the Ubuntu snap
+
+Thunderbird is installed as an Ubuntu snap.
+G Unity⁷ provides a Thunderbird package with Unity's global menu:
+  1) Install the G Unity⁷ package, copy the snap profile for ivan and remove the snap (recommended)
+  2) Keep the Ubuntu snap
+
+Firefox and Thunderbird (10):
+  Firefox: install firefox 159.0.1-1+gu7.1~26.10 from G Unity⁷
+  Firefox: install firefox-l10n-cs 159.0.1-1+gu7.1~26.10 from G Unity⁷
+  Firefox: the profile /home/gina/snap/firefox/common/elsewhere of gina is outside /home/gina/snap/firefox/common/.mozilla/firefox, so it is not copied and is removed with the snap
+  Firefox: add the profiles in /home/gina/snap/firefox/common/.mozilla/firefox to /home/gina/.mozilla/firefox (1 MB) and make the snap's default profile the default
+  Firefox: add the profiles in /home/ivan/snap/firefox/common/.mozilla/firefox to /home/ivan/.config/mozilla/firefox (1 MB) and make the snap's default profile the default
+  Firefox: remove the snap (snapd saves a snapshot of its data)
+  Thunderbird: install thunderbird 1:159.0-1+gu7.1~26.10 from G Unity⁷
+  Thunderbird: install thunderbird-l10n-cs 1:159.0-1+gu7.1~26.10 from G Unity⁷
+  Thunderbird: add the profiles in /home/ivan/snap/thunderbird/common/.thunderbird to /home/ivan/.config/thunderbird (1 MB) and make the snap's default profile the default
+  Thunderbird: remove the snap (snapd saves a snapshot of its data)
+
+Packages apt will install (2):
+  firefox-l10n-cs thunderbird-l10n-cs
+
+Packages apt will downgrade (2):
+  firefox thunderbird
+
+Packages apt will remove: none
+
+To keep a package, run: sudo g-unity7-cleanup --keep <package>
+state: firefox thunderbird 
+
+### --yes
+Firefox is installed as an Ubuntu snap.
+G Unity⁷ provides a Firefox package with Unity's global menu:
+  Install the G Unity⁷ package, copy the snap profiles for gina and ivan and remove the snap (recommended)
+
+Thunderbird is installed as an Ubuntu snap.
+G Unity⁷ provides a Thunderbird package with Unity's global menu:
+  Install the G Unity⁷ package, copy the snap profile for ivan and remove the snap (recommended)
+
+Firefox and Thunderbird (10):
+  Firefox: install firefox 159.0.1-1+gu7.1~26.10 from G Unity⁷
+  Firefox: install firefox-l10n-cs 159.0.1-1+gu7.1~26.10 from G Unity⁷
+  Firefox: the profile /home/gina/snap/firefox/common/elsewhere of gina is outside /home/gina/snap/firefox/common/.mozilla/firefox, so it is not copied and is removed with the snap
+  Firefox: add the profiles in /home/gina/snap/firefox/common/.mozilla/firefox to /home/gina/.mozilla/firefox (1 MB) and make the snap's default profile the default
+  Firefox: add the profiles in /home/ivan/snap/firefox/common/.mozilla/firefox to /home/ivan/.config/mozilla/firefox (1 MB) and make the snap's default profile the default
+  Firefox: remove the snap (snapd saves a snapshot of its data)
+  Thunderbird: install thunderbird 1:159.0-1+gu7.1~26.10 from G Unity⁷
+  Thunderbird: install thunderbird-l10n-cs 1:159.0-1+gu7.1~26.10 from G Unity⁷
+  Thunderbird: add the profiles in /home/ivan/snap/thunderbird/common/.thunderbird to /home/ivan/.config/thunderbird (1 MB) and make the snap's default profile the default
+  Thunderbird: remove the snap (snapd saves a snapshot of its data)
+
+Packages apt will install (2):
+  firefox-l10n-cs thunderbird-l10n-cs
+
+Packages apt will downgrade (2):
+  firefox thunderbird
+
+Packages apt will remove: none
+
+To keep a package, run: sudo g-unity7-cleanup --keep <package>
+The following NEW packages will be installed:
+  firefox-l10n-cs thunderbird-l10n-cs
+The following packages will be DOWNGRADED:
+  firefox thunderbird
+0 upgraded, 2 newly installed, 2 downgraded, 0 to remove and 0 not upgraded.
+After this operation, 0 B of additional disk space will be used.
+dpkg: warning: downgrading firefox (1:1snap1) to (159.0.1-1+gu7.1~26.10)
+dpkg: warning: downgrading thunderbird (2:1snap1) to (1:159.0-1+gu7.1~26.10)
+Copied /home/gina/snap/firefox/common/.mozilla/firefox/Profile Groups/1a2b3c4d.sqlite to /home/gina/.mozilla/firefox/Profile Groups/1a2b3c4d.sqlite
+Copied /home/gina/snap/firefox/common/.mozilla/firefox/bbb.work to /home/gina/.mozilla/firefox/bbb.work (not in profiles.ini)
+Copied /home/gina/snap/firefox/common/.mozilla/firefox/zzz.old to /home/gina/.mozilla/firefox/zzz.old (not in profiles.ini)
+Copied /home/gina/snap/firefox/common/.mozilla/firefox/aaa.default to /home/gina/.mozilla/firefox/aaa.default
+Set /home/gina/.mozilla/firefox/aaa.default as the default profile
+Copied /home/ivan/snap/firefox/common/.mozilla/firefox/i.default to /home/ivan/.config/mozilla/firefox/i.default
+Set /home/ivan/.config/mozilla/firefox/i.default as the default profile
+Copied /home/ivan/snap/thunderbird/common/.thunderbird/t.default to /home/ivan/.config/thunderbird/t.default
+Set /home/ivan/.config/thunderbird/t.default as the default profile
+firefox removed (test)
+thunderbird removed (test)
+state: firefox firefox-l10n-cs thunderbird thunderbird-l10n-cs 
+
+-- snaps: 
+gina:gina 755 /home/gina/.mozilla/
+gina:gina 755 /home/gina/.mozilla/firefox/
+gina:gina 600 /home/gina/.mozilla/firefox/.g-unity7-snap-copy
+gina:gina 700 /home/gina/.mozilla/firefox/Profile Groups/
+gina:gina 644 /home/gina/.mozilla/firefox/Profile Groups/1a2b3c4d.sqlite
+gina:gina 755 /home/gina/.mozilla/firefox/aaa.default/
+gina:gina 644 /home/gina/.mozilla/firefox/aaa.default/prefs.js
+gina:gina 755 /home/gina/.mozilla/firefox/bbb.work/
+gina:gina 644 /home/gina/.mozilla/firefox/bbb.work/prefs.js
+gina:gina 600 /home/gina/.mozilla/firefox/installs.ini
+gina:gina 755 /home/gina/.mozilla/firefox/old.default/
+gina:gina 644 /home/gina/.mozilla/firefox/profiles.ini
+gina:gina 755 /home/gina/.mozilla/firefox/zzz.old/
+gina:gina 644 /home/gina/.mozilla/firefox/zzz.old/times.json
+ivan:ivan 755 /home/ivan/.config/
+ivan:ivan 755 /home/ivan/.config/mozilla/
+ivan:ivan 755 /home/ivan/.config/mozilla/firefox/
+ivan:ivan 600 /home/ivan/.config/mozilla/firefox/.g-unity7-snap-copy
+ivan:ivan 755 /home/ivan/.config/mozilla/firefox/i.default/
+ivan:ivan 600 /home/ivan/.config/mozilla/firefox/installs.ini
+ivan:ivan 644 /home/ivan/.config/mozilla/firefox/profiles.ini
+ivan:ivan 755 /home/ivan/.config/mozilla/firefox/x.default/
+ivan:ivan 755 /home/ivan/.config/thunderbird/
+ivan:ivan 600 /home/ivan/.config/thunderbird/.g-unity7-snap-copy
+ivan:ivan 600 /home/ivan/.config/thunderbird/installs.ini
+ivan:ivan 644 /home/ivan/.config/thunderbird/profiles.ini
+ivan:ivan 755 /home/ivan/.config/thunderbird/t.default/
+ivan:ivan 755 /home/ivan/.config/thunderbird/y.default/
+-- profiles.ini of gina
+[Profile0]
+Name=old
+IsRelative=1
+Path=old.default
+Default=1
+
+[Profile1]
+Name=default (snap)
+IsRelative=1
+Path=aaa.default
+StoreID=1a2b3c4d
+ShowSelector=1
+
+[Install4F96D1932A9F858E]
+Default=aaa.default
+Locked=1
+-- Firefox profiles.ini of ivan
+[Profile0]
+Name=xdg
+IsRelative=1
+Path=x.default
+Default=1
+
+[Profile1]
+Name=default (snap)
+IsRelative=1
+Path=i.default
+
+[Install4F96D1932A9F858E]
+Default=i.default
+Locked=1
+
+### a profile of the group has a taken name: --yes
+Both the G Unity⁷ Firefox package and the Firefox snap are installed:
+  Copy the snap profile for hank and remove the snap (recommended)
+
+Firefox and Thunderbird (2):
+  Firefox: add the profiles in /home/hank/snap/firefox/common/.mozilla/firefox to /home/hank/.mozilla/firefox (1 MB); the default profile stays
+  Firefox: remove the snap (snapd saves a snapshot of its data)
+
+Packages apt will remove: none
+
+To keep a package, run: sudo g-unity7-cleanup --keep <package>
+copy-snap-profiles: cannot add the profile group of /home/hank/snap/firefox/common/.mozilla/firefox to /home/hank/.mozilla/firefox: /home/hank/.mozilla/firefox/h.work exists
+g-unity7-cleanup: cannot copy the firefox profiles of hank
+g-unity7-cleanup: the firefox snap stays installed, because a copy of its profiles failed; fix the error, such as a full disk, and run g-unity7-cleanup again
+[exit 1]
+state: firefox firefox-l10n-cs thunderbird thunderbird-l10n-cs 
+
+-- snaps: firefox 
+hank:hank 755 /home/hank/.mozilla/
+hank:hank 755 /home/hank/.mozilla/firefox/
+hank:hank 755 /home/hank/.mozilla/firefox/h.work/
+hank:hank 644 /home/hank/.mozilla/firefox/profiles.ini

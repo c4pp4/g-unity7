@@ -80,10 +80,14 @@ def collection(url, params):
 
 
 def version_cmp(a, b):
+    """Compare two Debian versions as dpkg does: -1, 0 or 1. Versions that dpkg
+    sorts the same, such as 26.10.2ubuntu and 26.10.2ubuntu0, are equal."""
     if a == b:
         return 0
-    lt = subprocess.run(["dpkg", "--compare-versions", a, "lt", b]).returncode == 0
-    return -1 if lt else 1
+    for op, result in (("lt", -1), ("gt", 1)):
+        if subprocess.run(["dpkg", "--compare-versions", a, op, b]).returncode == 0:
+            return result
+    return 0
 
 
 def newest(entries):

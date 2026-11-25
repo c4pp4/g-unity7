@@ -34,11 +34,9 @@ debian_edit() {
 	install -d debian/g-unity7 || return 1
 	install -m 644 "${BRANDING_DIR}"/greeter-logo.png debian/g-unity7/logo.png || return 1
 	install -m 644 "${FILESDIR}"/branding/empty_cof.png debian/g-unity7/cof.png || return 1
-	printf '\n%s\n\t%s\n' \
-		"execute_after_dh_install:" \
+	rules_add_target execute_after_dh_install \
 		"install -m 644 debian/g-unity7/logo.png debian/g-unity7/cof.png debian/unity-greeter/usr/share/unity-greeter/" \
-		>> debian/rules || return 1
-	grep -Pq "^\tinstall -m 644 debian/g-unity7/logo.png " debian/rules || return 1
+		|| return 1
 }
 
 src_edit() {
