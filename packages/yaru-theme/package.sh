@@ -5,6 +5,7 @@ UBUNTU_SRC="yaru-theme"
 ## The ebuild's default USE flags: +unity.
 PATCHES=(
 	Remove-light-edges-in-menu-corners.patch
+	Round-the-Unity-shadow-of-menus.patch
 )
 
 debian_edit() {
